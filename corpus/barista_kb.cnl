@@ -1,0 +1,24 @@
+# Barista — a MIXED planning KB in one CNL file: operators (facts) + a goal + a procedure.
+# Loaded via harneskills.load_planning_program; drives the unchanged planning loop.
+#
+#   /run                     drives the GOAL — the planner derives the order from scratch.
+#   /do morning_service      runs the PROCEDURE — the explicit step sequence, with the planner
+#                            gap-filling any unmet precondition (procedure.run_procedure).
+#
+# Same operators, two ways to drive them: goal-directed vs a named pre-made plan. See
+# docs/operator_goal_cnl.md (operator/goal surface) and harneskills/procedure.py (procedures).
+
+# --- operators: monotone facts, what each action needs and produces (one per line) ---
+get_beans produces beans
+grind_beans needs beans
+grind_beans produces ground
+fetch_water produces water
+make_coffee needs ground
+make_coffee needs water
+make_coffee produces have_coffee
+
+# --- the goal (drives /run) ---
+we want have_coffee
+
+# --- a procedure: a named, ordered action sequence (drives /do morning_service) ---
+to morning_service get_beans then grind_beans then fetch_water then make_coffee

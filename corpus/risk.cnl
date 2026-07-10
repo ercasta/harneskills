@@ -1,0 +1,20 @@
+# Generic graded RISK-appetite machinery — the "take few risks today" filter, as rules.
+# Authored ONCE, domain-independent, PROSE rules (harneskills.authoring.load_rules) because a
+# GRADED condition (`?o is somewhat risky`) parses only in the prose grammar, not the machine one.
+#
+# An operator carries a hedged risk quality as a KB fact (`trade_at_club is very risky`), which the
+# graded write-rules lower to an embedding degree (very=0.8, somewhat=0.5, slightly=0.3). A daily
+# MOOD fact `caution is high|medium|low` selects HOW strict the day is, and each level pairs with a
+# cut ADVERB — the adverb IS the alpha-cut threshold (rewriter.graded_degree: a risk below the
+# adverb's degree does not match). So the caution -> threshold correspondence is authored here as
+# three rules, and switching the day's appetite is one transient `caution is …` line.
+#
+# `?o add ?c` is the structural anchor that BINDS ?o to an operator (a graded condition only
+# FILTERS an already-bound variable, it never binds one). The produced `?o excluded <yes>` is the
+# same marker the planner's `candidate` rule NACs, so a too-risky operator drops from candidacy
+# exactly like a deontically-forbidden one — one exclusion mechanism, two sources (norm and risk).
+# With no `caution` mood asserted, none of these fire and the risk filter is simply off.
+
+?o excluded <yes> when caution is high and ?o add ?c and ?o is slightly risky
+?o excluded <yes> when caution is medium and ?o add ?c and ?o is somewhat risky
+?o excluded <yes> when caution is low and ?o add ?c and ?o is very risky

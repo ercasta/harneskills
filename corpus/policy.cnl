@@ -1,0 +1,36 @@
+# Generic deontic-policy machinery — prohibition + defeasible priority OVERRIDE, as rules.
+# Authored ONCE, domain-independent (like corpus/planning.cnl), loaded via the machine grammar
+# (harneskills/machine_rules.py). The deontic FACTS these join on come from the CNL surface
+# (harneskills/deontic.py): `?act forbidden/encouraged/discouraged ?source`, the priority
+# `?hi outranks ?lo`, and the operator classification `?o is_a ?act` (`buy_at_shop is a buy`).
+#
+# The design (see the design discussion / memory): a prohibition on an action class EXCLUDES
+# that class's operators, so a strict `don't buy` removes every buy-operator from candidacy. But
+# a transient advice can OVERRIDE a contradictory standing norm when its SOURCE outranks the
+# prohibition's — resolved here by RULES, not Python. It stays monotone (vision §5): `overridden`
+# is a marker ADDED to the graph; the prohibition fact is never deleted, and the `excluded` rule
+# reads it THROUGH the `not ... overridden` guard (the guarded-read idiom). So the override is
+# fully auditable — `why is buy not excluded` traces to the outranking encouragement.
+
+# --- OVERRIDE: a higher-ranked source's encouragement defeats a lower-ranked prohibition ---
+# `?act forbidden ?lo` (source ?lo) is overridden when some source ?hi that OUTRANKS ?lo
+# encourages the same action. A `law`-sourced prohibition that nothing outranks stays in force.
+?act overridden <yes> when ?act forbidden ?lo and ?act encouraged ?hi and ?hi outranks ?lo
+
+# --- EXCLUDE: a forbidden (and not-overridden) action class rules out its operators ---
+# The guarded read: an operator classed `is_a ?act` is excluded while ?act is forbidden by ANY
+# source, UNLESS that prohibition has been overridden. Downstream the planner drops an excluded
+# operator from candidacy (corpus/planning.cnl `candidate` gates on `not ?o excluded <yes>`), so
+# a strict prohibition can make a goal honestly unreachable (a `stuck` result with a reason).
+?o excluded <yes> when ?o is_a ?act and ?act forbidden ?src and not ?act overridden <yes>
+
+# --- OBJECT-SCOPED norms: a norm over an action + a PROPERTY of its object (`don't sell rare cards`) ---
+# These are REIFIED (deontic.py `_mint_object_norm`): a `<norm>` node with action/polarity/scope/
+# source relations, so they carry a source and compose with the SAME priority/override idiom as the
+# class norms above. Inert unless a domain gives operators an `acts_on` link and authors such a norm.
+# Override: a forbidding norm is overridden by a higher-ranked-source ENCOURAGING norm over the same
+# action and scope.
+?n overridden <yes> when ?n polarity forbidden and ?n action ?act and ?n scope ?prop and ?n source ?lo and ?m polarity encouraged and ?m action ?act and ?m scope ?prop and ?m source ?hi and ?hi outranks ?lo
+# Exclude: an operator is ruled out when a not-overridden forbidding norm covers its action and the
+# property of the object it acts on (the variable-property join `?card is ?prop` does the scoping).
+?o excluded <yes> when ?n polarity forbidden and ?n action ?act and ?n scope ?prop and ?o is_a ?act and ?o acts_on ?card and ?card is ?prop and not ?n overridden <yes>

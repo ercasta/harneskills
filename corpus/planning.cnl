@@ -1,0 +1,45 @@
+# The planner — goal -> plan, entirely as rules (docs/planning_design.md, vision §4-§6).
+# Authored in the machine rule CNL (harneskills/machine_rules.py). There is NO smart planner:
+# "planning" is the fixpoint of this rule bank. Control hubs (<goal>/<need>/<now>/<exec>) and
+# the truth sink (<yes>) are PLAIN singleton tokens (no `?` suffix); markers are their own
+# predicate (`O viable <yes>`) so the stratifier can tell them apart. `drop X when ...` is a
+# control-layer retraction (the block/unblock idiom). These rules reflect EXACTLY to the
+# former Python RELEVANCE/CONNECTION/COMMITMENT banks (test_planning_cnl_reflects_to_python).
+
+# --- Phase A: relevance — spray the AND-OR tree backward from the goal ---
+<need> for ?c when <goal> want ?c
+# an operator EXCLUDED by policy (corpus/policy.cnl — a forbidden, not-overridden action class)
+# is never a candidate, so a strict prohibition removes it as a means entirely. Absent a policy
+# bank nothing produces `excluded`, so this NAC is inert and the planner is unchanged.
+?o candidate ?c when <need> for ?c and ?o add ?c and not ?o excluded <yes>
+<need> for ?p when ?o candidate ?c and ?o pre ?p
+
+# --- Phase B: connection — reachability forward from the current state ---
+# "all preconditions met" via the block/unblock idiom: a block per unmet precondition,
+# retracted as it becomes reachable; viable only when no block remains.
+?c reachable <yes> when <now> true ?c
+?o blocked_by ?p when ?o candidate ?g and ?o pre ?p and not ?p reachable <yes>
+drop ?o blocked_by ?p when ?o blocked_by ?p and ?p reachable <yes>
+?o viable <yes> when ?o candidate ?g and not ?o blocked_by ?anyp
+?c reachable <yes> when ?o viable <yes> and ?o add ?c
+
+# --- Phase C: commitment — pick the cheapest chain, order it ---
+# cost is SETTLED once rankable: an external price resolved (price_known), or no external
+# price needed. `best` waits for it so commitment never precedes the cost criterion.
+?o cost_settled <yes> when ?o price_known <yes>
+?o cost_settled <yes> when ?o viable <yes> and not ?o needs_price <yes>
+# RANK once cost is settled: emit a materialized tool-call so the `rank` tool derives the
+# `cheaper_than` FACTS commitment selects on (the §8 comparison-as-calculator boundary, now
+# request-driven like the price lookup — no top-of-cycle Python rank step). Gating on
+# cost_settled orders it AFTER the price fetch (external) and covers the static `cost=` path
+# (cost_settled = viable, no price needed). The `ranked` marker (set by the tool, never a
+# rule, so no stratify cycle) NACs this rule to fire it ONCE per op; a replan/price-change
+# clears `ranked` to re-rank against fresh costs.
+<call>? tool rank and <call>? arg ?o when ?o cost_settled <yes> and not ?o ranked <yes>
+# dominated: a cheaper viable rival (both costs settled) produces the same need.
+?o dominated <yes> when ?o viable <yes> and ?o cost_settled <yes> and ?o add ?c and ?x viable <yes> and ?x cost_settled <yes> and ?x add ?c and ?x cheaper_than ?o
+?o best <yes> when ?o viable <yes> and ?o cost_settled <yes> and not ?o dominated <yes>
+# commit the best viable op per need; the conjunctive NAC keeps it to ONE per need.
+?o chosen <yes> when <need> for ?c and ?o best <yes> and ?o add ?c and not ?x chosen <yes> and not ?x add ?c
+# order chosen steps: a producer of ?c comes before a consumer of ?c.
+?o1 before ?o2 when ?o1 chosen <yes> and ?o2 chosen <yes> and ?o1 add ?c and ?o2 pre ?c

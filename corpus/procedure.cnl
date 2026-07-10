@@ -1,0 +1,14 @@
+# Procedure gap-filling: bridge a procedure into the goal-directed planner (procedure.py).
+# Invoking a procedure marks its steps `chosen` directly (a PRE-MADE plan), so the planner's
+# goal-spray (Phase A) never sees them. This ONE rule reconnects them: a chosen step's
+# UNMET precondition becomes a `<need>`, and the existing relevance/connection/commitment
+# rules (corpus/planning.cnl) take over — finding an operator that produces it, committing the
+# cheapest viable one, and ordering it BEFORE the step (the producer/consumer `before` rule).
+# The before-gate (corpus/planning_execution.cnl) then makes the step wait for the gap-filler.
+# Recursive: the gap-filler's own unmet pres become needs in turn. Added to the solve bank only
+# when a procedure is run with gap-filling (planning.solve `extra_rules=`); the pure planner is
+# unchanged. The `not <now> true ?p` guard gap-fills only a GENUINELY absent precondition (one
+# already in the observed state needs no filler); `true` is tool/seed-produced (never a rule),
+# so this NAC adds no stratification cycle. A precondition already covered by another chosen op
+# is handled downstream by commitment's one-per-need guard, so no extra guard is needed here.
+<need> for ?p when ?o chosen <yes> and ?o pre ?p and not <now> true ?p

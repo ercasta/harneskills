@@ -1,0 +1,47 @@
+# Ice cream shop — authored ENTIRELY in CNL (facts + rules), no Python domain logic.
+#
+# Run:  python examples/ice_cream.py
+#
+# ONE corpus, ONE graph, NO classifier: what each statement is — fact, rule, lexicon
+# frame, loose phrasing — emerges from which form recognizes it. Facts and rule-source
+# coexist in the same substrate; rules are isolated from facts NOT by an engine
+# "scope" but by DATA: reasoning rules bind a context node (the shop), which rule
+# patterns can't satisfy. Comments start with '#'.
+# Outcome:  alice -> express (urgent, in stock),  bob -> regular,  carol -> alternative.
+
+# Facts. 'shop1 is a shop' introduces the context; 'urgent is gradable' makes the
+# graded layer turn 'X is very urgent' into an embedding.
+shop1 is a shop
+urgent is gradable
+
+vanilla is in_stock
+chocolate is in_stock
+# strawberry is deliberately NOT stocked
+
+alice is a customer
+alice wants vanilla
+alice is very urgent
+
+bob is a customer
+bob wants chocolate
+
+carol is a customer
+carol wants strawberry
+
+# Prior knowledge — the implicit context, made explicit as a DEFEASIBLE default:
+# customers are in the shop, UNLESS they are already known to be placed somewhere
+# (`?c not in ?other`). With one shop and no explicit placements this fills the gap a
+# human leaves unsaid; an explicit "X in Y" fact would defeat it (more specific wins).
+?c in ?shop when ?c is a customer and ?shop is a shop and ?c not in ?other
+
+# Rules. Serving happens WITHIN a shop: the '?c in ?shop' condition both contextualizes
+# the rule (the same shop is bound throughout) and isolates it from rule-source (a rule
+# fragment is never 'in' a shop, so these never match scaffolding).
+?c is urgent when ?c is a customer and ?c is very urgent
+?c served regular when ?c wants ?f and ?f is in_stock and ?c is not urgent and ?c in ?shop
+?c offered alternative when ?c is a customer and ?c wants ?f and ?f is not in_stock and ?c in ?shop
+
+# A lexicon frame (recognized by 'means') + a looser phrasing translated into the
+# native express rule. Express also happens within a shop.
+serve ?x first means ?x served express when ?x wants ?f and ?f is in_stock and ?x in ?shop
+serve urgent customers first

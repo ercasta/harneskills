@@ -1,0 +1,124 @@
+# =========================================================================================
+# Test scenarios for the card-trader KB (corpus/cards_kb.cnl), run by harneskills/scenarios.py.
+#
+# Each `scenario NAME` block is a transient day: a GOAL, an optional deontic POLICY (the same
+# `don't … / it's good to … / A outranks B` surface the KB uses), and EXPECTATIONS. The harness
+# rebuilds the KB fresh, applies the block, drives the planner, and checks the result — so each
+# scenario is at once a unit test and a runnable demo of the SAME KB deciding differently.
+#
+# Directives inside a block:
+#   goal C               — seed a transient goal (may repeat)
+#   expect done|stuck    — the required planner outcome
+#   expect chosen O      — operator O must be in the committed plan (may repeat)
+#   expect not chosen O   — operator O must NOT be in the plan (may repeat)
+#   <anything else>      — a transient deontic/priority line applied on top of the KB
+# =========================================================================================
+
+scenario acquire_default
+  # No policy today — just get a rare card. Buying and trading both reach it (an honest tie).
+  goal have_rare_card
+  expect done
+
+scenario cautious_no_buying
+  # De-risk the day: don't buy. The planner routes around it and trades to the goal instead.
+  today don't buy
+  goal have_rare_card
+  expect done
+  expect chosen trade_at_club
+  expect not chosen buy_online
+
+scenario hold_the_line
+  # Raise cash — but the standing "don't sell" forbids selling and today gives no override,
+  # so the goal is honestly unreachable. A `stuck` with a reason, not a silent workaround.
+  goal have_cash
+  expect stuck
+
+scenario sell_today
+  # The market peaks: today it's good to sell. `today outranks standing` overrides the house
+  # "don't sell", so the planner acquires a rare card and sells it for cash.
+  today it is good to sell
+  goal have_cash
+  expect done
+  expect chosen sell_rare
+
+scenario law_holds
+  # Even instructed to, counterfeiting stays forbidden: `law` outranks `today` (nothing is
+  # authored the other way). The goal is still reached — by legitimate buy/trade, never the
+  # forbidden operator.
+  today it is good to counterfeit
+  goal have_rare_card
+  expect done
+  expect not chosen counterfeit_card
+
+scenario play_it_safe
+  # "Take few risks today." A medium caution cuts every operator at/above `somewhat` risky
+  # (buy_online 0.5, trade_at_club & counterfeit 0.8), leaving only the safe shop.
+  caution is medium
+  goal have_rare_card
+  expect done
+  expect chosen buy_at_shop
+  expect not chosen buy_online
+  expect not chosen trade_at_club
+
+scenario relaxed_day
+  # Low caution only cuts the very-risky (trade, counterfeit); the somewhat-risky buy_online is
+  # back on the table beside the safe shop. Same graded filter, looser threshold.
+  caution is low
+  goal have_rare_card
+  expect done
+  expect chosen buy_online
+
+scenario cautious_and_lawful
+  # Risk filter and deontic norm COMPOSE: a cautious day AND a standing law both prune the set,
+  # and the safe shop still carries the goal.
+  caution is medium
+  goal have_rare_card
+  expect done
+  expect chosen buy_at_shop
+  expect not chosen counterfeit_card
+
+scenario prefer_encouraged
+  # "It's good to trade" RANKS trading above the neutral buys (it doesn't exclude them) — the
+  # encouraged means is chosen while the others are merely demoted.
+  today it is good to trade
+  goal have_rare_card
+  expect done
+  expect chosen trade_at_club
+  expect not chosen buy_at_shop
+  expect not chosen buy_online
+
+scenario demote_discouraged
+  # "Better not to buy" DISCOURAGES the buys (soft, not a prohibition): the neutral trade
+  # outranks them, so trading is chosen — but the buys stay candidates, unlike `don't buy`.
+  better not to buy
+  goal have_rare_card
+  expect done
+  expect chosen trade_at_club
+  expect not chosen buy_online
+
+scenario discouraged_is_last_resort
+  # Discouragement is not prohibition: with trading forbidden today and counterfeiting unlawful,
+  # a discouraged buy is the only way left — so it IS chosen. Soft demotion yields to necessity.
+  better not to buy
+  today don't trade
+  goal have_rare_card
+  expect done
+  expect chosen buy_at_shop
+
+scenario hot_market
+  # REASONING drives the policy: the substrate infers the market is hot (high demand, low supply)
+  # and DERIVES that selling is encouraged — which overrides the standing "don't sell". No explicit
+  # sell instruction is given; the trading stance is reasoned from business facts.
+  demand is high
+  supply is low
+  goal have_cash
+  expect done
+  expect chosen sell_rare
+
+scenario cold_market
+  # Cold market: nothing makes selling worthwhile, so the standing "don't sell" stands and the
+  # cash goal is honestly unreachable — the reasoned stance did not fire, so the norm holds.
+  demand is low
+  supply is high
+  goal have_cash
+  expect stuck

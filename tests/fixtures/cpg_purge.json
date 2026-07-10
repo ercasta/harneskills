@@ -1,0 +1,35 @@
+{
+  "source_comment": "def purge(items):\n    for x in items:\n        items.remove(x)   # mutates the collection it iterates -> HAZARD",
+  "format": "normalized-cpg (faithful joern labels/edges; NOT raw GraphSON — see harneskills/cpg.py)",
+  "nodes": [
+    {"id": "1",  "label": "METHOD",               "properties": {"NAME": "purge"}},
+    {"id": "2",  "label": "METHOD_PARAMETER_IN",   "properties": {"NAME": "items"}},
+    {"id": "3",  "label": "BLOCK",                 "properties": {}},
+    {"id": "4",  "label": "CONTROL_STRUCTURE",     "properties": {"CONTROL_STRUCTURE_TYPE": "FOR", "CODE": "for x in items"}},
+    {"id": "5",  "label": "IDENTIFIER",            "properties": {"NAME": "x"}},
+    {"id": "6",  "label": "IDENTIFIER",            "properties": {"NAME": "items"}},
+    {"id": "7",  "label": "BLOCK",                 "properties": {}},
+    {"id": "8",  "label": "CALL",                  "properties": {"NAME": "remove", "CODE": "items.remove(x)"}},
+    {"id": "9",  "label": "IDENTIFIER",            "properties": {"NAME": "items"}},
+    {"id": "10", "label": "IDENTIFIER",            "properties": {"NAME": "x"}},
+    {"id": "11", "label": "LOCAL",                 "properties": {"NAME": "x"}}
+  ],
+  "edges": [
+    {"src": "1",  "dst": "3",  "label": "AST"},
+    {"src": "1",  "dst": "2",  "label": "AST"},
+    {"src": "3",  "dst": "4",  "label": "AST"},
+    {"src": "4",  "dst": "5",  "label": "AST"},
+    {"src": "4",  "dst": "6",  "label": "AST"},
+    {"src": "4",  "dst": "7",  "label": "AST"},
+    {"src": "4",  "dst": "11", "label": "AST"},
+    {"src": "7",  "dst": "8",  "label": "AST"},
+    {"src": "8",  "dst": "9",  "label": "AST"},
+    {"src": "8",  "dst": "10", "label": "AST"},
+    {"src": "6",  "dst": "2",  "label": "REF"},
+    {"src": "9",  "dst": "2",  "label": "REF"},
+    {"src": "5",  "dst": "11", "label": "REF"},
+    {"src": "10", "dst": "11", "label": "REF"},
+    {"src": "8",  "dst": "9",  "label": "RECEIVER"},
+    {"src": "8",  "dst": "10", "label": "ARGUMENT"}
+  ]
+}

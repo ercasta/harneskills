@@ -1,0 +1,29 @@
+# Coffee — the planning reference domain, authored ENTIRELY in CNL (operators + state + goal).
+# Loaded via harneskills.load_planning_kb into the graph planning.solve runs over; lowers to the
+# SAME edges as examples/coffee.py's Python seeders (seed_operator/seed_state/seed_goal). There is
+# no planner and no Python problem-authoring — the whole instance is this file. See
+# docs/operator_goal_cnl.md for the surface and how each line maps to a graph edge.
+
+# make_coffee: needs water and beans (one precondition per line, sharing the condition nodes),
+# and produces coffee.
+make_coffee needs water
+make_coffee needs beans
+make_coffee produces have_coffee
+
+# a plain producer of beans
+get_beans produces beans
+
+# a DEAD option: it also makes coffee, but needs `money`, which nothing produces -> it never
+# connects to the current state -> never viable -> silently dies (no backtracking).
+buy_latte needs money
+buy_latte produces have_coffee
+
+# TWO ways to get water -> commitment RANKS them by the fact-layer cost criterion (cheap
+# fetch beats costly delivery), not race and commit both.
+fetch_water produces water
+fetch_water costs 1
+deliver_water produces water
+deliver_water costs 5
+
+# empty larder (no `we have ...` lines: no water, no beans, no money) and the goal.
+we want have_coffee

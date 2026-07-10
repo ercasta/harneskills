@@ -1,0 +1,32 @@
+# Specific-card FRONTIER KB — operators over NAMED cards (not the abstract `have_rare_card` of the
+# main demo), each linked to the card it acts on by `acts_on`, plus card knowledge and an
+# OBJECT-SCOPED standing norm. Loaded by `scenarios.load_cards_kb` (planning + deontic + facts),
+# which now folds `acts_on` too. This is the fully-CNL version of the frontier probe — no Python
+# seeding — exercising object-scoped norms and value-driven planning end to end.
+
+# --- Acquisition + disposal operators, per card (buy adds the card; sell needs it, yields cash) ---
+buy_charizard produces have_charizard
+buy_charizard acts_on charizard
+sell_charizard needs have_charizard
+sell_charizard produces have_cash
+sell_charizard acts_on charizard
+
+buy_blastoise produces have_blastoise
+buy_blastoise acts_on blastoise
+sell_blastoise needs have_blastoise
+sell_blastoise produces have_cash
+sell_blastoise acts_on blastoise
+
+# --- Action classes ---
+buy_charizard is a buy
+sell_charizard is a sell
+buy_blastoise is a buy
+sell_blastoise is a sell
+
+# --- An OBJECT-SCOPED standing norm: hold the rares ---
+don't sell rare cards
+
+# --- Card knowledge (base facts for value reasoning) ---
+charizard is rare
+charizard is in_demand
+blastoise is common

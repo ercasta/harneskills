@@ -1,0 +1,59 @@
+# =========================================================================================
+# The card-trader KB — PERSISTENT business knowledge (operators + action classes + norms).
+#
+# This is the domain the scenario harness (harneskills/scenarios.py) runs transient goals and
+# deontic policies against. It is loaded by BOTH the planning loader (operators + start state,
+# `X produces Y` / `X needs Y` / `we have Y`) and the deontic loader (action classes `X is a Y`,
+# standing norms `don't …` / `never …`, priorities `A outranks B`) — the two surfaces are
+# disjoint line-by-line, so one file carries both. There is NO goal here: each scenario supplies
+# its own transient goal, exactly the persistent-KB / transient-instruction split.
+# =========================================================================================
+
+# --- Operators: what each trading action needs and produces (monotone causal facts) ---
+buy_at_shop needs money
+buy_at_shop produces have_rare_card
+buy_online needs money
+buy_online produces have_rare_card
+trade_at_club produces have_rare_card
+counterfeit_card produces have_rare_card
+sell_rare needs have_rare_card
+sell_rare produces have_cash
+
+# --- Action classes: so a deontic advice over a CLASS scopes to all its operators ---
+buy_at_shop is a buy
+buy_online is a buy
+trade_at_club is a trade
+counterfeit_card is a counterfeit
+sell_rare is a sell
+
+# --- Risk: a gradable quality on each operator (hedged English). The graded filter
+# (corpus/risk.cnl) reads these via the alpha-cut; a caution MOOD (`caution is medium`) sets how
+# strict. `buy_at_shop` carries NO risk grading -> the truly-safe option, never cut. Degrees are
+# KB data (very=0.8, somewhat=0.5, slightly=0.3), so "how risky is too risky" is authored, never
+# a magic number in the engine.
+risky is gradable
+buy_online is somewhat risky
+trade_at_club is very risky
+counterfeit_card is very risky
+sell_rare is somewhat risky
+
+# --- Standing house norms (persistent policy, of different strength) ---
+don't sell               # default stance: we HOLD our rares; a good market day can override this
+law never counterfeit    # inviolable: no authority outranks `law`, so this can never be overridden
+
+# --- Priorities among authorities (persistent) ---
+today outranks standing  # a same-day instruction overrides a standing house rule...
+                         # ...but NOTHING is authored to outrank `law`, so the law norm stands.
+
+# --- Card knowledge: base facts for the deductive value reasoning (corpus/cards_reasoning.cnl) ---
+# charizard is rare, sought-after, and mint -> valuable -> premium -> a keeper. blastoise is rare
+# but not in demand; pikachu is in demand but common -> neither is valuable. All derivable, with a
+# why-trace.
+charizard is rare
+charizard is in_demand
+charizard is mint
+blastoise is rare
+pikachu is in_demand
+
+# --- What we start the day holding ---
+we have money

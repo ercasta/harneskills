@@ -1,0 +1,21 @@
+# Card-trader DOMAIN reasoning — the deductive business-semantics half of the KB.
+# PROSE rules (harneskills.authoring.load_rules): plain deductive knowledge over card + market
+# facts, the same deductive face as the thief riddle, now over business content. These are DOMAIN
+# rules (card-specific), distinct from the generic policy/risk/preference machinery — they DERIVE
+# facts (a card's value, the market's state, and a market-driven trading stance) that the generic
+# machinery then acts on. Every conclusion is why-traceable back to the base facts.
+
+# --- Card value: a card is valuable when it is rare AND sought-after (multi-step, composes) ---
+?c is valuable when ?c is rare and ?c is in_demand
+# a premium card is a valuable one in mint condition; a premium card is worth holding
+?c is premium when ?c is valuable and ?c is mint
+?c is worth_holding when ?c is premium
+
+# --- Reasoning DERIVES the policy: a hot market makes selling worthwhile ---
+# High demand + low supply => the market is hot; on a hot day, selling is ENCOURAGED. The deontic
+# stance is DERIVED, not asserted — the substrate reasons its way to the policy. With the KB's
+# `today outranks standing`, that derived encouragement OVERRIDES the standing `don't sell`, so a
+# cold-market day honestly stays put (nothing to override the norm) while a hot day sells. Ask
+# `why is selling possible` and the trace runs back through `market is hot` to demand and supply.
+market is hot when demand is high and supply is low
+sell encouraged today when market is hot

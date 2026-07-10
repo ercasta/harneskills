@@ -1,0 +1,21 @@
+# Planning phase D: acting — readiness as token-passing (vision §6 domino).
+# A chosen operator is READY when every precondition holds in <now> AND every operator
+# explicitly ordered BEFORE it has finished. Same block/unblock idiom, twice: an `unmet`
+# per precondition not in <now>, and a `waits_for` per not-yet-done `before`-predecessor;
+# each retracted as it clears, and the `ready` token only when none of either remain (and
+# the op is not done). The `waits_for` gate makes an explicit `then`-ordering bind at
+# EXECUTION time, not only through preconditions — a producer/consumer `before` was already
+# precondition-implied, but a PURE sequencing `before` (B after A though B needs nothing A
+# produces, e.g. a procedure step order) is honoured only because of this gate.
+?o unmet ?p when ?o chosen <yes> and ?o pre ?p and not <now> true ?p
+drop ?o unmet ?p when ?o unmet ?p and <now> true ?p
+?o waits_for ?b when ?o chosen <yes> and ?b before ?o and not ?b done <yes>
+drop ?o waits_for ?b when ?o waits_for ?b and ?b done <yes>
+<exec> ready ?o when ?o chosen <yes> and not ?o unmet ?anyp and not ?o waits_for ?anyb and not ?o done <yes>
+# PERFORM a ready operator: materialize an `act` tool-call (engine-serviced, like price/rank).
+# The handler runs the real action tool (or simulates), emits the OBSERVED effect into <now>,
+# marks the op `done`, and consumes the `ready` token. So acting is just more demand-driven
+# token-passing in the one fixpoint loop — the bespoke per-cycle `act()` step is gone (the §8
+# act/observe boundary is now uniform with every other tool). Only present in the SOLVE bank
+# (a standalone `plan()` uses PLANNING_RULES and never acts), so plan-then-act ordering holds.
+<call>? tool act and <call>? arg ?o when <exec> ready ?o

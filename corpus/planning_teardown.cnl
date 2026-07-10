@@ -1,0 +1,20 @@
+# Planning teardown: drop ALL control scaffolding, gated on the <replan> marker, so the
+# same rules re-fire from the new reality (replanning = control-layer deletion, vision §5).
+# One gated drop-rule per control marker. `cheaper_than` is a derived FACT (survives); the
+# markers below are control (go). `price_known` is dropped so a replan re-fetches prices.
+drop <need> for ?c when <replan> active <yes> and <need> for ?c
+drop ?o candidate ?c when <replan> active <yes> and ?o candidate ?c
+drop ?c reachable <yes> when <replan> active <yes> and ?c reachable <yes>
+drop ?o blocked_by ?c when <replan> active <yes> and ?o blocked_by ?c
+drop ?o viable <yes> when <replan> active <yes> and ?o viable <yes>
+drop ?o dominated <yes> when <replan> active <yes> and ?o dominated <yes>
+drop ?o cost_settled <yes> when <replan> active <yes> and ?o cost_settled <yes>
+drop ?o best <yes> when <replan> active <yes> and ?o best <yes>
+drop ?o chosen <yes> when <replan> active <yes> and ?o chosen <yes>
+drop ?o1 before ?o2 when <replan> active <yes> and ?o1 before ?o2
+drop ?o unmet ?c when <replan> active <yes> and ?o unmet ?c
+drop ?o waits_for ?b when <replan> active <yes> and ?o waits_for ?b
+drop <exec> ready ?o when <replan> active <yes> and <exec> ready ?o
+drop ?o done <yes> when <replan> active <yes> and ?o done <yes>
+drop ?o price_known <yes> when <replan> active <yes> and ?o price_known <yes>
+drop ?o ranked <yes> when <replan> active <yes> and ?o ranked <yes>

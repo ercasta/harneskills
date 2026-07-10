@@ -1,0 +1,32 @@
+# Generic deontic PREFERENCE (ranking) machinery — encouraged > neutral > discouraged, as rules.
+# Authored ONCE, domain-independent, machine-rule CNL (harneskills.machine_rules), added to the
+# planner's solve bank. This is the SOFT counterpart to prohibition: `it's good to trade`
+# (encouraged) and `better not to buy` (discouraged) don't EXCLUDE an operator, they RANK it — an
+# encouraged means is preferred over a neutral one, a discouraged one is a last resort.
+#
+# No calculator is needed because the deontic strength is a DISCRETE tier, not a continuous number:
+# ranking three ordered buckets is an authored ordering + argmax, exactly the `outranks` + "nothing
+# beats it" idiom the source-priority override already uses — not arithmetic on two graph values
+# (which WOULD need a §8 compare tool; that is only for continuous criteria like numeric profit).
+#
+# The tier order is authored as DATA (bodiless fact-rules). Stance is disjoint from the source
+# names the override's `outranks` compares, so the two uses of `outranks` never cross (a stance is
+# never a norm source, so the override rule can't bind a stance-ordering fact).
+
+# --- The tier order (authored data) ---
+encouraged outranks neutral
+neutral outranks discouraged
+encouraged outranks discouraged
+
+# --- Each operator's stance, from its action class's deontic advice (default: neutral) ---
+?o stance encouraged when ?o is_a ?act and ?act encouraged ?src
+?o stance discouraged when ?o is_a ?act and ?act discouraged ?src
+?o stance neutral when ?o add ?c and not ?o stance encouraged and not ?o stance discouraged
+
+# --- Domination by stance (reusing the planner's `dominated` marker) ---
+# A viable operator is dominated when a viable RIVAL for the SAME need has a stance that outranks
+# it. The planner's `best`/`chosen` (corpus/planning.cnl) already skip dominated ops, so a demoted
+# means simply isn't chosen while a better-ranked rival exists — but it stays a CANDIDATE, so if it
+# is the only way left (its rivals excluded or unviable), it is still chosen. That is exactly
+# "discouraged = last resort", and it needs no change to the planner.
+?o dominated <yes> when ?o viable <yes> and ?x viable <yes> and ?o add ?c and ?x add ?c and ?o stance ?s1 and ?x stance ?s2 and ?s2 outranks ?s1

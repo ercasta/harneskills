@@ -1,0 +1,12 @@
+# Planning phase C': external cost lookup — rules DRIVE the tool (vision §6/§8).
+# Added to the planning bank only when a lookup registry is supplied (`plan(registry=...)`).
+
+# DEMAND a price for a viable op that needs one: emit a materialized tool-call (the engine's
+# dispatcher runs the registered `price` lookup). The NAC fires it ONCE per op (price_known is
+# set by the handler on success OR error), so a failed lookup never spins; a replan clears
+# price_known (teardown) to re-fetch.
+<call>? tool price and <call>? arg ?o when ?o viable <yes> and ?o needs_price <yes> and not ?o price_known <yes>
+
+# ERROR policy: an op whose price lookup FAILED yields to a viable rival for the same need
+# that DID get a settled cost (and isn't itself failed) — prefer the option we can cost.
+?o dominated <yes> when <price-request> failed ?o and ?o add ?c and ?x viable <yes> and ?x add ?c and ?x cost_settled <yes> and not <price-request> failed ?x

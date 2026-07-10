@@ -1,0 +1,28 @@
+# The walker — variable-length graph traversal as control (docs/walkers_and_locality.md §4-§6).
+# Authored in the machine rule CNL (harneskills/machine_rules.py): every clause is a bare
+# triple `S P O`; the head is a conjunction; `drop` is a control deletion; `not` is a NAC;
+# `<walker>?` etc. are bound-literal control tokens (the `?` makes every occurrence the same
+# node). The fuel budget is compiled to control edges by the `refuel` TOOL (a materialized
+# `<call>`), not by Python. On-demand transitivity walks the `is_a` relation.
+
+# STEP — advance the reached set one hop along is_a, requesting a fuel decrement.
+# (reached doubles as frontier-source and visited marker: the first NAC blocks re-entry, so a
+# cyclic relation cannot loop; the single `fuel` counter node — checked O(1), not enumerated —
+# gates the step, and the `dec` tool-call decrements it, removing it at zero to halt the walk.
+# STOP-ON-ARRIVAL: the second NAC halts the whole walk once the target is reached, so a POSITIVE
+# query costs the target's BFS distance, not the full reachable set — e.g. a depth-2 `is_a` query
+# no longer climbs to the root. A negative still explores fully, as it must to prove no path.)
+<walker>? reached ?y and <call>? tool dec and <call>? target <walker>? when <walker>? reached ?x and <walker>? fuel ?u and ?x is_a ?y and <walker>? target ?t and not <walker>? reached ?y and not <walker>? reached ?t
+
+# ARRIVE — when the target is reached, materialize the shortcut fact (a derived is_a).
+# It hangs off the permanent reached(target), so its provenance chains back to every path edge.
+?a is_a ?t when <walker>? origin ?a and <walker>? target ?t and <walker>? reached ?t and not ?a is_a ?t
+
+# SPAWN — a walk-request (carrying the fuel amount) becomes a walker token AND a refuel
+# tool-call; consume the request. The engine services the refuel call (compiling the amount
+# to fuel control edges) via the tools registry — no bespoke Python orchestration.
+<walker>? origin ?a and <walker>? target ?c and <walker>? reached ?a and <call>? tool refuel and <call>? target <walker>? and <call>? amount ?n and drop <walk-request>? subj ?a and drop <walk-request>? obj ?c and drop <walk-request>? amount ?n when <walk-request>? subj ?a and <walk-request>? obj ?c and <walk-request>? amount ?n
+
+# DEMAND -> WALK-REQUEST — a <demand> (demand.py) carrying an amount spawns a walk-request,
+# once per (subject, object) pair (the conjunctive NAC: block if some ?w already has both).
+<walk-request>? subj ?a and <walk-request>? obj ?c and <walk-request>? amount ?n when ?d d_subj ?a and ?d d_obj ?c and ?d amount ?n and not ?w subj ?a and not ?w obj ?c
