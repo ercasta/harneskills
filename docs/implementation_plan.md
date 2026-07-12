@@ -14,37 +14,74 @@
 
 ## NEXT STEP (pick this up FIRST)
 
-**Suite: 59 passed, 0 failed** (post repo-split, 2026-07-11, `python -m pytest -q`).
+> **STATUS 2026-07-12 (post UGM carve-out rebuild, this session).** The old "tracking posture"
+> below was STALE: while it was written, UGM advanced past the split — it **retired**
+> `demand.py` / `coref_walk.py` / `asp.py` / `cnl/walker.py` and **deleted** `decide.py` /
+> `solve.py` / `goal.py` / `cnl/rewriter.py`, and it **shipped a Session layer** (`ugm/intake.py`
+> §8: `ingest` / `converse` / `Outcome` / `Event`, plus `focus.py` / `rule_control.py`). The
+> harness imported all the dead modules and **could not import at all** (0 tests collectable).
 
-The harness is currently in a **tracking** posture relative to UGM:
+**Suite now: 24 passed, ~38 failed** (`python -m pytest -q`, ~80s). Was 0-collectable before this
+session. The rebuild is in two layers; **layer 1 is done, layer 2 is the active work.**
 
-1. **Wait for UGM Phase 5.5 slice 4** (plan→act→check→replan as ITERATE×CHECK) to land in `ugm`.
-   That is the next UGM milestone that changes harness-visible behavior. Once it lands, the
-   planning benches here become the **Phase 5 exit gate** (H-2 below).
+### Layer 1 — structural carve-out rebuild (DONE this session)
+- [x] `harneskills/__init__.py` — dropped retired module imports/aliases (`decide`, `coref_walk`,
+  `asp`, `demand`, `walker`, `rewriter`, `goal`, `solve`); re-exports the new Session layer
+  (`ingest`/`converse`/`Outcome`/`Event`/`intake`/`focus`/`rule_control`) via `from ugm import *`.
+- [x] **`harneskills/session.py` REBUILT on the UGM Session layer** — `Session` is now a THIN
+  stateful wrapper over `ugm.ingest`: it holds the KB + accumulated rules + oracle and translates
+  an `Outcome` → `LineResult`. The ~350 lines of hand-rolled lazy-coref / contradiction detection
+  (on the retired `demand`/`coref_walk`) are GONE. Coref is UGM's declared `same_name_coref_rules`;
+  the human ask is UGM's mid-chain `ask_user` bridged to the `Oracle`. The reasoning bank the
+  wrapper passes to `ingest` mirrors `load_corpus`'s bundle (`expand_rules + expand_loose +
+  same_name_coref_rules + _coref_propagation`), recomputed per turn.
+- [x] **Name-demotion reader fix** — a reified relation now carries NO name (`graph.name(r) == ''`);
+  its predicate is `graph.predicate(r)`. Fixed `session._content_relations` and added
+  `cpg._relation_exists` (predicate-aware) to replace the retired `rewriter._relation_exists`;
+  repointed the CPG tests/benches off `rewriter`.
+- [x] **`run_rules(..., isa=True)` API drift** — the `isa=` flag is gone (everything is ISA now);
+  removed from `planning.py` / `cpg.py` / `driver.py`.
 
-2. **While waiting — SLM surface debt sweep (H-1):** the CNL grammar has changed across UGM
-   Phases 2/3/5 (key-aware INTERN fix, relational mode-call forms, scope authoring). Record
-   those form changes in `handoff_slm_surface_track.md` and schedule the batch retrain.
+### Layer 2 — domain-bank rebuild (ACTIVE — the remaining ~38 failures)
+The harness's DOMAIN Python + CNL banks predate two UGM changes and must catch up:
 
-3. **Phase 6.0 in UGM (rewriter retirement) unblocks** the name-demotion sweep; some CNL
-   authoring forms may need updating once `nodes_named` reads flip to `nodes_with_key`. Track
-   any surface regressions here.
+1. **Planning stack is non-functional (H-3, biggest).** `load_planning_kb(cards_kb.cnl)` produces an
+   **empty graph** — the operator/state/goal CNL surface (`planning_kb.py`) no longer matches UGM's
+   current grammar, so `solve` runs on nothing and returns a **spurious "done"** (goal vacuously
+   satisfied). This sinks `test_scenarios` / `test_deontic` / `test_cards_*` (~23 tests). Rebuild the
+   planning-KB CNL forms against the current surface FIRST; the read helpers are the second half.
+2. **Name-demotion broke predicate reads pervasively (H-3).** Every `graph.name(r) == "<pred>"` in the
+   harness Python (`planning.py`, `scenarios.py`, `procedure.py`, `deontic.py`, `harneskills_tui/`,
+   `examples/`, `bench/`) now reads `''` and must become `graph.predicate(r) == "<pred>"`. Mechanical
+   but pervasive (~30 sites). Do AFTER the loader is fixed (else you can't tell a read bug from a
+   loader bug). Entity reads (`graph.name(o)` for the object) stay.
+3. **SLM surface debt (H-1).** UGM's intake path DROPPED determiner / multiword-NP surface
+   normalization (`the eagle is a bird` → no fact) and `every X is a Y` no longer derives (returns
+   `no`). The SLM `CONSTRUCTS` (`multiword_def`, `universal`) train on surface UGM no longer parses.
+   Record in `handoff_slm_surface_track.md`; decide with the user whether to (a) update the SLM
+   constructs to the current surface, or (b) restore the normalization in UGM. ~9 tests.
+4. **CPG recognizer + live-joern (H-6).** `test_cpg_scaling`/`_graphson` recognizer drift + the
+   live-Joern test (mark it `slow`). ~6 tests.
+
+**These are CLASSIFY-not-force per the 2026-07-10 ratification** (bench answers need not match the old
+generation; a *nonsensical* answer is a bug, a *different-but-sensible* one is ratified). Several are
+UGM-SURFACE questions (determiners, universals) — decide with the user whether the fix lands here or in
+`ugm`.
 
 ---
 
-## H-0 — Repo split cleanup (2026-07-11)
+## H-0 — Repo split cleanup (2026-07-11) + carve-out rebuild (2026-07-12)
 
 - [x] All harness modules live in `harneskills/` (planning, session, interaction, kb, lint,
   slm, slm_data, procedure, deontic, repl, scenarios, cpg, mode_calls, planning_kb)
-- [x] TUI in `harneskills_tui/`
-- [x] Tests that depend on harness modules in `tests/`
-- [x] `harneskills/__init__.py` re-exports from `ugm` for backward compat + harness symbols
-- [x] `pyproject.toml` depends on `universal-graph-machine`
-- [ ] **Verify benches pass** (`bench/cpg_scaling.py`, `bench/joern_corpus.py`) after split
-- [ ] **Examples verified** — `examples/` use `import harneskills as h`; confirm they run on
-  the split packages
-- [ ] `rewriter.py` in `ugm/ugm/cnl/` is a dev oracle only — tracked for Phase-6 retirement
-  in UGM; no harness code should import it directly
+- [x] TUI in `harneskills_tui/`; tests in `tests/`; `pyproject.toml` depends on `universal-graph-machine`
+- [x] `harneskills/__init__.py` re-exports — REBUILT this session (dead modules removed, Session layer added)
+- [x] `rewriter.py` is fully RETIRED in UGM; no harness code imports it (replaced `_relation_exists`
+  with `cpg._relation_exists`)
+- [ ] **Verify benches** (`bench/cpg_scaling.py`, `bench/joern_corpus.py`) — import-fixed off `rewriter`;
+  recognizer behavior still drifts (Layer-2 item 4)
+- [ ] **Examples verified** — `examples/` still contain the pre-name-demotion `graph.name(r) == pred`
+  read pattern (Layer-2 item 2); confirm they run after the sweep
 
 ---
 
@@ -113,6 +150,15 @@ it is a `<call>` to a registered tool, not a Python conditional.
 ## H-4 — Session & interaction layer
 
 `harneskills/session.py`, `harneskills/interaction.py`, `harneskills/repl.py`.
+
+- **REBUILT 2026-07-12 on the UGM Session layer (§8).** `Session` is now a thin wrapper over
+  `ugm.ingest` / `converse`; it no longer owns reasoning. The bespoke lazy-coref / detection is gone
+  (retired `demand`/`coref_walk`). `submit` → `ingest` → `Outcome` → `LineResult`; `contradictions()`
+  runs the relation-property constraint rules then reads `<contradiction>` markers; `explain()` reads
+  UGM's in-graph support. The `Oracle` now bridges to UGM's mid-chain `ask_user(subj, rel, obj)` (an
+  open-premise yes/no/unknown), NOT coref disambiguation (which is UGM declared rules now).
+  `interaction.py` still provides the oracles + `ask_user_handler` (`CLARIFY_DEFAULT_KIND` survives).
+  NEXT: consider exposing `converse` (non-blocking generator) for the TUI's live event stream.
 
 - **Model routing** (from 2026-07-10 session-handoff): the harness routes between Sonnet and
   Opus based on the judgment requirements of the current task. This policy lives here, not in UGM.

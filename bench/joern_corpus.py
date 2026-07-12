@@ -24,7 +24,7 @@ from __future__ import annotations
 import pathlib
 
 import harneskills as h
-from harneskills import cpg, rewriter
+from harneskills import cpg
 
 FIXTURE = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "joern_corpus_graphson.json"
 
@@ -41,7 +41,7 @@ def _functions(g: h.Graph) -> dict[str, str]:
     mnode = g.nodes_named("method")
     if not mnode:
         return {}
-    meths = [n for n in g.nodes() if rewriter._relation_exists(g, n, "is_a", mnode[0])]
+    meths = [n for n in g.nodes() if cpg._relation_exists(g, n, "is_a", mnode[0])]
     def name(n):
         return next((g.name(o) for r, o in g.relations_from(n) if g.name(r) == "name"), "?")
     return {n: name(n) for n in meths if name(n) not in ("?", "<module>")}
@@ -53,7 +53,7 @@ def _hazards(g: h.Graph) -> list[str]:
         return []
     prov = {h.PROVES, h.USES, h.AXIOM}
     return [n for n in g.nodes()
-            if g.name(n) not in prov and rewriter._relation_exists(g, n, "is_a", haz[0])]
+            if g.name(n) not in prov and cpg._relation_exists(g, n, "is_a", haz[0])]
 
 
 _CACHE: dict | None = None
@@ -70,7 +70,7 @@ def measure() -> dict:
     flagged: set[str] = set()
     for call in _hazards(g):
         for mid, fname in funcs.items():
-            if rewriter._relation_exists(g, mid, "ast_star", call):
+            if cpg._relation_exists(g, mid, "ast_star", call):
                 flagged.add(fname)                         # the mutation's enclosing function(s)
 
     names = sorted(set(funcs.values()))

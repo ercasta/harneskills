@@ -49,6 +49,17 @@ from ugm.dispatch import _ensure
 from ugm.cnl.machine_rules import load_machine_rules
 from ugm.world_model import Graph
 
+
+def _relation_exists(graph: Graph, s_id: str, pname: str, o_id: str) -> bool:
+    """Does a reified relation with predicate `pname` run `s_id -> [rel] -> o_id`? The
+    predicate-aware successor to the retired `rewriter._relation_exists`: after the name-demotion
+    a relation node carries NO name — its predicate is the domain graded key (`graph.predicate`),
+    read here off the `relations_from` cursor (which already filters to relation nodes)."""
+    for r, o in graph.relations_from(s_id):
+        if o == o_id and graph.predicate(r) == pname:
+            return True
+    return False
+
 # The mutator LEXICON — call names that mutate their receiver in place. This is DATA (a lexicon, like
 # the verb catalog), inlined here for the vertical slice; it belongs in the KB as declared
 # `<name> is a mutator` facts. Extend per language/library (list: append/insert/extend/remove/pop/
@@ -197,10 +208,10 @@ def analyze(graph: Graph) -> None:
     # positive frame/hazard recognition (implementation_plan.md Phase 0.5, the "one engine" peel).
     # No provenance is needed — the detector reads derived triples, not `why`/explain, and benches
     # actively filter provenance nodes out — so run_bank's no-provenance path is a clean (cleaner) fit.
-    run_rules(graph, RECOGNIZER_RULES, isa=True)
+    run_rules(graph, RECOGNIZER_RULES)
     if graph.name_count("__next__"):
-        run_rules(graph, JOERN_RECOGNIZER_RULES, isa=True)
-    run_rules(graph, MECHANISM_RULES, isa=True)
+        run_rules(graph, JOERN_RECOGNIZER_RULES)
+    run_rules(graph, MECHANISM_RULES)
 
 
 def _gs_unwrap(x):

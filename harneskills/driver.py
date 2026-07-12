@@ -61,7 +61,7 @@ def drive(graph: Graph, plan: list[Phase], *, registry: dict | None = None,
         # every `drive` caller (session) already discards the return. `seeds` is a spent perf hint under
         # the naive driver (matching is correctness-equivalent whole-graph; walkers §6).
         if phase.stratified:
-            run_rules(graph, rules, tools=registry, isa=True)
+            run_rules(graph, rules, tools=registry)
         else:
             run_bank(graph, rules, tools=registry)
     return journal

@@ -419,7 +419,7 @@ def plan(graph: Graph, rules: list[Rule] = PLANNING_RULES, *,
         # reasoning-parity gate that blocked this is closed: literal head endpoints INTERN to their
         # graph-wide node and reified relations DEDUP (rewriter.resolve_so/_relation_exists), so a
         # downstream rule joins head-derived literals by identity and the `_fingerprint` loop settles.
-        run_rules(graph, bank, provenance=False, tools=tools, isa=True)
+        run_rules(graph, bank, provenance=False, tools=tools)
         if _fingerprint(graph) == before:
             return
 
@@ -584,7 +584,7 @@ def solve(graph: Graph, *, actions: dict | None = None, failures: dict[str, int]
         if goal_satisfied(graph):
             return "done"
         if _replan_pending(graph):                        # control teardown, then retry
-            run_rules(graph, TEARDOWN_RULES, provenance=False, isa=True)   # teardown via DROP_CTRL
+            run_rules(graph, TEARDOWN_RULES, provenance=False)   # teardown via DROP_CTRL
             _clear_replan(graph)
             continue
         return "stuck"                                    # planning quiesced short of the goal

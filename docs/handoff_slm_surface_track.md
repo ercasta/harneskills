@@ -72,6 +72,18 @@ worth chasing — see `CHANGELOG` "SLM PILLAR DONE" (arc history in `attic/hando
 | 2026-07-06 | **Planning operator / state / goal** (fact-shaped) | "make_coffee needs water" → `make_coffee needs water` → `make_coffee --pre--> water`; "we want coffee" → `we want have_coffee` → `<goal> --want--> have_coffee`. Keywords: `needs`/`produces`/`removes`/`costs`/`is priced`/`we have`/`we want`. | `harneskills/planning_kb.py` (`PLANNING_KB_FORMS`, `load_planning_kb`); doc `docs/operator_goal_cnl.md`; corpus `corpus/coffee_kb.cnl` | NOT COVERED — trainable; 7 candidate CONSTRUCTS (one per keyword). Names are single-token identifiers (underscored), so NL paraphrases should keep the identifiers verbatim (copy-through) and vary only the verb/framing (e.g. "brewing needs water", "to get coffee you need water"). |
 | 2026-07-06 | **Procedure declaration** (fact-shaped; PRE-EXISTING form `procedure.PROCEDURE_FORMS`, now exposed in the planning-KB CNL + TUI) | "to brew, get water then add beans then heat" → `to brew get_water then add_beans then heat` → `brew --is_a--> procedure` + a `before`-chain over the step nodes. Keyword: leading `to` + `then`-chain. | `harneskills/procedure.py` (`PROCEDURE_FORMS`, `parse_procedures`); folded into the mixed-KB loader `harneskills/planning_kb.py` (`load_planning_program`); corpus `corpus/barista_kb.cnl`; TUI `/do NAME` | NOT COVERED — trainable; 1 candidate CONSTRUCT. Variadic step list (2+ steps). Single-token underscored step/procedure names → copy identifiers verbatim; vary framing ("to make tea, boil water then steep"). Pairs naturally with the planning operator constructs above (same retrain batch). |
 
+## ⚠ REGRESSIONS — baseline surface UGM's intake NO LONGER parses (2026-07-12, carve-out rebuild)
+
+Not new harness surface — **UGM dropped/changed surface the SLM baseline already trains on.** These
+break `slm_data`/`slm_grader` (`frame_graph` returns empty). This is NOT a retrain item; it is a
+**surface-parity DECISION with the user**: either (a) UGM restores the normalization/derivation, or
+(b) the harness drops these `CONSTRUCTS` and the SLM retrains on the reduced surface.
+
+| Date | Baseline construct | What broke | Evidence | Decision needed |
+|---|---|---|---|---|
+| 2026-07-12 | `multiword_def` (`the {adj} {e} is a {n}`) | UGM's `ingest`/`load_facts`/`load_corpus` no longer strip determiners or decompose a multiword NP — `the eagle is a bird` produces raw `the→next→eagle…` tokens and NO `is_a` fact. `normalize_surface` still exists but is NOT on the intake path. | `frame_graph('the eagle is a bird') == {}` (was `{'eagle is_a bird'}`). Raw `ugm.load_corpus` reproduces it. | (a) UGM re-wires `normalize_surface` into `_recognize`/`load_facts`, or (b) drop `multiword_def` + the determiner assumption. |
+| 2026-07-12 | `universal` (`every {n} is a {m}`) | `every X is a Y` recognizes to a `X every_is_a Y` fact but no longer DERIVES: `is paul a mortal` (paul is a person, every person is a mortal) answers `no`, not `yes`. UGM demos use the `HEAD when` variable-rule form instead. | `ugm.ingest(kb, load_corpus(...).rules, "is paul a mortal") == ['no']`. | (a) UGM restores `every_is_a`→derivation (a `UNIVERSAL_RULES` bank the intake includes), or (b) the harness/SLM migrate universals to `?x is a Y when ?x is a X`. |
+
 ## When to trigger a retrain
 
 Judgment call, not a hard threshold: retrain when the `NOT COVERED` rows represent surface a real

@@ -36,7 +36,7 @@ import sys
 import time
 
 import harneskills as h
-from harneskills import cpg, rewriter
+from harneskills import cpg
 
 sys.setrecursionlimit(20000)
 
@@ -223,7 +223,7 @@ def _count_type(g: h.Graph, type_name: str) -> int:
         return 0
     t = hits[0]
     return sum(1 for n in g.nodes()
-               if g.name(n) not in _PROVENANCE and rewriter._relation_exists(g, n, "is_a", t))
+               if g.name(n) not in _PROVENANCE and cpg._relation_exists(g, n, "is_a", t))
 
 
 def profile(export: dict, n_for: int) -> dict:

@@ -15,7 +15,7 @@ import json
 import pathlib
 
 import harneskills as h
-from harneskills import cpg, rewriter
+from harneskills import cpg
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
@@ -28,7 +28,7 @@ def _load(name):
 
 
 def _has(g, s, p, o):
-    return any(rewriter._relation_exists(g, si, p, oi)
+    return any(cpg._relation_exists(g, si, p, oi)
                for si in g.nodes_named(s) for oi in g.nodes_named(o))
 
 

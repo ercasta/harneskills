@@ -6,8 +6,8 @@ from importlib import import_module
 
 import ugm as _ugm
 from ugm import *  # noqa: F401,F403
-from ugm import external, provenance, retraction, decide, dispatch, coref_walk, asp
-from ugm.cnl import rewriter, forms, surface, authoring, universal, machine_rules, query, rule_graph
+from ugm import external, provenance, retraction, dispatch, intake, focus, rule_control
+from ugm.cnl import forms, surface, authoring, universal, machine_rules, query, rule_graph
 
 from .interaction import (
     Oracle, auto_oracle, scripted_oracle, terminal_oracle,
@@ -45,14 +45,12 @@ for _name, _target in {
     "production_rule": "ugm.production_rule",
     "dispatch": "ugm.dispatch",
     "external": "ugm.external",
-    "demand": "ugm.demand",
     "retraction": "ugm.retraction",
-    "decide": "ugm.decide",
     "provenance": "ugm.provenance",
-    "coref_walk": "ugm.coref_walk",
-    "asp": "ugm.asp",
     "mode_calls": "ugm.mode_calls",
-    "rewriter": "ugm.cnl.rewriter",
+    "intake": "ugm.intake",
+    "focus": "ugm.focus",
+    "rule_control": "ugm.rule_control",
     "surface": "ugm.cnl.surface",
     "universal": "ugm.cnl.universal",
     "forms": "ugm.cnl.forms",
@@ -60,20 +58,19 @@ for _name, _target in {
     "query": "ugm.cnl.query",
     "authoring": "ugm.cnl.authoring",
     "machine_rules": "ugm.cnl.machine_rules",
-    "walker": "ugm.cnl.walker",
 }.items():
     _alias(_name, _target)
 
 _alias("isa", "ugm")
 for _sub in [
-    "attrgraph", "machine", "goal", "apply", "chain", "check", "choose",
-    "suppose", "solve", "walker", "lowering",
+    "attrgraph", "machine", "apply", "chain", "check", "choose",
+    "suppose", "lowering",
 ]:
     _alias(f"isa.{_sub}", f"ugm.{_sub}")
 
 __all__ = list(getattr(_ugm, "__all__", [])) + [
-    "external", "provenance", "retraction", "decide", "dispatch", "coref_walk", "asp",
-    "rewriter", "forms", "surface", "authoring", "universal", "machine_rules", "query", "rule_graph",
+    "external", "provenance", "retraction", "dispatch", "intake", "focus", "rule_control",
+    "forms", "surface", "authoring", "universal", "machine_rules", "query", "rule_graph",
     "Oracle", "auto_oracle", "scripted_oracle", "terminal_oracle",
     "disambiguation_resolver", "ask_user_handler",
     "RuleBank", "KnowledgeBase",

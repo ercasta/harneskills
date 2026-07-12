@@ -17,7 +17,7 @@ import json
 import pathlib
 
 import harneskills as h
-from harneskills import cpg, rewriter
+from harneskills import cpg
 
 FIXTURE = pathlib.Path(__file__).resolve().parent / "fixtures" / "joern_purge_graphson.json"
 
@@ -78,5 +78,5 @@ def test_recognizer_catches_mdi_on_real_joern_lowering():
     haz = g.nodes_named("hazard")
     hazards = sorted(code(n) for n in g.nodes()
                      if haz and g.name(n) not in {h.PROVES, h.USES, h.AXIOM}
-                     and rewriter._relation_exists(g, n, "is_a", haz[0]))
+                     and cpg._relation_exists(g, n, "is_a", haz[0]))
     assert hazards == ["items.remove(x)"], hazards       # only the real MDI bug, in `purge`
