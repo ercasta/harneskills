@@ -21,13 +21,33 @@
 > §8: `ingest` / `converse` / `Outcome` / `Event`, plus `focus.py` / `rule_control.py`). The
 > harness imported all the dead modules and **could not import at all** (0 tests collectable).
 
-**Suite now: 24 passed, ~38 failed** (`python -m pytest -q`, ~80s). Was 0-collectable before this
-session. The rebuild is in two layers; **layer 1 is done, layer 2 is the active work.**
+**Suite now: 24 passed, 38 failed** (`python -m pytest -q`, ~55s). Was 0-collectable before the
+carve-out rebuild. The rebuild is in two layers; **layer 1 is done, layer 2 is the active work.**
+
+> **CLEANUP 2026-07-16 (namespace de-duplication, this session).** Ran the shared `../ugm/.venv`
+> (has both `ugm` and `harneskills` editable). Confirmed the harness source is genuine harness code
+> that imports `ugm.*` directly — the leftover from the old embedded reasoner was a *namespace shim*,
+> not duplicated logic. Done this pass (no behavioural change; suite still 24/38, no new failures):
+> - **`harneskills/__init__.py` SLIMMED** — dropped `from ugm import *` and the ~40-line alias block
+>   that mirrored UGM's whole namespace under `harneskills.*` (`harneskills.authoring`, `.world_model`,
+>   `.query`, `.isa`, `AXIOM`, `run_rules`, the `ugm.external` re-exports, …). It now exports **only
+>   the 45 harness-owned symbols**. The on-top-of-ugm boundary is explicit.
+> - **Consumers repointed to `ugm.*`** — 2 TUI files, 6 tests, and 2 harness-only benches that tests
+>   import (`bench/cpg_scaling.py`, `bench/joern_corpus.py`). e.g. `from harneskills.query import ask`
+>   → `from ugm.cnl.query import ask`; `h.Graph` → `ugm.Graph`. Harness symbols (`h.solve`,
+>   `h.seed_goal`, …) stay on `import harneskills as h`.
+> - **`corpus/walker.cnl` deleted** — the only unreferenced corpus file. The other 15 (byte-identical
+>   to `../ugm/corpus/` but all loaded at runtime by the harness) stay LOCAL by decision: the harness
+>   owns its corpus; matching ugm today is coincidental.
+> - **Bench not deduped** — the 3 diverged files (`coverage_audit`, `proofwriter_coverage`,
+>   `proofwriter_nl`) left as-is; harneskills copy is canonical.
+> - **Env gap noted:** `textual` is NOT installed in `../ugm/.venv`, so `harneskills_tui` can't import
+>   there yet; TUI files were byte-compiled instead. Install `textual==8.2.5` before TUI work.
 
 ### Layer 1 — structural carve-out rebuild (DONE this session)
 - [x] `harneskills/__init__.py` — dropped retired module imports/aliases (`decide`, `coref_walk`,
-  `asp`, `demand`, `walker`, `rewriter`, `goal`, `solve`); re-exports the new Session layer
-  (`ingest`/`converse`/`Outcome`/`Event`/`intake`/`focus`/`rule_control`) via `from ugm import *`.
+  `asp`, `demand`, `walker`, `rewriter`, `goal`, `solve`). **Superseded by the 2026-07-16 slim
+  (above): it no longer re-exports UGM via `from ugm import *`; consumers import `ugm.*` directly.**
 - [x] **`harneskills/session.py` REBUILT on the UGM Session layer** — `Session` is now a THIN
   stateful wrapper over `ugm.ingest`: it holds the KB + accumulated rules + oracle and translates
   an `Outcome` → `LineResult`. The ~350 lines of hand-rolled lazy-coref / contradiction detection
@@ -75,7 +95,8 @@ UGM-SURFACE questions (determiners, universals) — decide with the user whether
 - [x] All harness modules live in `harneskills/` (planning, session, interaction, kb, lint,
   slm, slm_data, procedure, deontic, repl, scenarios, cpg, mode_calls, planning_kb)
 - [x] TUI in `harneskills_tui/`; tests in `tests/`; `pyproject.toml` depends on `universal-graph-machine`
-- [x] `harneskills/__init__.py` re-exports — REBUILT this session (dead modules removed, Session layer added)
+- [x] `harneskills/__init__.py` — REBUILT (dead modules removed) then SLIMMED 2026-07-16 to export
+  only harness-owned symbols; UGM namespace mirroring removed, consumers repointed to `ugm.*`
 - [x] `rewriter.py` is fully RETIRED in UGM; no harness code imports it (replaced `_relation_exists`
   with `cpg._relation_exists`)
 - [ ] **Verify benches** (`bench/cpg_scaling.py`, `bench/joern_corpus.py`) — import-fixed off `rewriter`;
