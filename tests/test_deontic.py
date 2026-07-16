@@ -9,24 +9,25 @@ norm REFUSING to be overridden — both as rule reasoning over the shared graph.
 """
 import pathlib
 
+import ugm
 import harneskills as h
 from harneskills.deontic import (
     load_deontic, _normalize_deontic, parse_deontic_lexicon, _DEFAULT_LEXICON,
 )
-from harneskills.machine_rules import load_machine_rules
+from ugm.cnl.machine_rules import load_machine_rules
 
 _POLICY = load_machine_rules(
     (pathlib.Path(__file__).resolve().parent.parent / "corpus" / "policy.cnl")
     .read_text(encoding="utf-8"))
 
 
-def _marks(g: h.Graph, pred: str) -> set[str]:
+def _marks(g: ugm.Graph, pred: str) -> set[str]:
     """Subjects `s` with an `s --pred--> _` relation (read straight off `relations_from`)."""
     return {g.name(n) for n in g.nodes()
             for r, _ in g.relations_from(n) if g.name(r) == pred}
 
 
-def _rel(g: h.Graph, s: str, p: str, o: str) -> bool:
+def _rel(g: ugm.Graph, s: str, p: str, o: str) -> bool:
     return any(g.name(rn) == p and g.name(on) == o
               for n in g.nodes_named(s) for rn, on in g.relations_from(n))
 
@@ -34,7 +35,7 @@ def _rel(g: h.Graph, s: str, p: str, o: str) -> bool:
 # --- the surface parses to the intended deontic facts ------------------------------------
 
 def test_deontic_surface_folds_to_facts_with_source():
-    g = load_deontic(h.Graph(), """
+    g = load_deontic(ugm.Graph(), """
         don't buy
         it is good to trade
         better not to sell
@@ -70,7 +71,7 @@ def test_newly_declared_phrasing_folds_with_no_code_change():
     # Author a NEW multi-word deontic phrasing inline (`steer clear of`) and use it in the same
     # KB. It must fold exactly like a built-in phrasing — the proof the lexicon is data, not
     # hardwired forms. A leading source word still applies to the new frame, too.
-    g = load_deontic(h.Graph(), """
+    g = load_deontic(ugm.Graph(), """
         steer clear of means forbidden
         steer clear of buy
         today steer clear of sell
@@ -81,31 +82,31 @@ def test_newly_declared_phrasing_folds_with_no_code_change():
 
 def test_new_phrasing_drives_exclusion_end_to_end():
     # the declared phrasing flows all the way to operator exclusion via the SAME machinery.
-    g = load_deontic(h.Graph(), """
+    g = load_deontic(ugm.Graph(), """
         avoid means forbidden
         buy_online is a buy
         avoid buy
     """)
-    h.run_rules(g, _POLICY, provenance=False)
+    ugm.run_rules(g, _POLICY, provenance=False)
     assert _marks(g, "excluded") == {"buy_online"}
 
 
 def test_outranks_line_keeps_its_leading_source_word():
     # `today outranks standing` must NOT lose its `today` to source-stripping (it is a priority
     # fact, not a today-sourced advice). Regression for the source-detection guard.
-    g = load_deontic(h.Graph(), "today outranks standing")
+    g = load_deontic(ugm.Graph(), "today outranks standing")
     assert _rel(g, "today", "outranks", "standing")
 
 
 # --- prohibition excludes an action class's operators ------------------------------------
 
 def test_plain_prohibition_excludes_operators():
-    g = load_deontic(h.Graph(), """
+    g = load_deontic(ugm.Graph(), """
         buy_at_shop is a buy
         buy_online is a buy
         don't buy
     """)
-    h.run_rules(g, _POLICY, provenance=False)
+    ugm.run_rules(g, _POLICY, provenance=False)
     assert _marks(g, "excluded") == {"buy_at_shop", "buy_online"}  # both buy-operators ruled out
     assert _marks(g, "overridden") == set()                        # nothing overrides it
 
@@ -115,13 +116,13 @@ def test_plain_prohibition_excludes_operators():
 def test_today_advice_overrides_standing_prohibition():
     # standing "don't sell" vs today "it's good to sell"; today outranks standing -> sell is
     # overridden, so its operator is NOT excluded (selling is back on the table today).
-    g = load_deontic(h.Graph(), """
+    g = load_deontic(ugm.Graph(), """
         dump_singles is a sell
         don't sell
         today it is good to sell
         today outranks standing
     """)
-    h.run_rules(g, _POLICY, provenance=False)
+    ugm.run_rules(g, _POLICY, provenance=False)
     assert "sell" in _marks(g, "overridden")
     assert _marks(g, "excluded") == set()
 
@@ -129,25 +130,25 @@ def test_today_advice_overrides_standing_prohibition():
 def test_inviolable_law_refuses_to_be_overridden():
     # a law-sourced prohibition that only `today outranks standing` covers is NOT overridden by a
     # today encouragement -> its operator stays excluded (the goal would go honestly `stuck`).
-    g = load_deontic(h.Graph(), """
+    g = load_deontic(ugm.Graph(), """
         launder_money is a launder
         law never launder
         today it is good to launder
         today outranks standing
     """)
-    h.run_rules(g, _POLICY, provenance=False)
+    ugm.run_rules(g, _POLICY, provenance=False)
     assert _marks(g, "overridden") == set()
     assert _marks(g, "excluded") == {"launder_money"}
 
 
-def _chosen(g: h.Graph) -> set[str]:
+def _chosen(g: ugm.Graph) -> set[str]:
     return _marks(g, "chosen")
 
 
-def _cards_problem(deontic: str) -> h.Graph:
+def _cards_problem(deontic: str) -> ugm.Graph:
     """Two operators reaching one goal (`have_card`) — buy at the shop or trade with a stranger —
     plus whatever deontic policy `deontic` declares. The planner runs with the policy bank."""
-    g = h.Graph()
+    g = ugm.Graph()
     h.seed_operator(g, "buy_at_shop", add=["have_card"])
     h.seed_operator(g, "trade_stranger", add=["have_card"])
     h.seed_state(g, [])
@@ -166,7 +167,7 @@ def test_prohibition_removes_operator_from_the_plan():
 def test_prohibition_can_make_the_goal_honestly_stuck():
     # when the ONLY operator reaching the goal is forbidden, the run ends `stuck` with nothing
     # chosen — a real, auditable outcome (not a silent workaround).
-    g = h.Graph()
+    g = ugm.Graph()
     h.seed_operator(g, "buy_at_shop", add=["have_card"])
     h.seed_state(g, [])
     h.seed_goal(g, "have_card")
@@ -193,12 +194,12 @@ def test_law_can_be_overridden_only_when_it_is_outranked():
     # priority is authored DATA: add `emergency outranks law` + an emergency encouragement and the
     # very same law prohibition now yields — proving the refusal above is the ordering, not a
     # hardcoded special-case for `law`.
-    g = load_deontic(h.Graph(), """
+    g = load_deontic(ugm.Graph(), """
         launder_money is a launder
         law never launder
         emergency it is good to launder
         emergency outranks law
     """)
-    h.run_rules(g, _POLICY, provenance=False)
+    ugm.run_rules(g, _POLICY, provenance=False)
     assert "launder" in _marks(g, "overridden")
     assert _marks(g, "excluded") == set()

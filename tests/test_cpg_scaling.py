@@ -6,14 +6,14 @@ recognizer over-recognizes on real loop bodies and manufactures false-positive h
 on tiny deterministic reproducers so a recognizer fix makes the precision finding visibly flip while the
 true-positive and scaling guards must stay green. See memory `finding-cpg-scaling-precision`.
 """
-import harneskills as h
+import ugm
 from harneskills import cpg
 
 from bench.cpg_scaling import _count_type, ast_to_cpg
 
 
-def _analyze(src: str) -> h.Graph:
-    g = h.Graph()
+def _analyze(src: str) -> ugm.Graph:
+    g = ugm.Graph()
     export, _, _ = ast_to_cpg(src, "t")
     cpg.load_cpg(g, export)
     cpg.analyze(g)

@@ -14,7 +14,7 @@ de-risks the valuable half — CPG structure -> frames -> hazard.
 import json
 import pathlib
 
-import harneskills as h
+import ugm
 from harneskills import cpg
 
 FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
@@ -22,7 +22,7 @@ FIXTURES = pathlib.Path(__file__).resolve().parent / "fixtures"
 
 def _load(name):
     export = json.loads((FIXTURES / f"{name}.json").read_text())
-    g = h.Graph()
+    g = ugm.Graph()
     ids = cpg.load_cpg(g, export)
     return g, ids
 

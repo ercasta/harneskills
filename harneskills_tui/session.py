@@ -41,6 +41,7 @@ import traceback
 from pathlib import Path
 from typing import Any, Callable, TYPE_CHECKING
 
+import ugm
 import harneskills as h
 from harneskills import planning
 
@@ -165,7 +166,7 @@ def _load_kb_module(path_str: str):
 _OP_KINDS = {"pre", "add", "del", "cost"}
 
 
-def _operator_rels(graph: h.Graph, op_id: str) -> dict[str, list[str]]:
+def _operator_rels(graph: ugm.Graph, op_id: str) -> dict[str, list[str]]:
     """`{"pre": [...], "add": [...], "del": [...], "cost": [...]}` for an operator node."""
     out: dict[str, list[str]] = {"pre": [], "add": [], "del": [], "cost": []}
     for r, o in graph.relations_from(op_id):
@@ -175,7 +176,7 @@ def _operator_rels(graph: h.Graph, op_id: str) -> dict[str, list[str]]:
     return out
 
 
-def _operator_ids(graph: h.Graph) -> dict[str, str]:
+def _operator_ids(graph: ugm.Graph) -> dict[str, str]:
     """`{operator_name: node_id}` for every node authored as an operator (has pre/add/del/cost)."""
     ops: dict[str, str] = {}
     for n in graph.nodes():
@@ -184,7 +185,7 @@ def _operator_ids(graph: h.Graph) -> dict[str, str]:
     return ops
 
 
-def _now_true(graph: h.Graph) -> list[str]:
+def _now_true(graph: ugm.Graph) -> list[str]:
     """Condition names currently observed true: `<now> --true--> C`."""
     out: list[str] = []
     for now in graph.nodes_named("<now>"):
@@ -194,7 +195,7 @@ def _now_true(graph: h.Graph) -> list[str]:
     return sorted(set(out))
 
 
-def _goal_conditions(graph: h.Graph) -> list[str]:
+def _goal_conditions(graph: ugm.Graph) -> list[str]:
     """Condition names the goal wants: `<goal> --want--> C`."""
     out: list[str] = []
     for goal in graph.nodes_named("<goal>"):
@@ -211,7 +212,7 @@ class _GraphDMView:
     exposes no entity scopes (the current substrate has none), so the screen's scope loop is a
     no-op. It quacks like the old DomainModel just enough for the inspection commands."""
 
-    def __init__(self, graph: h.Graph) -> None:
+    def __init__(self, graph: ugm.Graph) -> None:
         self._g = graph
 
     def keys(self) -> list[str]:
@@ -227,7 +228,7 @@ class _GraphDMView:
 class _GraphKBView:
     """Read-only KB view: operator names -> a short 'pre → add' descriptor (for `?`/`/dm`)."""
 
-    def __init__(self, graph: h.Graph) -> None:
+    def __init__(self, graph: ugm.Graph) -> None:
         self._g = graph
 
     def _ops(self) -> dict[str, str]:
@@ -262,7 +263,7 @@ def _short(v: object) -> str:
 class HarnessRunner:
     def __init__(self, screen: "CLIScreen") -> None:
         self._screen = screen
-        self._graph: h.Graph | None = None
+        self._graph: ugm.Graph | None = None
         self._dm: _GraphDMView | None = None
         self._kbv: _GraphKBView | None = None
         self._stop_flag = threading.Event()
@@ -434,7 +435,7 @@ class HarnessRunner:
             h.seed_state(graph, list(dm_seed.keys()))
         return graph, actions, failures
 
-    def _load_cnl(self, kb_path: str) -> h.Graph:
+    def _load_cnl(self, kb_path: str) -> ugm.Graph:
         text = Path(kb_path).expanduser().resolve().read_text(encoding="utf-8")
         try:
             from harneskills.planning_kb import load_planning_program  # type: ignore
@@ -450,7 +451,7 @@ class HarnessRunner:
         return graph
 
     # ---- step instrumentation --------------------------------------------
-    def _wrap_actions(self, graph: h.Graph, actions: dict, failures: dict) -> dict:
+    def _wrap_actions(self, graph: ugm.Graph, actions: dict, failures: dict) -> dict:
         """Wrap EVERY operator so acting emits a StepEvent + honors step-mode / stop.
 
         The wrapper is what `planning._perform_op` calls for any op named in the returned
@@ -465,7 +466,7 @@ class HarnessRunner:
     def _make_wrapper(self, name: str, real: Callable | None, failures: dict) -> Callable:
         screen = self._screen
 
-        def wrapper(g: h.Graph, op_id: str) -> None:
+        def wrapper(g: ugm.Graph, op_id: str) -> None:
             if self._stop_flag.is_set():
                 raise _Stopped()
 

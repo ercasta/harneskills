@@ -23,20 +23,20 @@ from __future__ import annotations
 
 import pathlib
 
-import harneskills as h
+import ugm
 from harneskills import cpg
 
 FIXTURE = pathlib.Path(__file__).resolve().parent.parent / "tests" / "fixtures" / "joern_corpus_graphson.json"
 
 
-def _analyzed_graph() -> h.Graph:
-    g = h.Graph()
+def _analyzed_graph() -> ugm.Graph:
+    g = ugm.Graph()
     cpg.load_cpg(g, cpg.parse_graphson(FIXTURE.read_text(encoding="utf-8")))
     cpg.analyze(g)
     return g
 
 
-def _functions(g: h.Graph) -> dict[str, str]:
+def _functions(g: ugm.Graph) -> dict[str, str]:
     """{method-node-id: function name} for every named function (excludes joern's <module> method)."""
     mnode = g.nodes_named("method")
     if not mnode:
@@ -47,11 +47,11 @@ def _functions(g: h.Graph) -> dict[str, str]:
     return {n: name(n) for n in meths if name(n) not in ("?", "<module>")}
 
 
-def _hazards(g: h.Graph) -> list[str]:
+def _hazards(g: ugm.Graph) -> list[str]:
     haz = g.nodes_named("hazard")
     if not haz:
         return []
-    prov = {h.PROVES, h.USES, h.AXIOM}
+    prov = {ugm.PROVES, ugm.USES, ugm.AXIOM}
     return [n for n in g.nodes()
             if g.name(n) not in prov and cpg._relation_exists(g, n, "is_a", haz[0])]
 

@@ -35,6 +35,7 @@ import pathlib
 import sys
 import time
 
+import ugm
 import harneskills as h
 from harneskills import cpg
 
@@ -214,10 +215,10 @@ def ast_to_cpg(source: str, prefix: str) -> tuple[dict, int, int]:
 # Profiling one graph
 # ---------------------------------------------------------------------------
 
-_PROVENANCE = {h.PROVES, h.USES, h.AXIOM}   # provenance nodes spuriously inherit a derived type
+_PROVENANCE = {ugm.PROVES, ugm.USES, ugm.AXIOM}   # provenance nodes spuriously inherit a derived type
 
 
-def _count_type(g: h.Graph, type_name: str) -> int:
+def _count_type(g: ugm.Graph, type_name: str) -> int:
     hits = g.nodes_named(type_name)
     if not hits:
         return 0
@@ -227,7 +228,7 @@ def _count_type(g: h.Graph, type_name: str) -> int:
 
 
 def profile(export: dict, n_for: int) -> dict:
-    g = h.Graph()
+    g = ugm.Graph()
     t0 = time.perf_counter()
     cpg.load_cpg(g, export)
     t_load = time.perf_counter() - t0

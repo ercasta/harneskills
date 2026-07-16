@@ -16,7 +16,7 @@ CAPTURED real `pysrc2cpg` + `joern-export --format=graphson` export (tests/fixtu
 import json
 import pathlib
 
-import harneskills as h
+import ugm
 from harneskills import cpg
 
 FIXTURE = pathlib.Path(__file__).resolve().parent / "fixtures" / "joern_purge_graphson.json"
@@ -42,7 +42,7 @@ def test_parse_graphson_decodes_real_export():
 
 def test_facts_fold_in_from_real_export():
     # the real normalized export folds into S P O facts like any CPG (no hand-authoring).
-    g = h.Graph()
+    g = ugm.Graph()
     cpg.load_cpg(g, _normalized())
     assert g.nodes_named("control_structure")          # CONTROL_STRUCTUREs present as is_a facts
     assert g.nodes_named("remove")                     # the mutator call name interned
@@ -67,7 +67,7 @@ def test_recognizer_catches_mdi_on_real_joern_lowering():
     # protocol + fieldAccess receivers). On the real export of sample.py it catches EXACTLY the `purge`
     # mutate-during-iteration bug and stays silent on the three safe functions: the copy idiom
     # (safe_copy), the accumulator (accumulate), and read-only (show).
-    g = h.Graph()
+    g = ugm.Graph()
     cpg.load_cpg(g, _normalized())
     cpg.analyze(g)
     # 3 iterated collections recognized (purge:items, accumulate:rows, show:items); safe_copy iterates a
@@ -77,6 +77,6 @@ def test_recognizer_catches_mdi_on_real_joern_lowering():
         return next((g.name(o) for r, o in g.relations_from(n) if g.name(r) == "code"), "")
     haz = g.nodes_named("hazard")
     hazards = sorted(code(n) for n in g.nodes()
-                     if haz and g.name(n) not in {h.PROVES, h.USES, h.AXIOM}
+                     if haz and g.name(n) not in {ugm.PROVES, ugm.USES, ugm.AXIOM}
                      and cpg._relation_exists(g, n, "is_a", haz[0]))
     assert hazards == ["items.remove(x)"], hazards       # only the real MDI bug, in `purge`

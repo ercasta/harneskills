@@ -24,7 +24,7 @@ from .messages import (
 )
 from .modals import LogViewModal
 from .profiles import _load_profiles, _save_profiles
-from harneskills.world_model import WorldModel
+from ugm.world_model import WorldModel
 from .session import HarnessRunner, SessionLog, parse_goal_text, parse_value, scan_corpus_kbs
 from .widgets import CommandInput, CommandSuggestions
 

@@ -6,9 +6,10 @@ bridge into the planning/policy layer.
 """
 import pathlib
 
+import ugm
 import harneskills as h
-from harneskills.authoring import load_corpus
-from harneskills.query import ask
+from ugm.cnl.authoring import load_corpus
+from ugm.cnl.query import ask
 from harneskills.scenarios import (
     SOLVE_POLICY, chosen_operators, load_cards_kb, _transfer_facts, parse_scenarios, run_scenario,
 )
@@ -29,7 +30,7 @@ def _value_kb():
         blastoise is rare
         pikachu is in_demand
     """)
-    journal = h.run_rules(g, rules)
+    journal = ugm.run_rules(g, rules)
     return g, rules, journal
 
 

@@ -23,8 +23,9 @@ The specific-card KB is now fully CNL (`corpus/cards_frontier_kb.cnl`, loaded by
 """
 import pathlib
 
+import ugm
 import harneskills as h
-from harneskills.authoring import load_rules
+from ugm.cnl.authoring import load_rules
 from harneskills.deontic import load_deontic
 from harneskills.scenarios import POLICY_RULES, chosen_operators, load_cards_kb
 
@@ -40,11 +41,11 @@ _BRIDGE = load_rules("""
 _RULES = _BRIDGE + POLICY_RULES
 
 
-def _marks(g: h.Graph, pred: str) -> set[str]:
+def _marks(g: ugm.Graph, pred: str) -> set[str]:
     return {g.name(n) for n in g.nodes() for r, _ in g.relations_from(n) if g.name(r) == pred}
 
 
-def _has_norm(g: h.Graph, polarity: str, action: str, scope: str) -> bool:
+def _has_norm(g: ugm.Graph, polarity: str, action: str, scope: str) -> bool:
     """A reified object-scoped norm node with the given polarity/action/scope relations."""
     for n in g.nodes():
         rels = {(g.name(r), g.name(o)) for r, o in g.relations_from(n)}
@@ -53,7 +54,7 @@ def _has_norm(g: h.Graph, polarity: str, action: str, scope: str) -> bool:
     return False
 
 
-def _build() -> h.Graph:
+def _build() -> ugm.Graph:
     """The specific-card sub-domain, loaded entirely from CNL (operators over named cards +
     `acts_on` links + classes + an object-scoped norm + card facts)."""
     return load_cards_kb(_FRONTIER_KB)
@@ -77,14 +78,14 @@ def test_value_reasoning_drives_a_value_based_goal():
 def test_object_scoped_surface_folds_and_reifies():
     # the lexicon-generated object-scoped form (deontic.py) folds `don't sell rare cards` and the
     # transfer REIFIES it into a norm node carrying polarity/action/scope (+ source).
-    g = load_deontic(h.Graph(), "don't sell rare cards")
+    g = load_deontic(ugm.Graph(), "don't sell rare cards")
     assert _has_norm(g, "forbidden", "sell", "rare")
 
 
 def test_new_phrasing_gives_object_scoped_for_free():
     # a NEWLY declared phrasing yields the object-scoped frame too, with no code change — the proof
     # the object-scoped form is lexicon-generated, not hardcoded.
-    g = load_deontic(h.Graph(), "avoid means forbidden\navoid selling risky cards")
+    g = load_deontic(ugm.Graph(), "avoid means forbidden\navoid selling risky cards")
     assert _has_norm(g, "forbidden", "selling", "risky")
 
 
