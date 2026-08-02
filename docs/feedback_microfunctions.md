@@ -1,9 +1,18 @@
-# Feedback from HarneSkills — the `microfunctions` engine
+# Feedback from HarneSkills — the UGM engine
 
-Collected 2026-08-02 while assessing HarneSkills' migration onto `microfunctions/`. Engine at
+> **✅ ALL FIVE ACTIONABLE ITEMS ARE ANSWERED — closed 2026-08-02 against `ugm` @ `2a7589b`.** Upstream
+> acted on §1, §2, §3, §6 and §7, and §4 was ours to close. Kept in full rather than deleted, because
+> the *repros* are still the cheapest description of each behaviour and slices 2.5–5 are built on
+> them. Each section now opens with what shipped. See `migration_to_microfunctions.md` §8 for what it
+> unblocks.
+>
+> ⚠ **The package is now `ugm`, not `microfunctions`** (upstream `2a7589b`). Every repro below has
+> been updated; they were verified as written.
+
+Collected 2026-08-02 while assessing HarneSkills' migration onto the new engine. Engine at
 `581de14`, `universal-graph-machine` 0.3.0, installed editable, Python 3.13, Windows. Same spirit and
 format as `../pystrider/docs/feedback_microfunctions.md`: every item has a minimal repro that imports
-**only** `microfunctions`, ordered by what it would be worth to us.
+**only** the engine, ordered by what it would be worth to us.
 
 **Stated as hypotheses, not findings.** We reason from the outside. Each item separates *what we
 measured* — a repro output we stand behind — from *what we think it means*, which you should check.
@@ -25,6 +34,8 @@ and where a UI has to render every refusal to a human who did not write the pars
 
 Evidence base: `experiments/cards_on_microfunctions.py` in our repo — the card-trader domain from our
 old corpus, re-expressed on the new engine. **9 of 9 scenarios reproduce their recorded outcomes.**
+✅ **Re-run after §3 shipped: 10 of 10**, the tenth being a case that only became expressible once
+arbitration moved into the engine (see §3's closing note).
 
 ---
 
@@ -52,6 +63,13 @@ report whether the thing is any good.
 
 ## 1. ⭐ A guideline is silently inert unless the caller passes `rank=` — the one that cost us a wrong answer
 
+> ✅ **SHIPPED.** `driver.pursue` now emits a `RuntimeWarning` naming the count when guidelines exist
+> and `rank=` was not passed (`driver._warn_if_advice_is_inert`). They took the first of our two
+> suggested shapes and kept `rank=` explicit, which is the right call for the reason they give: a
+> custom ranker is taken at its word, so it cannot know whether one consults guidelines.
+> ⚠ **For us:** the warning is the thing to *render* — a TUI that swallows `RuntimeWarning` re-creates
+> the exact silence this fixed. Note it in slice 3.
+
 **Severity: high for us**, because it is a *silent* wrong answer on the surface a language model writes
 to, and that is the exact failure mode the closed CNL exists to prevent.
 
@@ -60,8 +78,8 @@ nothing, unless `pursue` was called with `rank=guideline.ranker(g)`. Same graph,
 advice; only the call differs:
 
 ```python
-from microfunctions import asm, driver as D, guideline as GL, intake as I, thread as T, types as TY
-from microfunctions.graph import Graph
+from ugm import asm, driver as D, guideline as GL, intake as I, thread as T, types as TY
+from ugm.graph import Graph
 
 def world():
     g = Graph()
@@ -111,6 +129,9 @@ that emits a perfectly good `prefer` block and sees no effect has no way to tell
 
 ## 2. A multi-block `read` is refused with a diagnostic that blames the wrong thing
 
+> ✅ **SHIPPED.** A second block header is now named as one — *"…looks like a second block; `read`
+> takes ONE block per call"* (`intake.py:854`). Same exception type, only the message differs.
+
 **Severity: medium.** Cheap to fix, and it is on the border a human reads.
 
 **Measured.** `intake.read` takes one block per call — documented in `cnl.md` §0, and we accept the
@@ -118,8 +139,8 @@ design. But a second, *well-formed* block header is reported as though its **con
 closed vocabulary, identically to actual garbage:
 
 ```python
-from microfunctions import intake as I
-from microfunctions.graph import Graph
+from ugm import intake as I
+from ugm.graph import Graph
 
 g = Graph()
 try:  I.read(g, 'type a:\n    x = 1\n\ntype b:\n    y = 2\n')
@@ -149,7 +170,38 @@ their first multi-block file, and a UI has to render this message to someone who
 
 ## 3. ⭐⭐ The design question: is there a home for a DEFEASIBLE prohibition?
 
+> ✅ **ANSWERED: YES, AND IN DATA. `ugm/norm.py`.** Both halves of our question got an answer, and the
+> second one — *should the composition be data the engine reads?* — is the one that mattered. The
+> user's ruling, quoted in their module docstring: *"Anything expressable should be in scope; we can
+> decide the HOW, but not the whether. And these things must be in data, not Python, otherwise we start
+> creating islands."*
+>
+> **The HOW is better than what we asked for.** We expected a new force and would have accepted one.
+> Instead: **a norm's source is its speaker**, so arbitration is `discourse.authority` — the ranking
+> already built for multi-party retraction — with no norm-specific notion of strength at all.
+> `norm.declare(action, stance, source, force)` where force is `defeasible` | `inviolable`;
+> `norm.settle(action)` arbitrates; `norm.apply(g, goal)` writes **ordinary `never` constraints**, so
+> `goal.breached`, `relevance` and `why` learn nothing new and there is no fourth force in the planner.
+> ⭐ They also took our warning about the shape we did *not* want, and say so in the docstring.
+> ⚠ An unranked conflict raises `norm.Undecidable` naming both sources rather than breaking the tie.
+>
+> **Measured on our side, and this is the close-out.** `prohibitions()` is deleted from the probe and
+> replaced by `declare_norms()`, which declares and ranks and decides nothing. The auditability we said
+> was the actual loss is repaid in full — `norm.explain` answers the exact question our old engine
+> could and the Python could not:
+>
+> ```
+> sell_rare: permit — today (today favours sell); overriding standing's forbid; overriding caution's forbid
+> counterfeit_card: forbid — law (the law says not to counterfeit), inviolable; overriding today's permit
+> ```
+>
+> ⭐ And it bought a scenario we did not have: `risk_cut_defeated_by_today`, where two forbids from two
+> sources lose to one permit from a source outranking both. Under `prohibitions()` that case was a
+> Python guard (`op not in encouraged`) and so untestable as *behaviour*; it is now the engine's.
+> **This closes migration §7.2 and unblocks slice 2 to commit to a shape.**
+
 **Not a bug — a question, and the only thing our probe found that did not survive the move.**
+*(Kept below as filed. The problem statement is still the clearest description of what `norm.py` is for.)*
 
 **What we measured.** Re-expressing our card-trader domain, everything landed as data except norm
 arbitration, which became **~17 lines of Python** on the authoring path. The domain has three
@@ -206,6 +258,14 @@ nobody spends an afternoon reproducing a regression against a deleted parser.
 
 ## 6. ⭐⭐ Expose the per-family body-line FORMS as data, so completion cannot rot
 
+> ✅ **SHIPPED, exactly as asked.** `intake.FORMS` (a dict) and `intake.forms_for(family)`, and every
+> "vocabulary is closed" refusal renders **from** that table — so the error message and the completion
+> list are the same object, which was the whole point. Keys are family names as they appear in
+> refusals: `goal`, `type`, `advice`, `method`, `method step`, `criterion`, `condition`, `question` —
+> ⚠ **families, not verbs**, because a force pair shares one body.
+> **This unblocks rung 3 of the intake ladder and half of slice 5. There is now no reason to copy the
+> grammar, and the standing instruction not to copy it holds.**
+
 > **§6 and §7 were added 2026-08-02, after our scope sharpened, and they are now our highest-value
 > asks — above §1.** HarneSkills' job is **making your intake surface writable**: autocompletion, a
 > language model drafting CNL, live validation, name pickers. Everything below follows from that one
@@ -261,6 +321,13 @@ already have, reachable by name.
 ---
 
 ## 7. ⭐ `resolve` should carry its candidates on the ambiguous refusal
+
+> ✅ **SHIPPED.** `intake.Ambiguous(Unreadable)` carries `.candidates` and `.name`. It is a subclass, so
+> every `except Unreadable` still catches it and the refusal message is unchanged. ⭐ They also made
+> the subclass survive `read`'s re-wrap, with a comment saying that is where it would otherwise be
+> lost — the candidates are collected and then thrown away. That was the failure mode we would have
+> hit and not diagnosed.
+> **This unblocks rung 4 — the ambiguity picker — and the rest of slice 5.**
 
 **Severity: high for us, tiny for you** — and there is precedent, since you did exactly this for
 pystrider's unresolved-roles case (their §3).

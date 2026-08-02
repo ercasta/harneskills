@@ -1,4 +1,10 @@
-# Migration — HarneSkills onto UGM's microfunctions engine
+# Migration — HarneSkills onto the UGM engine
+
+> **⭐⭐⭐ UPDATED 2026-08-02 (evening) — READ §8 FIRST.** Upstream restructured again and, in the same
+> pass, answered every ask we filed. Two things changed for this document: **the package is `ugm`, not
+> `microfunctions`** (so every module path below reads `ugm.x`), and **slices 5 and 2's open shape are
+> both unblocked**. §8 is the delta; the body below is unchanged except for module paths and is still
+> the plan.
 
 > **Status: ASSESSMENT + PROPOSED STRATEGY (2026-08-02).** Supersedes the "NEXT STEP" section of
 > `docs/implementation_plan.md`, which is now historical: it plans Layer-2 work against an engine
@@ -22,9 +28,11 @@
 
 ## 1. What actually changed upstream
 
-`../ugm` retired the `ugm/` package outright (and `units/` with it) and replaced it with
-`microfunctions/` — ~3,600 lines, no dependencies, verified by `python -m microfunctions.selftest`
-rather than pytest. From their `HANDOFF.md`:
+`../ugm` retired the old `ugm/` package outright (and `units/` with it) and replaced it with
+`microfunctions/` — no dependencies, verified by a single selftest runner rather than pytest.
+⚠ **It has since been renamed back to `ugm/`** (upstream `2a7589b`, 2026-08-02 evening) and is now
+~21,000 lines; the rename is a pure move, so `python -m ugm.selftest` is the command and `ugm.x` is
+the import. See §8. From their `HANDOFF.md`:
 
 > The bet was always **content as data**. It was never **pattern matching as the execution model**.
 > Those two had been welded together since the beginning, and essentially all of this project's
@@ -38,7 +46,7 @@ Concretely, for us:
 | forward chaining to a fixpoint (`run_rules`, `run_bank`, `stratify`) | backward chaining over **return types** into a lazy plan |
 | open CNL: assertions, rules, universals, coref, determiners | a **closed 8-verb block CNL** — `goal`/`ask`/`why`/`plan`, `type`, `prefer`/`avoid`, `method`/`procedure`, `criterion`/`directive`, `what`/`where`/`when` |
 | precondition/effect authored as facts (`X needs Y`, `X produces Y`) | precondition = **parameter type**, effect = **return type**; a rule is a cast |
-| `ugm.world_model.Graph` — label-less attribute graph | `microfunctions.graph.Graph` — named edges, ordered targets, edge properties, reverse index, undo journal |
+| `ugm.world_model.Graph` — label-less attribute graph | `ugm.graph.Graph` — named edges, ordered targets, edge properties, reverse index, undo journal |
 
 The two CNL-surface regressions we filed in `docs/ugm_surface_regressions.md` (determiner
 normalization, `every X is a Y`) are **moot**: that whole surface is gone by design. That document
@@ -50,14 +58,17 @@ should be marked closed-as-obsolete rather than chased.
 `../ugm/.venv` no longer resolves `ugm`, `microfunctions`, `harneskills` *or* `textual`, so the suite
 is **0-collectable**, not "24 passed / 38 failed" as the implementation plan records.
 
-**Old imports, and whether anything succeeds them:**
+**Old imports, and whether anything succeeds them.** ⚠ **The rename makes this table a trap:** since
+the new package is *also* called `ugm`, `ugm.intake` and `ugm.dispatch` appear on both sides and are
+**different modules with different shapes**, not the same one surviving. Read the left column as the
+pre-2026-07 `ugm` and the right as today's.
 
 | old import | successor |
 |---|---|
-| `ugm.world_model` (`Graph`, `WorldModel`) | `microfunctions.graph.Graph` — **different data model**, not a rename |
-| `ugm.intake` (`ingest`, `converse`, `Outcome`, `Event`) | `microfunctions.intake` (`read`, `read_goal`, `respond`) + `thread.py` — different shapes |
-| `ugm.cnl.query.ask` | `microfunctions.query.ask` / `settle` / `account` — different verdict shape |
-| `ugm.dispatch`, `ugm.external` | `microfunctions.dispatch` — the one door effects leave by; re-derive, don't port |
+| `ugm.world_model` (`Graph`, `WorldModel`) | `ugm.graph.Graph` — **different data model**, not a rename |
+| `ugm.intake` (`ingest`, `converse`, `Outcome`, `Event`) | `ugm.intake` (`read`, `read_goal`, `respond`) + `thread.py` — different shapes |
+| `ugm.cnl.query.ask` | `ugm.query.ask` / `settle` / `account` — different verdict shape |
+| `ugm.dispatch`, `ugm.external` | `ugm.dispatch` — the one door effects leave by; re-derive, don't port |
 | `ugm.production_rule` (`Pat`, `Rule`, `Firing`, `is_var`, …) | **none — deleted** |
 | `ugm.cnl.authoring` (`run_rules`, `load_facts`, `load_rules`, `load_corpus`, `stratify`) | **none — deleted** |
 | `ugm.lowering.run_bank` | **none — deleted** |
@@ -156,7 +167,7 @@ for?* — and then goes further, because the leftovers §3 was still holding are
 enough to demo". The centre of gravity moves to slices 3 and 4, which were the tail of the plan and
 are now the product. And the acceptance question for the whole migration becomes a UI question:
 *can a person open a thread, pose a goal, watch it get planned, see why a branch was refused, and
-author a fix — without reading `microfunctions/` source?* Nothing today can do that.
+author a fix — without reading `ugm/` source?* Nothing today can do that.
 
 ## 3b. Reorientation — intake is the product
 
@@ -347,11 +358,11 @@ rather than a Python function, and that is a design decision, not a detail.
   prevent — worth reporting upstream, since the refusal discipline stops at the parser here.
 
 **Slice 1 — the seam and the skeleton.**
-`harness/mf.py` as the single import surface onto `microfunctions` (pystrider's `strider/mf.py`
+`harness/mf.py` as the single import surface onto `ugm` (pystrider's `strider/mf.py`
 pattern — one file absorbs upstream churn, which given a CHANGELOG this active is not optional).
 `harneskills/` → `attic/`. `pyproject.toml`: bump the `universal-graph-machine` floor to `>=0.3.0`,
 drop the `[asp]` extra (gone upstream), retarget `packages`. Rebuild a venv that actually resolves
-`microfunctions` + `textual` — today none does. Pin upstream by **version, not by branch**, and
+`ugm` + `textual` — today none does. Pin upstream by **version, not by branch**, and
 watch `../ugm/CHANGELOG.md`, which exists precisely because a consumer's pin went red.
 
 **⚠ Slices 2–6 were written before the §3a re-scope and the §3b reorientation, and are restated
@@ -372,7 +383,7 @@ slice 0 — the fixture keeps whatever `never` lines it needs as *authored text*
 **Slice 2.5 — ⭐ THE VALIDATOR (new, and it comes before the session).** `harness/intake.py`: the
 savepoint/rollback `check()` verified in feedback §6, plus refusal parsing into something a UI can
 place — line, offending text, which closed vocabulary, and the legal forms for that position where we
-can get them. Rungs 1–2 of the ladder. **Depends on nothing but `microfunctions.intake` and a
+can get them. Rungs 1–2 of the ladder. **Depends on nothing but `ugm.intake` and a
 `Graph`**, so it needs neither the session nor the TUI, and both are easier to design once it exists.
 ⚠ Pin its refusal-message parsing behind one function — those strings are not an API, and upstream
 may well improve them (we asked them to). Testable in plain pytest against a corpus of good and bad
@@ -447,3 +458,89 @@ That is what an intake layer is for, and nothing we have ever measured here has 
    event stream. `loop.tick` + `driver.step` (one search iteration, pausable and inspectable) is the
    new shape for that, and it is strictly better. Worth designing into slice 3 rather than bolting
    on later.
+
+---
+
+## 8. ⭐⭐⭐ Delta — upstream `2a7589b`, 2026-08-02 evening
+
+**Re-verified, not read off a CHANGELOG.** `experiments/cards_on_microfunctions.py` was re-pointed and
+re-run: **10 of 10 scenarios**, up from nine, and the extra one exists because of the change below.
+
+### 8.1 The package is `ugm` again — a pure rename
+
+`microfunctions/` → `ugm/` (38 files, +21,138 / -0: git records it as an add because the old top-level
+`ugm/` had already been deleted). Every module diff across the rename is an import line and nothing
+else. **What it costs us:** `pip install -e ../ugm` again — the editable finder still maps the old
+name and there is no `ugm` until you do, which presents as `ModuleNotFoundError` on a package that is
+plainly right there on disk. That is the whole migration cost. `pyproject.toml` is updated: floor
+`>=0.3.0` and the `[asp]` extra dropped (upstream now has no optional dependencies at all).
+
+⚠ **Their `docs/` was restructured in the same pass** and most of what this document cites is gone:
+`HANDOFF.md`, `docs/microfunctions/*` (including `cnl.md`, which §3b and feedback §6 both quote),
+`implementation_plan.md`, `units/`. The replacement is eight top-level pages plus
+`docs/reference/modules.md`. Quotes here are kept as quotes-of-record; **do not follow the paths**.
+
+### 8.2 ⭐⭐⭐ Every ask we filed was answered — and two of them were the blockers
+
+`docs/feedback_microfunctions.md` now carries a shipped-note per item. The consequences for *this* plan:
+
+| ask | shipped as | what it unblocks here |
+|---|---|---|
+| §6 body-line forms as data | `intake.FORMS`, `intake.forms_for(family)`, and refusals rendered **from** the table | **rung 3 / half of slice 5.** Completion inside a block, with no copy of the grammar |
+| §7 candidates on an ambiguous name | `intake.Ambiguous(Unreadable)` with `.candidates` / `.name` | **rung 4 / the rest of slice 5.** The picker instead of a rejection |
+| §3 a defeasible prohibition | `ugm/norm.py` — `declare` / `settle` / `apply` / `explain` | **§7.2 closed. Slice 2 can commit to a shape** |
+| §1 inert guideline | `driver.pursue` warns when advice exists and `rank=` was omitted | nothing blocked; ⚠ **slice 3 must render the warning**, not swallow it |
+| §2 multi-block diagnostic | the second header is named as one | slice 2.5's refusal parsing gets one less special case |
+
+**⚠ This changes the schedule.** §3b said *"rungs 1, 2 and 5 are unblocked; 3 and 4 are waiting on two
+small upstream asks"* and set the order accordingly. **Rungs 3 and 4 are no longer blocked.** The
+standing instruction not to copy the grammar into this repo is now not a constraint but a solved
+problem — `intake.FORMS` *is* the completion source, and it cannot rot because the refusals render
+from it. Slice 5 can be planned alongside slice 4 rather than after it.
+
+### 8.3 §7.2 is closed — and `prohibitions()` is deleted
+
+The one thing slice 0 found that did not survive the move has survived it after all, and better than
+the shape we would have asked for: **a norm's source is its speaker**, so arbitration is
+`discourse.authority` — no new ranking, no fourth force in the planner, and `norm.apply` writes
+ordinary `never` constraints so nothing downstream learns a concept. The probe's ~17 lines of Python
+are now `declare_norms()`, which declares and ranks and **decides nothing**.
+
+⭐ The loss that actually mattered was auditability, and it is repaid:
+
+```
+sell_rare: permit — today (today favours sell); overriding standing's forbid; overriding caution's forbid
+counterfeit_card: forbid — law (…), inviolable; overriding today's permit
+```
+
+⭐ **And it bought a test we could not previously write.** `risk_cut_defeated_by_today` — two forbids
+from two sources losing to one permit from a source that outranks both — was a Python guard
+(`op not in encouraged`) and therefore untestable *as behaviour*. It is the tenth scenario.
+
+⚠ **The one thing that is still ours, and it is small:** a norm scopes to an action *class*
+(`buy`), `norm.declare` speaks about one *operator*. `operators_of()` expands the class over
+`CLASSES`. That is a lookup over authored data, not a decision, and it should stay that way — if it
+ever starts arbitrating, it has become the thing we just deleted.
+
+### 8.4 Other upstream changes, and whether we care
+
+Additive for us, but they are on surfaces slice 3 will render, so worth knowing before designing it:
+
+- **Edges have identity** — `link`/`link_at` return an edge id; `g.eprops` is keyed by it. ⚠ Anything
+  reading `g.eprops[` directly must move to `edge_props(eid)`. We have no such reader yet; do not add one.
+- **`clock.py`** — a moment points at what it dates, and `memory.observe` now stamps every observation.
+  ⭐ This is a *renderable* thing and it did not exist when §3a listed what is worth looking at.
+- **Sensing** — `driver` grew `reads` / `reports_on` / `confirms` and a `sensing` phase; `loop.tick` and
+  `loop.run` take `at=`, and `schedule` takes `not_before=`. A timed agenda is now real.
+- **Comparison operators** (`!= < <= > >=`) reach goals and `when`/`unless` conditions. ⚠ Slice 2.5's
+  block corpus should cover these — they are new legal surface, so "must be accepted" cases.
+- **`function.names` returns declaration order, was alphabetical**, and it is the search tie-break.
+  ⚠ Any step-count figure recorded before 2026-08-01 is stale; we pin none, so nothing to redo.
+
+### 8.5 What to do next, unchanged in shape
+
+Slice 1 still stands as written (the seam, `harneskills/` → attic, the venv), and it is now the only
+thing between here and slice 2.5. ⚠ **One correction to slice 1:** it says pin by version, not branch —
+still right, but `0.3.0` has now covered a package rename *and* a new module without moving, so the
+version is not the whole signal. Watch `../ugm/CHANGELOG.md`, which is where the shape changes actually
+get recorded.

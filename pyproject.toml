@@ -11,7 +11,9 @@ requires-python = ">=3.8"
 license = { text = "MIT" }
 keywords = ["llm", "tui", "textual", "agent", "knowledge-graph"]
 dependencies = [
-    "universal-graph-machine",
+    # ⚠ Pinned by VERSION, not by branch — upstream's CHANGELOG exists because a consumer's pin went
+    # red, and it records every shape change. 0.3.0 is the `ugm` package (was `microfunctions`).
+    "universal-graph-machine>=0.3.0",
     "textual==8.2.5",
     "PyYAML==6.0.3",
     "sentence-transformers==5.4.1",
@@ -22,9 +24,7 @@ dependencies = [
     "tiktoken>=0.7",
 ]
 
-[project.optional-dependencies]
-asp = ["universal-graph-machine[asp]"]
-
+# ⚠ The `[asp]` extra is gone: upstream has NO optional dependencies (and no dependencies at all).
 [project.scripts]
 harneskills = "harneskills_tui:main"
 
