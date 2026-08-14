@@ -1,0 +1,38 @@
+# The kettle -- a goal, a plan for it, and an act that leaves the agent.
+#
+# The smallest corpus that exercises the whole loop end to end, which is what
+# makes it the one to open first. Load it, `/step` a few times, and watch the
+# graph pane: a goal appears, the backward reader asks what could produce it,
+# `<boiling>` fits, its needs become subgoals, and one of those subgoals is an
+# ACTION -- so the agent commits to it and something leaves through the boundary.
+#
+#   /load corpus/kettle.ugm
+#   /run
+#   /report
+#   /why boiling(kettle)
+
+# Heating water boils it. `causes`, not `implies`: the effect lands in a LATER
+# moment and persists, so water you have stopped heating stays boiled. Written
+# as `implies` the backward reader would be entitled to plan the other way.
+#
+# ⚠ No `@certain` -- grade annotations are gone from the surface. Uncertainty is
+# a proposition now: write `+likely(p)` in a consequent and let a rule cross it,
+# rather than annotating how strongly `p` is held.
+rule <boiling> = causes(
+    { +doing(heat(?w)), +water(?w) },
+    { +boiling(?w) } )
+
+# ⭐ The line that makes this agent an actor rather than a deducer, and it is
+# deliberately NOT bundled with the engine: deciding that a goal to act should
+# become an act is a claim about a deployment, and a corpus that must ask before
+# acting simply does not write this rule. Delete it and the same plan is found
+# and nothing is done -- the goal ends BLOCKED, which is the honest outcome.
+rule <commit> = implies(
+    { +goal(doing(?a)) },
+    { +doing(?a) } )
+
+# The world as it stands, stamped as having come from the knowledge base.
+fact +water(kettle)
+
+# What is wanted. Everything above is inert until this line.
+fact +goal(boiling(kettle))

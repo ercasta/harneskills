@@ -1,124 +1,126 @@
-"""
-The harneskills TUI — the way users drive the engine.
+"""A plain terminal front end. No Textual, no threads, no screen.
 
-A thin REPL over `Session` (all engine logic lives there). Type CNL to assert facts,
-native rules, and constraint declarations; type a question to query; load a `.cnl` file;
-check consistency; explain a derivation. Lines no form recognizes are reported clearly
-rather than silently ignored.
+It exists for three reasons and each of them is worth the seventy lines: it is
+how the command layer gets tested without a UI harness, it is what you use over
+ssh or in a pipe, and it is the reference showing that `commands.dispatch` really
+is front-end agnostic -- if this file ever needs a special case, the TUI has been
+allowed to own something the command layer should.
 
-Run:  python -m harneskills.repl  [file.cnl ...]
-Commands:
-  :load FILE     load a .cnl corpus
-  :facts         list the known facts
-  :rules         how many domain rules are active
-  :check         report contradictions (consistency)
-  :unparsed      lines that matched no form this session
-  :why S P O     explain a derivation
-  :help  :quit
+    python -m harneskills [corpus.ugm ...]
+    python -m harneskills --resume session.json
 """
+
 from __future__ import annotations
 
 import sys
+from typing import List, Optional, Sequence
 
-from .interaction import terminal_oracle
-from .session import LineResult, Session
+from . import play, view
+from .commands import dispatch
+from .runner import Runner, RunnerError
 
-
-def _print_result(r: LineResult) -> None:
-    if r.error:
-        print(f"   ! error: {r.error}")
-        return
-    if r.is_question:
-        print("   ?", ", ".join(r.answer) if r.answer else "(no answer)")
-        return
-    if not r.recognized:
-        print(f"   ?? no form recognized: {r.line!r}")
-        return
-    for f in r.new_facts:
-        print("   +", f)
-    if r.recognized and not r.new_facts:
-        print("   (recognized; no new facts)")
-    for c in r.contradictions:
-        print(f"   ! CONTRADICTION: {', '.join(c['about'])} violates {', '.join(c['violates'])}")
+BANNER = """harneskills -- a door onto a UGM machine
+type /help for the verbs, or a `fact` / `rule` / `say` statement to author
+/scenarios for something playable
+"""
 
 
-def _command(session: Session, line: str) -> bool:
-    """Handle a ':' command. Returns False to quit, True to continue."""
-    parts = line.split()
-    cmd = parts[0]
-    if cmd == ":quit":
-        return False
-    if cmd == ":help":
-        print(__doc__.split("Commands:")[1])
-    elif cmd == ":facts":
-        for f in session.facts():
-            print("   ", f)
-        if not session.facts():
-            print("    (no facts yet)")
-    elif cmd == ":rules":
-        print(f"    {len(session.rules)} domain rule(s) active")
-    elif cmd == ":check":
-        cs = session.contradictions()
-        if not cs:
-            print("    consistent - no contradictions")
-        for c in cs:
-            print(f"   ! {', '.join(c['about'])} violates {', '.join(c['violates'])}")
-    elif cmd == ":unparsed":
-        for u in session.unparsed():
-            print("   ??", u)
-        if not session.unparsed():
-            print("    (everything recognized)")
-    elif cmd == ":load":
-        if len(parts) != 2:
-            print("    usage: :load FILE")
-        else:
-            try:
-                results = session.load_file(parts[1])
-            except OSError as e:
-                print(f"    cannot load {parts[1]}: {e}")
-                return True
-            ok = sum(r.recognized for r in results)
-            print(f"    loaded {parts[1]}: {ok}/{len(results)} lines recognized")
-            for r in results:
-                if not r.recognized:
-                    print(f"   ?? {r.line!r}")
-            cs = session.contradictions()
-            for c in cs:
-                print(f"   ! CONTRADICTION: {', '.join(c['about'])} violates {', '.join(c['violates'])}")
-    elif cmd == ":why":
-        if len(parts) == 4:
-            for ln in session.explain(parts[1], parts[2], parts[3]):
-                print("   ", ln)
-        else:
-            print("    usage: :why SUBJECT PREDICATE OBJECT")
-    else:
-        print(f"    unknown command {cmd!r} — try :help")
-    return True
+def _serve_cues(runner: Runner) -> bool:
+    """Answer whatever the machine is waiting on a person for. Returns whether
+    anything was served, so the drive knows to carry on."""
+    served = False
+    while True:
+        found = play.pending(runner)
+        if found is None:
+            return served
+        cue, ctx = found
+        options = cue.options(runner, ctx)
+        print(f"  ? {cue.prompt(ctx)}")
+        if options:
+            print("    e.g. " + "   ".join(options))
+        try:
+            reply = input("    > ").strip()
+        except EOFError:
+            reply = ""
+        said = play.speak(runner, cue, ctx, reply)
+        print(f"    said: {said}" if said
+              else "    nothing declared -- the standing policy acts")
+        served = True
 
 
-def main(argv: list[str] | None = None) -> None:
-    argv = sys.argv[1:] if argv is None else argv
-    # An interactive oracle so the engine can ask the user to disambiguate / intervene when
-    # reasoning leaves a coreference (or other uncertainty) genuinely undecided.
-    session = Session(oracle=terminal_oracle())
-    print("harneskills - enter CNL; :help for commands, :quit to exit")
-    for path in argv:                                    # load any files given on the CLI
-        _command(session, f":load {path}")
-    print("try:  paul is a person /  every person is a mortal /  is paul a mortal")
+def _show(runner: Runner, resp, quiet: bool = False) -> None:
+    for line in resp.lines:
+        print(("  " if resp.ok else "! ") + line)
+    if resp.drive is not None:
+        # `/run` hands back a budget rather than driving itself, so a UI can put
+        # it on a worker. Here there is no worker, so drive it inline and print
+        # each tick as it happens -- which is the whole reason `Runner.run` takes
+        # a per-step callback instead of returning at the end.
+        def on_step(s):
+            if not quiet:
+                for line in view.step_lines(runner.machine, s):
+                    print("  " + line)
+            # Stop the drive when a person's word is owed, so the loop below can
+            # ask for it. Serving it here would put the wait inside a loop whose
+            # exit condition is the person.
+            return play.pending(runner) is None
+
+        total = 0
+        budget = resp.drive
+        while total < budget:
+            _serve_cues(runner)
+            steps = runner.run(budget - total, on_step=on_step)
+            total += len(steps)
+            if play.pending(runner) is None:
+                break
+        print(f"  -- {total} ticks, ended {runner.state}")
+        if runner.scenario is not None:
+            for line in runner.scenario.status(runner):
+                print("  " + line)
+    for act in runner.new_emissions():
+        print(f"  >> {act}")
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    args: List[str] = list(sys.argv[1:] if argv is None else argv)
+    runner = Runner()
+
+    # The human is a tool. `input` blocks, which is exactly right: the agent
+    # asked, and reasoning past an unanswered question would be reasoning past
+    # the question.
+    def ask(question: str) -> Optional[str]:
+        try:
+            return input(f"  ? {question}  > ").strip() or None
+        except EOFError:
+            return None
+
+    runner.set_oracle(ask)
+
+    if args and args[0] == "--resume":
+        if len(args) < 2:
+            print("--resume needs a session file")
+            return 2
+        _show(runner, dispatch(runner, f"/resume {args[1]}"))
+        args = args[2:]
+    for path in args:
+        _show(runner, dispatch(runner, f"/load {path}"))
+
+    print(BANNER)
     while True:
         try:
-            line = input("\n> ").strip()
+            line = input("> ")
         except (EOFError, KeyboardInterrupt):
             print()
-            break
-        if not line:
-            continue
-        if line.startswith(":"):
-            if not _command(session, line):
-                break
-            continue
-        _print_result(session.submit(line))
+            return 0
+        if line.strip() in ("/quit", "/exit", "quit", "exit"):
+            return 0
+        try:
+            _show(runner, dispatch(runner, line))
+        except RunnerError as exc:
+            print(f"! {exc}")
+        except Exception as exc:  # a front end must not die on one bad line
+            print(f"! {type(exc).__name__}: {exc}")
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

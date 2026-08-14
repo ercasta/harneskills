@@ -4,34 +4,38 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harneskills"
-version = "0.0.0"
-description = "Harneskills — iterative LLM harness with TUI, fine-tuned SLM, and CNL knowledge authoring"
-readme = { text = "Harneskills", content-type = "text/markdown" }
-requires-python = ">=3.8"
+version = "0.1.0"
+description = "HarneSkills — a door onto a UGM machine: drive it, watch the graph, ask it why"
+readme = { text = "HarneSkills", content-type = "text/markdown" }
+requires-python = ">=3.9"
 license = { text = "MIT" }
-keywords = ["llm", "tui", "textual", "agent", "knowledge-graph"]
+keywords = ["tui", "textual", "agent", "knowledge-graph", "reasoning", "ugm"]
+
+# ⚠ Two dependencies, and that is the whole of it. UGM has none at all, and this
+# is a UI layer over UGM — so anything else here would be something the harness
+# had grown that is not seeing, driving or authoring.
+#
+# ⚠⚠ `universal-graph-machine` is pinned by VERSION and tracks a package that is
+# under active redesign: between one afternoon and the next it deleted grades
+# from the entry, removed `@` from the surface, and renamed nothing at all. An
+# unpinned floor is not a safety net here. If imports start failing, read
+# ../ugm/docs/HANDOFF.md before anything else — it records shape changes.
 dependencies = [
-    # ⚠ Pinned by VERSION, not by branch — upstream's CHANGELOG exists because a consumer's pin went
-    # red, and it records every shape change. 0.3.0 is the `ugm` package (was `microfunctions`).
     "universal-graph-machine>=0.3.0",
-    "textual==8.2.5",
-    "PyYAML==6.0.3",
-    "sentence-transformers==5.4.1",
-    "chromadb==1.5.9",
-    "watchdog==6.0.0",
-    "httpx>=0.27",
-    "pydantic>=2.0",
-    "tiktoken>=0.7",
+    "textual>=8.2",
 ]
 
-# ⚠ The `[asp]` extra is gone: upstream has NO optional dependencies (and no dependencies at all).
+[project.optional-dependencies]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+
 [project.scripts]
-harneskills = "harneskills_tui:main"
+harneskills = "harneskills_tui.app:main"
+harneskills-repl = "harneskills.repl:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-m 'not slow'"
-norecursedirs = ["buggy_samples", ".venv", "__pycache__", ".git", "*.egg-info"]
+asyncio_mode = "strict"
+norecursedirs = [".venv", "__pycache__", ".git", "*.egg-info"]
 markers = ["slow: marks tests as slow"]
 
 [tool.setuptools]

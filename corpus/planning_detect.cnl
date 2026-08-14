@@ -1,3 +1,0 @@
-# Planning phase E: divergence -> replan. Fires when an operator ran (`done`) but its
-# expected effect never materialized in <now> (the NAC) — the trigger for control teardown.
-<replan> active <yes> when ?o done <yes> and ?o add ?c and not <now> true ?c
