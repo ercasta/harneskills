@@ -34,10 +34,14 @@ python -m harneskills --no-config \
 
 ```
 loaded: examples/circuit_breaker.ugm, examples/fs/fs_demo.ugm
-harneskills> show files
+harneskills> show file
   + ls(/your/cwd)
   + file(/your/cwd, README.md)
   + size(/your/cwd, README.md, 15086)
+  ...
+harneskills> show files
+  ~ files -> file
+  + ls(/your/cwd)
   ...
 ```
 
@@ -144,7 +148,8 @@ Starts in **user mode**: a bare line is heard as something you're *saying*,
 wrapped as `say user: <line>` and believed only because `<trust-user>` (an
 ordinary rule, loaded at start) trusts the channel unconditionally. A line
 that parses as neither a proposition nor `.ugm` syntax is heard as a sentence
-instead of refused (`"show files"` → `sentence(show, files)`), left for
+instead of refused (`"show files"` → `sentence(show, file)`, the plural
+autocorrected first), left for
 whatever `intake` rule a loaded corpus gives it, or unbelieved if none does.
 A misspelled relation name — against whatever the loaded rules already use —
 gets autocorrected and echoed (`~ typed -> fixed`), never silently. See
@@ -194,15 +199,28 @@ repo's `examples/fs/fs_demo.ugm` and your copy of it could both be live with
 nothing to say which one you were talking to. One way in now, and the corpus
 is whatever you point it at.
 
-Bare `show files` works too, and lists the directory the session started in
+Bare `show file` works too, and lists the directory the session started in
 — `fs.py:register` writes that once as `cwd`, and `<intake-show-here>` reads
-it. Note the **quotes are required** on a path: unquoted, `show files in
-/tmp/x` fails to tokenize (`unexpected character '/'`) before it can even
-become a sentence.
+it.
+
+**One spelling, singular, everywhere.** `file` is already the vocabulary —
+`ls` writes `file($dir, $name)` — so the plural is one edit away from a word
+the machine knows and autocorrect turns `show files` into the same rule for
+free, echoing `~ files -> file`. Spell the intake plural instead and you get
+the opposite: `files` becomes the only place the word occurs, `file` is a
+different word that happens to be a relation, and nothing relates them. Pick
+one and near misses fall towards it. What this does *not* buy is `show fi`:
+`_autocorrect` never considers a span of two characters or fewer, whatever
+the distance, because at that length everything is near everything — a guard
+in `harneskills/repl.py` that no corpus can spell its way out of.
+
+Note the **quotes are required** on a path: unquoted, `show file in /tmp/x`
+fails to tokenize (`unexpected character '/'`) before it can even become a
+sentence.
 
 Nothing about "listing" or "cleaning up" is built into the REPL or the
 tools — typing something that isn't `.ugm` syntax is heard as
-`sentence(show, files, in, "...")`, and it means whatever `examples/fs/fs_demo.ugm`
+`sentence(show, file, in, "...")`, and it means whatever `examples/fs/fs_demo.ugm`
 says it means. A rename is held for approval by the same write-time trigger
 any corpus could use, not a special case in `fs_tools.py`.
 

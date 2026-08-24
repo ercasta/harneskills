@@ -21,8 +21,8 @@ rule <list> = implies( { +want(list($dir)) },
 
 # An INTAKE rule: `ugm/repl.py` hears anything that fails to parse as a
 # proposition as `sentence(w1, w2, ...)` instead of refusing it -- typing
-# `show files in "some path"` (no sign, no parens: not `.ugm` at all)
-# delivers `sentence(show, files, in, "some path")` on the same `user`
+# `show file in "some path"` (no sign, no parens: not `.ugm` at all)
+# delivers `sentence(show, file, in, "some path")` on the same `user`
 # channel `say` uses. This rule is what gives THAT shape a meaning, by
 # concluding the exact same goal the precise form would have written --
 # canonicalization is nothing but an ordinary rule reading an ordinary
@@ -31,8 +31,8 @@ rule <list> = implies( { +want(list($dir)) },
 # every time `<list>` consumes `want(list($dir))`, forever -- the same
 # discipline `<trust-user>` (`ugm/repl.py`) needed for the same reason.
 rule <intake-show> = implies(
-    { +says(user, sentence(show, files, in, $dir)), no heard(sentence(show, files, in, $dir)) },
-    { +want(list($dir)), +heard(sentence(show, files, in, $dir)) } )
+    { +says(user, sentence(show, file, in, $dir)), no heard(sentence(show, file, in, $dir)) },
+    { +want(list($dir)), +heard(sentence(show, file, in, $dir)) } )
 
 # `fact +want(stale_after("some path", 7))`. Every file `ls` found under
 # $dir, at least $days old by `now` (`ugm/fs_repl.py` seeds `now` once at
@@ -85,15 +85,29 @@ rule <denied-rename> = implies(
     { -pending(rename($dir, $old, $new)),
       -answered(<approve>, pending(rename($dir, $old, $new)), no) } )
 
-# The same intake, one word shorter. `show files` on its own is
-# `sentence(show, files)` -- two words, so <intake-show> above (which wants
-# `show files in $dir`) cannot match it, and the sentence just sits there
+# The same intake, one word shorter. `show file` on its own is
+# `sentence(show, file)` -- two words, so <intake-show> above (which wants
+# `show file in $dir`) cannot match it, and the sentence just sits there
 # believed and inert. It is the FIRST thing anyone types, because the REPL's
-# own help offers "show files" as its example of a sentence -- illustrating
-# the mechanism, not promising this corpus knows the words. So give it the
-# meaning it obviously wants: the directory the session started in, which
-# `fs.py:register` writes once as `cwd`.
+# own help offers a bare "show files" as its example of a sentence --
+# illustrating the mechanism, not promising this corpus knows the words. So
+# give it the meaning it obviously wants: the directory the session started
+# in, which `fs.py:register` writes once as `cwd`.
+#
+# ⚠ `file`, SINGULAR, and singular everywhere in this corpus on purpose. It
+# is already the vocabulary -- `ls` writes `file($dir, $name)` -- so typing
+# the plural is one edit away from a word the machine knows, and the REPL's
+# autocorrect turns `show files` into this rule for free (`~ files -> file`).
+# Spell the intake plural instead and you get the opposite: `files` is then
+# the only place the word occurs, `file` is a different word that happens to
+# be a relation, and nothing relates them. One spelling, and near misses
+# fall towards it.
+#
+# What this does NOT buy is `show fi`: `_autocorrect` never considers a span
+# of two characters or fewer, whatever the distance, because at that length
+# everything is near everything. That guard is `harneskills/repl.py`'s and
+# no corpus can spell its way out of it.
 rule <intake-show-here> = implies(
-    { +says(user, sentence(show, files)), no heard(sentence(show, files)),
+    { +says(user, sentence(show, file)), no heard(sentence(show, file)),
       +cwd($dir) },
-    { +want(list($dir)), +heard(sentence(show, files)) } )
+    { +want(list($dir)), +heard(sentence(show, file)) } )
