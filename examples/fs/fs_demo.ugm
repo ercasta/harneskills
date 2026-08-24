@@ -126,12 +126,33 @@ rule <intake-show-here> = implies(
 
 fact +big_is(1000)
 
-# One `want`, once per session. `says(user, ...)` cannot be unsaid --
-# retracting it loops, because `arrived` re-derives it -- so a bare sentence
-# gets a guard it never releases, exactly as <intake-show-here> does.
+# One `want`, and it can be ASKED AGAIN -- which the rules above cannot be,
+# and the difference is worth the paragraph.
+#
+# An utterance is identified by its CONTENT: `Machine._deliver` writes
+# `arrived(user, sentence(show, big))` and nothing else, so saying the same
+# words twice writes a proposition already believed, which is no write at
+# all. Belief cannot tell you said it twice, and that is why every rule
+# above keys on `says(...)` behind a guard it never releases -- `says` never
+# changes, so a rule without one fires every tick for ever.
+#
+# ATTENTION can tell. Saying something attends it, restored to its start
+# whether or not the belief moved, and fading from there -- so the second
+# `show big` is a real event even though nothing new became true. The guard
+# is released by the same clock that made it necessary: <rearm-big> waits
+# for the sentence to fade out of mind, and then this rule is ready to hear
+# it again. Nothing is retracted, no utterance is unsaid, and the corpus
+# does not have to pretend an occasion was a fact.
 rule <intake-show-big> = implies(
-    { +says(user, sentence(show, big)), +big_is($min), no asked_big(yes) },
+    { +says(user, sentence(show, big)), attentioned(sentence(show, big)),
+      +big_is($min), no asked_big(yes) },
     { +want(big_here($min)), +asked_big(yes) } )
+
+# `no` on a PREDICATE, which is the other half of the same idea: asked once
+# while the sentence is in mind, and armed again once it is not.
+rule <rearm-big> = implies(
+    { +asked_big(yes), no attentioned(sentence(show, big)) },
+    { -asked_big(yes) } )
 
 # WHICH folder. This fires exactly once -- it spends the `want` that let it
 # match -- and that is what makes "here" mean the LAST folder rather than
