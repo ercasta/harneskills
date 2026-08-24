@@ -117,29 +117,29 @@ def test_same_file_through_two_folders_loads_once(tmp_path):
 
 def test_bare_paths_are_corpora(monkeypatch, tmp_path):
     monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "config"))
-    paths, where, ok = _split_argv(["a.ugm", "b.ugm"])
-    assert ok and paths == ["a.ugm", "b.ugm"]
+    paths, where, tools, ok = _split_argv(["a.ugm", "b.ugm"])
+    assert ok and paths == ["a.ugm", "b.ugm"] and tools == []
     assert where == str(tmp_path / "config")
 
 
 def test_no_config_means_no_config_file(monkeypatch, tmp_path):
     monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "config"))
-    paths, where, ok = _split_argv(["--no-config", "a.ugm"])
+    paths, where, tools, ok = _split_argv(["--no-config", "a.ugm"])
     assert ok and paths == ["a.ugm"] and where is None
 
 
 @pytest.mark.parametrize("argv", [["--config", "/x"], ["--config=/x"]])
 def test_config_flag_both_spellings(argv):
-    paths, where, ok = _split_argv(argv)
+    paths, where, tools, ok = _split_argv(argv)
     assert ok and paths == [] and where == "/x"
 
 
 def test_contradictory_flags_are_refused():
-    assert _split_argv(["--config=/x", "--no-config"])[2] is False
+    assert _split_argv(["--config=/x", "--no-config"])[3] is False
 
 
 def test_config_with_no_path_is_refused():
-    assert _split_argv(["--config"])[2] is False
+    assert _split_argv(["--config"])[3] is False
 
 
 # --- one bad corpus must not take the session -------------------------
@@ -393,3 +393,58 @@ def test_both_commands_are_listed_in_the_help(tmp_path, monkeypatch, capsys):
     # Spliced in with the built-ins, above /quit -- not stranded after the prose.
     assert out.index("/reload") < out.index("/quit      leave")
     assert "/reset" in out
+
+
+# --- --tools and folder arguments -------------------------------------
+
+@pytest.mark.parametrize("argv", [["--tools", "pkg:go"], ["--tools=pkg:go"]])
+def test_tools_flag_both_spellings(argv):
+    paths, where, tools, ok = _split_argv(argv)
+    assert ok and tools == ["pkg:go"] and paths == []
+
+
+def test_tools_flag_is_repeatable_and_follows_the_config():
+    _, _, tools, ok = _split_argv(["--tools=a:x", "--tools=b:y"])
+    assert ok and tools == ["a:x", "b:y"]
+
+
+def test_tools_with_no_argument_is_refused():
+    assert _split_argv(["--tools"])[3] is False
+
+
+def test_a_folder_on_the_command_line_loads_every_ugm_in_it(tmp_path, monkeypatch, capsys):
+    entry = _entry()
+    folder = tmp_path / "corpus"
+    write(str(folder / "b.ugm"), "fact +second(x)\n")
+    write(str(folder / "a.ugm"), "fact +first(x)\n")
+    write(str(folder / "notes.md"), "not a corpus\n")
+    monkeypatch.setattr(entry.repl, "run", lambda m, ldr, *a, **k: 0)
+    assert entry.main(["--no-config", str(folder)]) == 0
+    out = capsys.readouterr().out
+    assert "a.ugm" in out and "b.ugm" in out and "notes.md" not in out
+    assert out.index("a.ugm") < out.index("b.ugm"), "not alphabetical"
+
+
+def test_cli_tools_run_without_any_config_file(tmp_path, monkeypatch, capsys):
+    """The whole point of --tools: a fresh clone, no home config, still
+    able to bring a domain's Python half."""
+    entry = _entry()
+    import harneskills.config as target
+
+    folder = tmp_path / "corpus"
+    write(str(folder / "needs.ugm"),
+          "rule <use> = implies( { +answered(<probe>, asked(thing), yes) }, "
+          "{ +done(thing) } )\n")
+
+    def reg(ldr):
+        ldr.answerer("probe", "asked", lambda mach, prop: ldr.atom("yes"))
+
+    target._reg = reg
+    monkeypatch.setattr(entry.repl, "run", lambda m, ldr, *a, **k: 0)
+    try:
+        rc = entry.main(["--no-config", "--tools=harneskills.config:_reg", str(folder)])
+    finally:
+        del target._reg
+    out = capsys.readouterr()
+    assert rc == 0
+    assert "needs.ugm" in out.out and out.err == ""

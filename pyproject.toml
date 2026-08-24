@@ -27,7 +27,6 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 harneskills = "harneskills.__main__:main"
-harneskills-fs = "harneskills.examples.fs:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

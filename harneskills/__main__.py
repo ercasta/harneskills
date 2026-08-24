@@ -1,6 +1,7 @@
 """HarneSkills: a plain terminal REPL over a UGM corpus.
 
-    python -m harneskills [--config PATH | --no-config] [corpus.ugm ...]
+    python -m harneskills [--config PATH | --no-config]
+                          [--tools MODULE:CALLABLE ...] [corpus.ugm | folder ...]
 
 A thin door onto `harneskills.repl`, itself carved out of `ugm.repl` and
 kept close to it -- see that module's docstring for what typing at the
@@ -35,6 +36,7 @@ neither.
 """
 
 import importlib
+import os
 import sys
 
 from ugm.core.machine import Machine
@@ -44,34 +46,43 @@ from . import config as cfg
 from . import repl
 
 
-def _split_argv(argv) -> "tuple[list[str], str, bool]":
-    """`(paths, where, ok)` -- flags out, corpora left alone.
+def _split_argv(argv) -> "tuple[list[str], str, list[str], bool]":
+    """`(paths, where, tools, ok)` -- flags out, corpora left alone.
 
     `where` is the config file to read, already defaulted, or None for
-    `--no-config`. Hand-rolled rather than argparse because the whole
-    grammar is two flags and a list of files, and because a `.ugm` path
-    beginning with a dash is a thing argparse would take from us.
+    `--no-config`. `--tools` is the config's `tools:` line spelled on the
+    command line, repeatable, and it is what makes `--no-config` usable at
+    all: a domain's Python half has to come from somewhere, and someone who
+    has just cloned this repo should not have to write a config file in
+    their home directory to try the thing out.
+
+    Hand-rolled rather than argparse because the whole grammar is three
+    flags and a list of paths, and because a `.ugm` path beginning with a
+    dash is a thing argparse would take from us.
     """
-    paths, named, skip, rest = [], None, False, list(argv)
+    paths, tools, named, skip, rest = [], [], None, False, list(argv)
     while rest:
         arg = rest.pop(0)
         if arg == "--no-config":
             skip = True
-        elif arg == "--config":
+        elif arg in ("--config", "--tools"):
             if not rest:
-                print("! --config needs a path", file=sys.stderr)
-                return [], None, False
-            named = rest.pop(0)
+                print("! %s needs an argument" % arg, file=sys.stderr)
+                return [], None, [], False
+            if arg == "--config":
+                named = rest.pop(0)
+            else:
+                tools.append(rest.pop(0))
         elif arg.startswith("--config="):
             named = arg[len("--config="):]
+        elif arg.startswith("--tools="):
+            tools.append(arg[len("--tools="):])
         else:
             paths.append(arg)
     if skip and named is not None:
         print("! --config and --no-config say opposite things", file=sys.stderr)
-        return [], None, False
-    if skip:
-        return paths, None, True
-    return paths, (named or cfg.config_path()), True
+        return [], None, [], False
+    return paths, (None if skip else (named or cfg.config_path())), tools, True
 
 
 def _register_tools(ldr, specs) -> "list[str]":
@@ -110,7 +121,7 @@ def _register_tools(ldr, specs) -> "list[str]":
     return problems
 
 
-def build(where, paths) -> "tuple[Machine, Loader]":
+def build(where, paths, cli_tools=()) -> "tuple[Machine, Loader]":
     """A machine with the config's tools registered and every corpus loaded.
 
     Called once at startup and again for every `/reload` -- which is why it
@@ -125,6 +136,19 @@ def build(where, paths) -> "tuple[Machine, Loader]":
         # loud once, on stderr, and then continuing: the session is fine
         # without it, and a config outliving one of its checkouts is normal.
         standing, problems = cfg.corpus_files(folders)
+    tools = tools + list(cli_tools)
+
+    # A path on the command line may be a folder too, read the same one
+    # level deep -- so `examples/fs` means what `/load examples/fs` means.
+    named_paths, named_problems = [], []
+    for path in paths:
+        if os.path.isdir(path):
+            found, trouble = cfg.corpus_files([path])
+            named_paths += found
+            named_problems += trouble
+        else:
+            named_paths.append(path)
+    problems += named_problems
 
     m = Machine()
     ldr = load(m, "", scope="harneskills")
@@ -135,7 +159,7 @@ def build(where, paths) -> "tuple[Machine, Loader]":
         print("  ! config: %s" % problem, file=sys.stderr)
 
     loaded = []
-    for path in standing + paths:
+    for path in standing + named_paths:
         # A corpus that will not load must not take the session with it.
         # Standing corpora are loaded by a machine nobody is watching --
         # under a service, an exception here is a restart loop, and the one
@@ -162,16 +186,16 @@ def build(where, paths) -> "tuple[Machine, Loader]":
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    paths, where, ok = _split_argv(argv)
+    paths, where, tools, ok = _split_argv(argv)
     if not ok:
         return 2
 
     def reload_(arg):
         """start over: re-read the config and every corpus from disk"""
         print("  reloading -- everything typed this session is gone")
-        return build(where, paths)
+        return build(where, paths, tools)
 
-    m, ldr = build(where, paths)
+    m, ldr = build(where, paths, tools)
     # Two names for one act, because both are things people mean by it: you
     # edited a rule and want it in, or you made a mess and want it out. UGM
     # gives no way to tell them apart -- a rule cannot be redeclared into a

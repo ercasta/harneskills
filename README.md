@@ -19,8 +19,31 @@ dependency, not code duplicated into this repo.
 ```bash
 pip install -e ../ugm      # the engine, editable, from its own checkout
 pip install -e .
-python -m harneskills [corpus.ugm ...]     # corpus paths are optional
+python -m harneskills [corpus.ugm | folder ...]     # paths are optional
 ```
+
+Nothing to configure to try it. The file-tools example is in this checkout,
+and one line brings both halves of it — the Python (`--tools`) and the
+corpus (a folder path, read one level deep):
+
+```bash
+python -m harneskills --no-config \
+    --tools harneskills.examples.fs:register \
+    examples/circuit_breaker.ugm examples/fs
+```
+
+```
+loaded: examples/circuit_breaker.ugm, examples/fs/fs_demo.ugm
+harneskills> show files
+  + ls(/your/cwd)
+  + file(/your/cwd, README.md)
+  + size(/your/cwd, README.md, 15086)
+  ...
+```
+
+`--no-config` is only there to keep a config you may already have out of the
+way; drop it once you write one. Corpora can equally arrive mid-session —
+`/load examples/fs` takes a folder as happily as a file.
 
 No corpus, no problem — `/godmode` lets you author a fact and a rule right at
 the prompt, then `/usermode` to go back to talking normally:
@@ -148,23 +171,28 @@ leaving the REPL.
 
 ## An example: file tools
 
-```bash
-harneskills-fs [corpus.ugm ...]
-```
-
-Carved out of `ugm.fs_repl` the same way `harneskills.repl` was carved out of
-`ugm.repl`: three tools (`ls`, `stat`, `rename`), a corpus that holds a
-rename for approval, and a circuit breaker watching it, all loaded before
-handing off to the same REPL loop above.
+Three tools (`ls`, `stat`, `rename`), a corpus that holds a rename for
+approval, and a circuit breaker watching it — carved out of `ugm.fs_repl`
+the same way `harneskills.repl` was carved out of `ugm.repl`. Its Python
+half is one function, `harneskills.examples.fs:register`, nameable from
+`--tools` or a config `tools:` line; its corpus is two ordinary `.ugm`
+files under `examples/`.
 
 ```
-$ harneskills-fs
+$ python -m harneskills --no-config --tools harneskills.examples.fs:register \
+      examples/circuit_breaker.ugm examples/fs
 harneskills> +want(list("C:\Users\you\Documents"))
   + file(...), size(...), created(...)   -- the `ls` tool, an ordinary rule away
 
 harneskills> cleanup "C:\Users\you\Documents" 7
 approve rename(notes.txt -> stale-notes.txt)? [y/N]
 ```
+
+⚠ There is no `harneskills-fs` command any more. It was a second way to
+start a session carrying its own hardcoded corpus list, which meant this
+repo's `examples/fs/fs_demo.ugm` and your copy of it could both be live with
+nothing to say which one you were talking to. One way in now, and the corpus
+is whatever you point it at.
 
 Bare `show files` works too, and lists the directory the session started in
 — `fs.py:register` writes that once as `cwd`, and `<intake-show-here>` reads
@@ -186,8 +214,8 @@ harneskills/
   __main__.py           wiring: a Machine, a Loader, the corpora to load, then repl.run
   config.py             which folders and which `tools:` the config names -- strings only, no UGM
   examples/
-    fs.py                the file-tools example's wiring -- carved out of ugm.fs_repl
-                           `register(ldr)` is its Python half, nameable from a config `tools:` line
+    fs.py                the file-tools example's Python half: `register(ldr)`, and nothing else
+                           -- name it with `--tools` or a config `tools:` line
     fs_tools.py           its three answerers -- carved out of ugm.repl_fs
 examples/
   circuit_breaker.ugm    shared infra the fs example loads (any domain might watch a rule)
@@ -204,8 +232,9 @@ is a pinned external dependency; the harness itself (`harneskills/repl.py`,
 corpus, tools, or rules — the config file names folders, it does not ship
 any, and `config.py` never opens a `.ugm` or imports UGM.
 `harneskills/examples/` is different on purpose: worked demonstrations of
-wiring a domain onto the harness, each its own console script
-(`harneskills-fs`, so far), never imported by the harness itself. Planning,
+wiring a domain onto the harness, each a `register(loader)` the config or
+`--tools` can name, never imported by the harness itself unless you ask for
+it by name. Planning,
 arbitration, norms, procedures, credit assignment and provenance are all
 the engine's.
 
@@ -216,7 +245,7 @@ harness (`runner.py`/`view.py`/`commands.py`/`play.py`/`dungeon.py`, a
 Textual TUI, its own corpus, its own tests) is in git history; nothing was
 ported from it. Verified end to end: `pip install -e ../ugm && pip install
 -e .`, then both transcripts above (the no-corpus `/godmode` session and
-`harneskills-fs` listing a real directory), plus `python -m ugm.selftest`
+the fs example listing a real directory with no config file at all), plus `python -m ugm.selftest`
 (183 checks, 0 failing) against the same editable install. ⚠
 `universal-graph-machine` is under active redesign — read
 `../ugm/docs/HANDOFF.md` before diagnosing an import error.

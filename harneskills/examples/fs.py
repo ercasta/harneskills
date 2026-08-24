@@ -1,40 +1,33 @@
-"""The filesystem REPL example.
+"""The filesystem example's Python half.
 
-    harneskills-fs [corpus.ugm ...]
+    python -m harneskills --tools harneskills.examples.fs:register examples/fs
 
-Wires `fs_tools`'s answerers, the four computators the shipped corpus reads,
-and an `approve` tool that asks at the terminal, then hands off to
-`harneskills.repl`. Carved out of `ugm.fs_repl`, unmodified beyond: imports
-repointed at the `ugm` package as an ordinary dependency, and the two
-corpora (`circuit_breaker.ugm`, `fs/fs_demo.ugm`) copied into this repo's
-own `examples/` rather than read from ugm's package data -- an example
-should not reach into another package's internal `rules/` layout, which is
-that package's own implementation detail, not a public path. `circuit_breaker.ugm`
-is shared infrastructure (any domain might watch a rule) and loads first,
-always; everything under `examples/fs/` is THIS domain's own corpus and
-loads next, whatever is there -- drop a `.ugm` file in that folder (a rename
-policy of your own overriding `<hold-rename>`, a rule that reads
-`<flag-stale>`'s facts) and it is picked up on the next run, no path to edit
-here. Extra corpus paths on the command line load last, for a one-off
-addition that is not meant to live in the folder.
+`register` binds `fs_tools`'s three answerers, the five computators the
+shipped corpus reads, an `approve` tool that asks at the terminal, and the
+`now`/`cwd` facts the corpus reads. Carved out of `ugm.fs_repl` with the
+imports repointed at `ugm` as an ordinary dependency, and the two corpora
+(`circuit_breaker.ugm`, `fs/fs_demo.ugm`) copied into this repo's own
+`examples/` rather than read from ugm's package data -- an example should
+not reach into another package's internal `rules/` layout, which is that
+package's own implementation detail, not a public path.
+
+⚠ There is no `harneskills-fs` entry point any more, and no `build()` that
+loads `examples/` behind your back. It was a second way to start a session,
+with its own hardcoded corpus list, and it meant this repo's copy of
+`fs_demo.ugm` and yours could drift with nothing to say which was running.
+Now there is one way in -- `python -m harneskills` -- and the corpus is
+whatever you point it at, on the command line, with `/load`, or from
+`~/.config/harneskills/config`. `circuit_breaker.ugm` is shared
+infrastructure (any domain might watch a rule) and sorts before
+`fs_demo.ugm`, which is the order a folder load gives them anyway.
 """
 
 import os
-import sys
 import time
-from pathlib import Path
 
-from ugm.core.machine import Machine
-from ugm.core.text import Loader, load
+from ugm.core.text import Loader
 
-from .. import repl
 from . import fs_tools
-
-# `examples/` lives at the repo root, a sibling of the `harneskills` package
-# -- not inside it -- because it is dev-time content for THIS checkout, not
-# something a wheel install of `harneskills` promises to ship (see the
-# top-level README's "Scope": HarneSkills bakes no domain into the package).
-_EXAMPLES_DIR = Path(__file__).resolve().parent.parent.parent / "examples"
 
 
 def _computators(ldr: Loader) -> None:
@@ -95,47 +88,3 @@ def register(ldr: Loader, ask=input) -> None:
         node = m.g.rel(ldr.atom(head), ldr.atom(value))
         if not m.pad.holds(node):
             m.gate.write(node)
-
-
-def build(ask=input) -> "tuple[Machine, Loader]":
-    """A machine with the fs tools, the approval tool, `circuit_breaker.ugm`
-    and everything under `examples/fs/` loaded, ready for
-    `harneskills.repl.run`. `ask` is the approval prompt -- a function from a
-    message to a line of text -- swappable for a test."""
-    m = Machine()
-    ldr = load(m, "", scope="fs")
-    register(ldr, ask)
-
-    with open(_EXAMPLES_DIR / "circuit_breaker.ugm", "r", encoding="utf-8") as fh:
-        ldr.load(fh.read())
-    loaded = []
-    for corpus_path in sorted((_EXAMPLES_DIR / "fs").glob("*.ugm")):
-        with open(corpus_path, "r", encoding="utf-8") as fh:
-            ldr.load(fh.read())
-        loaded.append(str(corpus_path))
-    if loaded:
-        print("loaded:", ", ".join(loaded))
-    return m, ldr
-
-
-def main(argv=None) -> int:
-    argv = list(sys.argv[1:] if argv is None else argv)
-
-    def session() -> "tuple[Machine, Loader]":
-        m, ldr = build()
-        for path in argv:
-            with open(path, "r", encoding="utf-8") as fh:
-                ldr.load(fh.read())
-        return m, ldr
-
-    def reload_(arg):
-        """start over: re-read every corpus from disk"""
-        print("  reloading -- everything typed this session is gone")
-        return session()
-
-    m, ldr = session()
-    return repl.run(m, ldr, commands={"/reload": reload_, "/reset": reload_})
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

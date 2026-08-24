@@ -69,6 +69,7 @@ sits there, unbelieved, same as any other untrusted arrival -- and `/show`
 still lists it, so nothing is hidden.
 """
 
+import os
 import re
 import sys
 from typing import Optional, TextIO
@@ -192,7 +193,7 @@ TRUST_USER = ('rule <trust-user> = implies( { +says(user, $p), no trusted($p) },
 
 HELP = """\
 /show      what is believed right now
-/load PATH load another .ugm file into this session
+/load PATH load another .ugm file -- or a folder of them -- into this session
 /godmode   author directly -- a line is `.ugm` text (fact, rule, say, ...)
 /usermode  back to the default -- a line is what you're SAYING
 /quit      leave
@@ -293,9 +294,33 @@ def run(m: Machine, ldr: Loader, limit: int = 400,
             print("  back to talking on the `user` channel")
             continue
         if line.startswith("/load "):
-            path = line[6:].strip()
-            with open(path, "r", encoding="utf-8") as fh:
-                ldr.load(fh.read())
+            path = line[6:].strip().strip('"')
+            # A folder loads every `.ugm` directly in it, alphabetically --
+            # one level deep, the same reading `harneskills.config` gives a
+            # folder, because `examples/fs` and `examples/fs/anything` are
+            # different corpora that happen to nest.
+            if os.path.isdir(path):
+                targets = sorted(os.path.join(path, n) for n in os.listdir(path)
+                                 if n.endswith(".ugm"))
+                if not targets:
+                    print(f"  ! {path}: no .ugm files")
+                    continue
+            else:
+                targets = [path]
+            for target in targets:
+                # One bad file out of a folder must not take the prompt with
+                # it -- and `ldr.load` is not transactional, so what came
+                # before the bad line in that file is already in.
+                try:
+                    with open(target, "r", encoding="utf-8") as fh:
+                        ldr.load(fh.read())
+                except OSError as e:
+                    print(f"  ! {target}: {e.strerror or e}")
+                    continue
+                except ParseError as e:
+                    print(f"  ! {target}: partly loaded, then: {e}")
+                    continue
+                print(f"  loaded {target}")
             settle()
             continue
         if commands and line.startswith("/"):
