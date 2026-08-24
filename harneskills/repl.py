@@ -188,8 +188,12 @@ def _autocorrect(line: str, vocab: "set[str]"):
 # new and starving every other rule out. Same discipline as a `<flag-stale>`
 # style rule: the guard is consumed in the SAME firing that acts on it, not
 # a later stage.
+# `=> brush(...)` is not optional. A move consumes what it matched on, and
+# this rule is NOT the last thing that should happen to a saying: every
+# intake rule in every corpus reads `says(user, ...)` too. Believing you is
+# one use of what you said, not the end of it.
 TRUST_USER = ('rule <trust-user> = implies( { +says(user, $p), no trusted($p) }, '
-              '{ +$p, +trusted($p) } )')
+              '{ +$p, +trusted($p) } ) => brush(says(user, $p))')
 
 HELP = """\
 /show      what is believed right now
