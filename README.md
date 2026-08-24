@@ -29,7 +29,7 @@ harneskills> /godmode
   authoring directly -- /usermode to go back
 harneskills[god]> fact +water(kettle)
   (1 ticks, ended quiescent)
-harneskills[god]> rule <boil> = implies( { +water($w), no boiling($w) }, { +boiling($w) } )
+harneskills[god]> rule <boil> +water($w) no boiling($w) -> +boiling($w)
   (2 ticks, ended quiescent)
 harneskills[god]> /usermode
   back to talking on the `user` channel
