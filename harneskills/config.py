@@ -1,4 +1,4 @@
-"""Where a session's corpora come from when nobody types a path.
+"""Where a session's corpora and their tools come from when nobody types a path.
 
     ~/.config/harneskills/config
 
@@ -10,20 +10,34 @@ relative to the config file's own directory -- not the working directory,
 because the thing most likely to read this file is a service whose cwd is
 not yours.
 
+A line beginning `tools:` names Python instead:
+
+    tools: harneskills.examples.fs:register
+
+...a `module:callable` taken as `callable(loader)`, run BEFORE any corpus
+loads no matter where the line sits. It has to be before: a rule that
+mentions `<approve>` is a parse error until something has registered an
+answerer by that name, so a corpus with a Python half cannot be a standing
+corpus unless its Python half arrives first. That is the whole reason this
+line kind exists -- naming a callable is the same act as naming a folder,
+and the harness still ships neither.
+
 The sweep is deliberately ONE level deep. `../ugm/ugm/rules/` and
 `../ugm/ugm/rules/fs/` are different corpora that happen to nest, and a
 harness that quietly pulled in the second because you asked for the first
 would be choosing your rules for you. List the subfolder if you want it.
 
 This module reads a path list and stats the filesystem. It does not open a
-`.ugm` file, know what one contains, or import UGM -- loading is
-`__main__`'s job, and the ordering above is the whole of the contract
-between them.
+`.ugm` file, know what one contains, import UGM, or import anything a
+`tools:` line names -- a `tools:` spec leaves here as the string it arrived
+as. Loading and importing are `__main__`'s job, and the ordering above is
+the whole of the contract between them.
 """
 
 import os
 
 APP = "harneskills"
+TOOLS = "tools:"
 
 
 def config_path() -> str:
@@ -41,8 +55,9 @@ def config_path() -> str:
     return os.path.join(os.path.expanduser(base), APP, "config")
 
 
-def read_folders(path=None) -> "list[str]":
-    """The folders named in `path`, expanded and absolute, in file order.
+def read_config(path=None) -> "tuple[list[str], list[str]]":
+    """`(folders, tools)` named in `path` -- folders expanded and absolute,
+    tool specs left as written, both in file order.
 
     No file is not an error -- it is the ordinary case for someone who has
     never written one, and it means "no standing corpora", exactly as if
@@ -54,18 +69,29 @@ def read_folders(path=None) -> "list[str]":
         with open(path, "r", encoding="utf-8") as fh:
             raw = fh.read()
     except (FileNotFoundError, NotADirectoryError):
-        return []
+        return [], []
     here = os.path.dirname(os.path.abspath(path))
-    folders = []
+    folders, tools = [], []
     for line in raw.splitlines():
         # Only a leading `#` comments a line out. `#` is a legal character
         # in a directory name, and stripping from the first one anywhere
         # would silently truncate a real path into a shorter real path.
-        if not line.strip() or line.lstrip().startswith("#"):
+        line = line.strip()
+        if not line or line.startswith("#"):
             continue
-        folder = os.path.expanduser(os.path.expandvars(line.strip()))
+        if line.startswith(TOOLS):
+            # No expansion here: this is an import path, not a filesystem
+            # one, and `~` or `$HOME` in it is a typo rather than a wish.
+            tools.append(line[len(TOOLS):].strip())
+            continue
+        folder = os.path.expanduser(os.path.expandvars(line))
         folders.append(os.path.normpath(os.path.join(here, folder)))
-    return folders
+    return folders, tools
+
+
+def read_folders(path=None) -> "list[str]":
+    """Just the folders -- `read_config(path)[0]`, for a caller with no tools."""
+    return read_config(path)[0]
 
 
 def corpus_files(folders) -> "tuple[list[str], list[str]]":

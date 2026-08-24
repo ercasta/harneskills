@@ -59,13 +59,22 @@ def _computators(ldr: Loader) -> None:
     ldr.computator("minus", minus)
 
 
-def build(ask=input) -> "tuple[Machine, Loader]":
-    """A machine with the fs tools, the approval tool, `circuit_breaker.ugm`
-    and everything under `examples/fs/` loaded, ready for
-    `harneskills.repl.run`. `ask` is the approval prompt -- a function from a
-    message to a line of text -- swappable for a test."""
-    m = Machine()
-    ldr = load(m, "", scope="fs")
+def register(ldr: Loader, ask=input) -> None:
+    """Everything `examples/fs/` leans on that is Python, onto any loader.
+
+    Three tools, five computators, the `approve` prompt, and a `now` fact --
+    that last one because the corpus reads `+now($t)` to age a file, and a
+    machine that never wrote it simply never fires the rule.
+
+    Split out of `build` so that a config file can name it:
+
+        tools: harneskills.examples.fs:register
+
+    which is called as `register(loader)` -- `ask` defaulting to `input`,
+    the terminal being where a standing session lives. Nothing here is
+    fs-specific apparatus; it is the ordinary shape of a domain's Python
+    half, and any other domain's would be a function of the same signature.
+    """
     fs_tools.register(ldr)
     _computators(ldr)
 
@@ -75,9 +84,20 @@ def build(ask=input) -> "tuple[Machine, Loader]":
 
     ldr.answerer("approve", "pending", approve)
 
+    m = ldr.m
     node = m.g.rel(ldr.atom("now"), ldr.atom(str(int(time.time()))))
     if not m.pad.holds(node):
         m.gate.write(node)
+
+
+def build(ask=input) -> "tuple[Machine, Loader]":
+    """A machine with the fs tools, the approval tool, `circuit_breaker.ugm`
+    and everything under `examples/fs/` loaded, ready for
+    `harneskills.repl.run`. `ask` is the approval prompt -- a function from a
+    message to a line of text -- swappable for a test."""
+    m = Machine()
+    ldr = load(m, "", scope="fs")
+    register(ldr, ask)
 
     with open(_EXAMPLES_DIR / "circuit_breaker.ugm", "r", encoding="utf-8") as fh:
         ldr.load(fh.read())

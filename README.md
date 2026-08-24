@@ -75,7 +75,39 @@ the subfolder if you want it.
 Standing corpora load first, then anything named on the command line — so a
 file you name now can answer one that was already there. A folder in the
 config that has gone missing costs you that folder (`! config: ... no such
-folder`, on stderr) and not the session.
+folder`, on stderr) and not the session, and neither does a corpus that
+fails to parse — it is named on stderr and skipped.
+
+A domain is often not only `.ugm`. The fs corpus below leans on three tools,
+five computators and an approval prompt, all Python, and a rule mentioning
+`<approve>` is a *parse error* until something has registered an answerer by
+that name. A `tools:` line names that half — `module:callable`, called as
+`callable(loader)`:
+
+```
+# ~/.config/harneskills/config
+tools: harneskills.examples.fs:register
+~/corpora/fs
+```
+
+`tools:` lines run **before any corpus loads**, wherever they sit in the
+file — they have to, or the corpus that needs them cannot parse. With those
+two lines, `python -m harneskills` drives the file tools directly; nothing
+about the fs domain is in the harness, which imports what the config names
+exactly as it opens the folders the config names, and ships neither. A spec
+that doesn't import, doesn't resolve, isn't callable, or raises is a
+`! config: ...` on stderr and not a dead session.
+
+```
+$ python -m harneskills
+loaded: ~/corpora/fs/circuit_breaker.ugm, ~/corpora/fs/fs_demo.ugm
+harneskills> /godmode
+harneskills[god]> fact +want(list("/tmp/hk-fs"))
+  + ls(/tmp/hk-fs)
+  + file(/tmp/hk-fs, alpha.txt)
+  + size(/tmp/hk-fs, alpha.txt, 0)
+  + created(/tmp/hk-fs, alpha.txt, 1787583736)
+```
 
 ```
 --config PATH   read that file instead of the default
@@ -134,9 +166,10 @@ any corpus could use, not a special case in `fs_tools.py`.
 harneskills/
   repl.py               the REPL loop itself -- carved out of ugm.repl, unmodified
   __main__.py           wiring: a Machine, a Loader, the corpora to load, then repl.run
-  config.py             which folders the standing corpora come from -- paths only, no UGM
+  config.py             which folders and which `tools:` the config names -- strings only, no UGM
   examples/
     fs.py                the file-tools example's wiring -- carved out of ugm.fs_repl
+                           `register(ldr)` is its Python half, nameable from a config `tools:` line
     fs_tools.py           its three answerers -- carved out of ugm.repl_fs
 examples/
   circuit_breaker.ugm    shared infra the fs example loads (any domain might watch a rule)

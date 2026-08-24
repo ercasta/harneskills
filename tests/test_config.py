@@ -180,3 +180,109 @@ def test_unreadable_corpus_is_reported_not_raised(tmp_path, monkeypatch, capsys)
     monkeypatch.setattr(entry.repl, "run", lambda m, ldr, *a, **k: 0)
     assert entry.main([str(tmp_path / "missing.ugm")]) == 0
     assert "missing.ugm" in capsys.readouterr().err
+
+
+# --- tools: lines -----------------------------------------------------
+
+def test_tools_lines_are_separated_from_folders(tmp_path):
+    conf = write(str(tmp_path / "config"),
+                 "/a\ntools: pkg.mod:register\n/b\ntools:other:go\n")
+    folders, tools = cfg.read_config(conf)
+    assert folders == ["/a", "/b"]
+    assert tools == ["pkg.mod:register", "other:go"]
+
+
+def test_read_folders_ignores_tools_lines(tmp_path):
+    conf = write(str(tmp_path / "config"), "tools: pkg:go\n/a\n")
+    assert cfg.read_folders(conf) == ["/a"]
+
+
+def test_a_tools_spec_is_not_path_expanded(tmp_path, monkeypatch):
+    # It is an import path. `~` in it is a typo, and silently turning it
+    # into /home/... would hide that behind a confusing ImportError.
+    monkeypatch.setenv("HOME", "/home/someone")
+    conf = write(str(tmp_path / "config"), "tools: ~pkg:go\n")
+    assert cfg.read_config(conf)[1] == ["~pkg:go"]
+
+
+def test_no_config_file_means_no_tools(tmp_path):
+    assert cfg.read_config(str(tmp_path / "nope")) == ([], [])
+
+
+# --- _register_tools --------------------------------------------------
+
+def _entry():
+    from harneskills import __main__ as entry
+    return entry
+
+
+def test_a_named_callable_is_handed_the_loader():
+    seen = []
+    import harneskills.config as target
+    target._probe = seen.append          # a callable reachable by module:attr
+    try:
+        problems = _entry()._register_tools("LOADER", ["harneskills.config:_probe"])
+        assert problems == []
+        assert seen == ["LOADER"]
+    finally:
+        del target._probe
+
+
+@pytest.mark.parametrize("spec,fragment", [
+    ("no_colon_here", "expected module:callable"),
+    (":register", "expected module:callable"),
+    ("pkg:", "expected module:callable"),
+    ("harneskills.nope:register", "harneskills.nope"),
+    ("harneskills.config:not_there", "no not_there"),
+    ("harneskills.config:APP", "not callable"),
+])
+def test_a_bad_spec_is_a_problem_not_an_exception(spec, fragment):
+    problems = _entry()._register_tools("LOADER", [spec])
+    assert len(problems) == 1 and fragment in problems[0]
+
+
+def test_a_callable_that_raises_is_a_problem_not_an_exception():
+    import harneskills.config as target
+
+    def boom(ldr):
+        raise RuntimeError("no tools for you")
+
+    target._boom = boom
+    try:
+        problems = _entry()._register_tools("LOADER", ["harneskills.config:_boom"])
+        assert len(problems) == 1
+        assert "RuntimeError" in problems[0] and "no tools for you" in problems[0]
+    finally:
+        del target._boom
+
+
+def test_tools_register_before_any_corpus_loads(tmp_path, monkeypatch, capsys):
+    """The ordering the whole line kind exists for: a corpus naming an
+    answerer parses only if the answerer is already there."""
+    entry = _entry()
+    import harneskills.config as target
+
+    folder = tmp_path / "rules"
+    write(str(folder / "needs_tool.ugm"),
+          "rule <use> = implies( { +answered(<probe>, asked(thing), yes) }, "
+          "{ +done(thing) } )\n")
+    # `tools:` is written AFTER the folder line on purpose -- it must still win.
+    conf = write(str(tmp_path / "config"),
+                 str(folder) + "\ntools: harneskills.config:_reg\n")
+    monkeypatch.setenv("HARNESKILLS_CONFIG", conf)
+
+    def reg(ldr):
+        ldr.answerer("probe", "asked", lambda mach, prop: ldr.atom("yes"))
+
+    target._reg = reg
+    monkeypatch.setattr(entry.repl, "run", lambda m, ldr, *a, **k: 0)
+    try:
+        assert entry.main([]) == 0
+    finally:
+        del target._reg
+
+    # The corpus names <probe>, which exists ONLY because _reg ran. Had the
+    # folder line won on file order, this would be a parse error on stderr.
+    out = capsys.readouterr()
+    assert "needs_tool.ugm" in out.out, out.err
+    assert out.err == ""

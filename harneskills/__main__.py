@@ -18,8 +18,17 @@ first because the command line is what you are saying NOW, and it should be
 able to answer what was already there. `--no-config` skips the file
 entirely -- the escape hatch for the session where the standing corpus is
 the thing you are debugging.
+
+Before either list, the `tools:` lines: `module:callable`, imported and
+called as `callable(loader)`. A domain whose rules lean on Python -- an
+answerer, a computator -- gets to bring that half along, because a rule
+mentioning `<approve>` will not parse until something has registered it.
+This is still not the harness knowing a domain: it imports what the config
+names, the same way it opens the folders the config names, and it ships
+neither.
 """
 
+import importlib
 import sys
 
 from ugm.core.machine import Machine
@@ -59,23 +68,64 @@ def _split_argv(argv) -> "tuple[list[str], str, bool]":
     return paths, (named or cfg.config_path()), True
 
 
+def _register_tools(ldr, specs) -> "list[str]":
+    """Import each `module:callable` and hand it the loader. Returns problems.
+
+    ⚠ The bare `except` around the call is deliberate and is NOT laziness.
+    What is being called is arbitrary code named by a text file -- there is
+    no exception type it is entitled to raise and no type it is forbidden
+    to. The choice is between naming the spec and going on, or a service
+    that restart-loops on somebody's typo with the traceback going nowhere
+    anyone can read it. A domain that failed to register is a corpus that
+    will fail to parse a moment later, and that message names the file.
+    """
+    problems = []
+    for spec in specs:
+        module_name, sep, attr = spec.partition(":")
+        module_name, attr = module_name.strip(), attr.strip()
+        if not sep or not module_name or not attr:
+            problems.append("%s: expected module:callable" % spec)
+            continue
+        try:
+            fn = getattr(importlib.import_module(module_name), attr)
+        except ImportError as e:
+            problems.append("%s: %s" % (spec, e))
+            continue
+        except AttributeError:
+            problems.append("%s: no %s in %s" % (spec, attr, module_name))
+            continue
+        if not callable(fn):
+            problems.append("%s: %s is not callable" % (spec, attr))
+            continue
+        try:
+            fn(ldr)
+        except Exception as e:  # noqa: BLE001 -- see the note above
+            problems.append("%s: %s: %s" % (spec, type(e).__name__, e))
+    return problems
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     paths, where, ok = _split_argv(argv)
     if not ok:
         return 2
 
-    standing = []
+    standing, tools, problems = [], [], []
     if where is not None:
-        standing, problems = cfg.corpus_files(cfg.read_folders(where))
+        folders, tools = cfg.read_config(where)
         # A folder named in the config that isn't there is worth saying out
         # loud once, on stderr, and then continuing: the session is fine
         # without it, and a config outliving one of its checkouts is normal.
-        for problem in problems:
-            print("  ! config: %s" % problem, file=sys.stderr)
+        standing, problems = cfg.corpus_files(folders)
 
     m = Machine()
     ldr = load(m, "", scope="harneskills")
+    # Tools first, and before ANY corpus: a `.ugm` rule referring to an
+    # answerer that does not exist yet is a parse error, not a late binding.
+    problems += _register_tools(ldr, tools)
+    for problem in problems:
+        print("  ! config: %s" % problem, file=sys.stderr)
+
     loaded = []
     for path in standing + paths:
         # A corpus that will not load must not take the session with it.
