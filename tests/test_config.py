@@ -286,3 +286,110 @@ def test_tools_register_before_any_corpus_loads(tmp_path, monkeypatch, capsys):
     out = capsys.readouterr()
     assert "needs_tool.ugm" in out.out, out.err
     assert out.err == ""
+
+
+# --- /reload and /reset -----------------------------------------------
+
+class Script:
+    """A stdin whose lines may include callables -- run, then read on.
+
+    Which is how a test edits a corpus mid-session: the point of `/reload`
+    is a file that changed while the REPL was sitting at its prompt, and
+    there is no other way to be at the prompt and at the filesystem at once.
+    """
+
+    def __init__(self, *items):
+        self.items = list(items)
+
+    def readline(self):
+        while self.items:
+            item = self.items.pop(0)
+            if callable(item):
+                item()
+                continue
+            return item
+        return ""
+
+
+def test_reload_picks_up_a_rule_edited_mid_session(tmp_path, monkeypatch, capsys):
+    entry = _entry()
+    folder = tmp_path / "rules"
+    corpus = str(folder / "r.ugm")
+    v1 = "rule <r> = implies( { +ping(a), no pong(a) }, { +pong(a) } )\n"
+    v2 = "rule <r> = implies( { +ping(a), no zap(a) }, { +zap(a) } )\n"
+    write(corpus, v1)
+    conf = write(str(tmp_path / "config"), str(folder) + "\n")
+    monkeypatch.setenv("HARNESKILLS_CONFIG", conf)
+
+    monkeypatch.setattr("sys.stdin", Script(
+        "/godmode\n",
+        "fact +ping(a)\n",
+        lambda: write(corpus, v2),      # the edit, while sitting at the prompt
+        "/reload\n",
+        "fact +ping(a)\n",
+        "/quit\n",
+    ))
+    assert entry.main([]) == 0
+    out = capsys.readouterr().out
+    before, _, after = out.partition("reloading")
+    assert "pong(a)" in before and "zap(a)" not in before
+    assert "zap(a)" in after, "the edited rule never took"
+    # <r> was redeclared -- which UGM refuses within one machine, so this
+    # also proves the reload built a new one rather than loading over.
+    assert "already declared" not in out
+
+
+def test_reload_forgets_what_was_typed(tmp_path, monkeypatch, capsys):
+    entry = _entry()
+    monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "none"))
+    monkeypatch.setattr("sys.stdin", Script(
+        "/godmode\n", "fact +secret(x)\n", "/reload\n", "/show\n", "/quit\n"))
+    assert entry.main([]) == 0
+    _, _, after = capsys.readouterr().out.partition("reloading")
+    assert "secret(x)" not in after
+
+
+def test_user_mode_still_works_after_a_reload(tmp_path, monkeypatch, capsys):
+    """The reload re-lays <trust-user>, which belongs to the loop and not to
+    any corpus -- forget it and a bare line stops being believed."""
+    entry = _entry()
+    monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "none"))
+    monkeypatch.setattr("sys.stdin", Script("/reload\n", "kettle(on)\n", "/quit\n"))
+    assert entry.main([]) == 0
+    _, _, after = capsys.readouterr().out.partition("reloading")
+    assert "trusted(kettle(on))" in after
+
+
+def test_reload_rereads_the_config_file_itself(tmp_path, monkeypatch, capsys):
+    entry = _entry()
+    folder = tmp_path / "later"
+    write(str(folder / "late.ugm"), "fact +arrived(late)\n")
+    conf = write(str(tmp_path / "config"), "# nothing yet\n")
+    monkeypatch.setenv("HARNESKILLS_CONFIG", conf)
+
+    monkeypatch.setattr("sys.stdin", Script(
+        lambda: write(conf, str(folder) + "\n"),   # a folder added mid-session
+        "/reload\n", "/quit\n"))
+    assert entry.main([]) == 0
+    assert "late.ugm" in capsys.readouterr().out
+
+
+def test_reset_is_the_same_act_as_reload(tmp_path, monkeypatch, capsys):
+    entry = _entry()
+    monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "none"))
+    monkeypatch.setattr("sys.stdin", Script(
+        "/godmode\n", "fact +secret(x)\n", "/reset\n", "/show\n", "/quit\n"))
+    assert entry.main([]) == 0
+    _, _, after = capsys.readouterr().out.partition("reloading")
+    assert "secret(x)" not in after
+
+
+def test_both_commands_are_listed_in_the_help(tmp_path, monkeypatch, capsys):
+    entry = _entry()
+    monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "none"))
+    monkeypatch.setattr("sys.stdin", Script("/quit\n"))
+    assert entry.main([]) == 0
+    out = capsys.readouterr().out
+    # Spliced in with the built-ins, above /quit -- not stranded after the prose.
+    assert out.index("/reload") < out.index("/quit      leave")
+    assert "/reset" in out

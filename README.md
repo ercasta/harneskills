@@ -7,8 +7,10 @@ substrate. It recently shipped its own REPL (`ugm.repl`) — talk to it, one
 `.ugm` line at a time, with typo-correction against the loaded corpus's own
 vocabulary and a plain-English fallback for a line that isn't `.ugm` syntax
 at all. HarneSkills carves that REPL out and promotes it to be the thing
-this repository builds on: `harneskills.repl` *is* `ugm.repl`, ported here
-unmodified, wired up by a thin `harneskills.__main__`. The engine itself
+this repository builds on: `harneskills.repl` is `ugm.repl` carved out and
+kept close to it, wired up by a thin `harneskills.__main__`. It has diverged
+in exactly one place — a `commands` seam, so a caller can add a slash command
+the loop knows nothing about (`/reload` is the only user of it so far). The engine itself
 (`ugm.core`, and any rules a domain ships) stays where it is — an ordinary
 dependency, not code duplicated into this repo.
 
@@ -131,8 +133,18 @@ rewritten here.
 /load PATH load another .ugm file into this session
 /godmode   author directly -- a line is `.ugm` text (fact, rule, say, ...)
 /usermode  back to the default -- a line is what you're SAYING
+/reload    start over: re-read the config and every corpus from disk
+/reset     the same act, under the name you reach for when the mess is yours
 /quit      leave
 ```
+
+`/reload` is the edit-a-rule loop: change a `.ugm` file in another window,
+type `/reload`, and it's in. It has to build a **whole new machine** — UGM
+won't redeclare a rule into one that already has it, so there is no such
+thing as reloading a single rule in place — which is why everything you
+typed this session goes with it. It re-reads `~/.config/harneskills/config`
+too, so a folder or `tools:` line added mid-session takes effect without
+leaving the REPL.
 
 ## An example: file tools
 
@@ -154,6 +166,12 @@ harneskills> cleanup "C:\Users\you\Documents" 7
 approve rename(notes.txt -> stale-notes.txt)? [y/N]
 ```
 
+Bare `show files` works too, and lists the directory the session started in
+— `fs.py:register` writes that once as `cwd`, and `<intake-show-here>` reads
+it. Note the **quotes are required** on a path: unquoted, `show files in
+/tmp/x` fails to tokenize (`unexpected character '/'`) before it can even
+become a sentence.
+
 Nothing about "listing" or "cleaning up" is built into the REPL or the
 tools — typing something that isn't `.ugm` syntax is heard as
 `sentence(show, files, in, "...")`, and it means whatever `examples/fs/fs_demo.ugm`
@@ -164,7 +182,7 @@ any corpus could use, not a special case in `fs_tools.py`.
 
 ```
 harneskills/
-  repl.py               the REPL loop itself -- carved out of ugm.repl, unmodified
+  repl.py               the REPL loop itself -- carved out of ugm.repl, plus a `commands` seam
   __main__.py           wiring: a Machine, a Loader, the corpora to load, then repl.run
   config.py             which folders and which `tools:` the config names -- strings only, no UGM
   examples/

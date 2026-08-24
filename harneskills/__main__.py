@@ -2,9 +2,9 @@
 
     python -m harneskills [--config PATH | --no-config] [corpus.ugm ...]
 
-A thin door onto `harneskills.repl`, itself carved out of `ugm.repl`
-unchanged -- see that module's docstring for what typing at the prompt
-means. This file contributes nothing beyond wiring: a fresh `Machine`, one
+A thin door onto `harneskills.repl`, itself carved out of `ugm.repl` and
+kept close to it -- see that module's docstring for what typing at the
+prompt means. This file contributes nothing beyond wiring: a fresh `Machine`, one
 `Loader` for the session, the corpora to load, then a handoff to the REPL
 loop. It knows nothing about any particular domain -- a UGM-side corpus
 (e.g. `ugm/rules/fs/` upstream, loaded via its own `ugm.fs_repl` entry
@@ -19,6 +19,12 @@ able to answer what was already there. `--no-config` skips the file
 entirely -- the escape hatch for the session where the standing corpus is
 the thing you are debugging.
 
+`build` is separate from `main` because `/reload` runs it again: a rule you
+have just edited cannot be loaded over the one already in the machine, so
+re-reading a corpus means a whole new machine, and the REPL loop swaps to
+it. `/reset` is the same act under the name people reach for when the mess
+is theirs rather than the corpus's.
+
 Before either list, the `tools:` lines: `module:callable`, imported and
 called as `callable(loader)`. A domain whose rules lean on Python -- an
 answerer, a computator -- gets to bring that half along, because a rule
@@ -32,7 +38,7 @@ import importlib
 import sys
 
 from ugm.core.machine import Machine
-from ugm.core.text import ParseError, load
+from ugm.core.text import Loader, ParseError, load
 
 from . import config as cfg
 from . import repl
@@ -104,12 +110,14 @@ def _register_tools(ldr, specs) -> "list[str]":
     return problems
 
 
-def main(argv=None) -> int:
-    argv = list(sys.argv[1:] if argv is None else argv)
-    paths, where, ok = _split_argv(argv)
-    if not ok:
-        return 2
+def build(where, paths) -> "tuple[Machine, Loader]":
+    """A machine with the config's tools registered and every corpus loaded.
 
+    Called once at startup and again for every `/reload` -- which is why it
+    re-reads the config file rather than closing over what it said the first
+    time. Edit `~/.config/harneskills/config`, type `/reload`, and the new
+    folder is in the session without leaving it.
+    """
     standing, tools, problems = [], [], []
     if where is not None:
         folders, tools = cfg.read_config(where)
@@ -149,7 +157,27 @@ def main(argv=None) -> int:
         loaded.append(path)
     if loaded:
         print("loaded:", ", ".join(loaded))
-    return repl.run(m, ldr)
+    return m, ldr
+
+
+def main(argv=None) -> int:
+    argv = list(sys.argv[1:] if argv is None else argv)
+    paths, where, ok = _split_argv(argv)
+    if not ok:
+        return 2
+
+    def reload_(arg):
+        """start over: re-read the config and every corpus from disk"""
+        print("  reloading -- everything typed this session is gone")
+        return build(where, paths)
+
+    m, ldr = build(where, paths)
+    # Two names for one act, because both are things people mean by it: you
+    # edited a rule and want it in, or you made a mess and want it out. UGM
+    # gives no way to tell them apart -- a rule cannot be redeclared into a
+    # machine that has it, so either way the answer is a new machine built
+    # from the same sources.
+    return repl.run(m, ldr, commands={"/reload": reload_, "/reset": reload_})
 
 
 if __name__ == "__main__":

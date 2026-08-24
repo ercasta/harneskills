@@ -235,10 +235,21 @@ def _as_sentence(ldr: Loader, raw: str):
 
 def run(m: Machine, ldr: Loader, limit: int = 400,
         prompt: str = "harneskills", stdin: Optional[TextIO] = None,
-        echo_prompt: bool = True) -> int:
+        echo_prompt: bool = True, commands=None) -> int:
+    """`commands` is `{"/name": fn}`, the one seam this loop has for a caller
+    that knows something it does not. `fn(argument_text)` may return None --
+    it handled itself -- or a fresh `(Machine, Loader)` to carry on with,
+    which is how `/reload` can exist at all: UGM will not redeclare a rule
+    into a machine that already has it, so re-reading an edited corpus means
+    a NEW machine, and only the loop can swap the one it is holding. Each
+    fn's first docstring line is its help text.
+    """
     stdin = stdin or sys.stdin
     ldr.load(TRUST_USER)
-    print(HELP)
+    extra = "".join(
+        "%-10s %s\n" % (name, ((fn.__doc__ or "").strip().splitlines() or [""])[0])
+        for name, fn in (commands or {}).items())
+    print(HELP.replace("/quit      leave\n", extra + "/quit      leave\n", 1))
     seen = set(m.pad.believed())
     god = False
 
@@ -287,6 +298,22 @@ def run(m: Machine, ldr: Loader, limit: int = 400,
                 ldr.load(fh.read())
             settle()
             continue
+        if commands and line.startswith("/"):
+            name, _, arg = line.partition(" ")
+            fn = commands.get(name)
+            if fn is not None:
+                fresh = fn(arg.strip())
+                if fresh is not None:
+                    # A whole new session handed back. Rebind -- `settle`
+                    # reads `m` from here, so it follows -- and re-lay the
+                    # one rule this loop owns rather than a corpus, or user
+                    # mode would quietly stop being believed. `seen` starts
+                    # again too: nothing the old machine held is news about
+                    # the new one.
+                    m, ldr = fresh
+                    ldr.load(TRUST_USER)
+                    seen = set(m.pad.believed())
+                continue
         line, corrections = _autocorrect(line, _vocabulary(m))
         for typed, fixed in corrections:
             print(f"  ~ {typed} -> {fixed}")

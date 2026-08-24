@@ -19,6 +19,7 @@ here. Extra corpus paths on the command line load last, for a one-off
 addition that is not meant to live in the folder.
 """
 
+import os
 import sys
 import time
 from pathlib import Path
@@ -62,9 +63,10 @@ def _computators(ldr: Loader) -> None:
 def register(ldr: Loader, ask=input) -> None:
     """Everything `examples/fs/` leans on that is Python, onto any loader.
 
-    Three tools, five computators, the `approve` prompt, and a `now` fact --
-    that last one because the corpus reads `+now($t)` to age a file, and a
-    machine that never wrote it simply never fires the rule.
+    Three tools, five computators, the `approve` prompt, and two facts --
+    `now`, because the corpus reads `+now($t)` to age a file, and `cwd`,
+    because it reads `+cwd($dir)` to know where a bare `show files` means.
+    A machine that never wrote them simply never fires those rules.
 
     Split out of `build` so that a config file can name it:
 
@@ -85,9 +87,14 @@ def register(ldr: Loader, ask=input) -> None:
     ldr.answerer("approve", "pending", approve)
 
     m = ldr.m
-    node = m.g.rel(ldr.atom("now"), ldr.atom(str(int(time.time()))))
-    if not m.pad.holds(node):
-        m.gate.write(node)
+    # Read once, at registration, and never again: a session that has been
+    # open an hour should age files against the clock it started with, and
+    # `show files` should mean the directory you launched in even after a
+    # tool has walked somewhere else.
+    for head, value in (("now", str(int(time.time()))), ("cwd", os.getcwd())):
+        node = m.g.rel(ldr.atom(head), ldr.atom(value))
+        if not m.pad.holds(node):
+            m.gate.write(node)
 
 
 def build(ask=input) -> "tuple[Machine, Loader]":
@@ -113,11 +120,21 @@ def build(ask=input) -> "tuple[Machine, Loader]":
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    m, ldr = build()
-    for path in argv:
-        with open(path, "r", encoding="utf-8") as fh:
-            ldr.load(fh.read())
-    return repl.run(m, ldr)
+
+    def session() -> "tuple[Machine, Loader]":
+        m, ldr = build()
+        for path in argv:
+            with open(path, "r", encoding="utf-8") as fh:
+                ldr.load(fh.read())
+        return m, ldr
+
+    def reload_(arg):
+        """start over: re-read every corpus from disk"""
+        print("  reloading -- everything typed this session is gone")
+        return session()
+
+    m, ldr = session()
+    return repl.run(m, ldr, commands={"/reload": reload_, "/reset": reload_})
 
 
 if __name__ == "__main__":

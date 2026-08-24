@@ -84,3 +84,16 @@ rule <denied-rename> = implies(
     { +answered(<approve>, pending(rename($dir, $old, $new)), no) },
     { -pending(rename($dir, $old, $new)),
       -answered(<approve>, pending(rename($dir, $old, $new)), no) } )
+
+# The same intake, one word shorter. `show files` on its own is
+# `sentence(show, files)` -- two words, so <intake-show> above (which wants
+# `show files in $dir`) cannot match it, and the sentence just sits there
+# believed and inert. It is the FIRST thing anyone types, because the REPL's
+# own help offers "show files" as its example of a sentence -- illustrating
+# the mechanism, not promising this corpus knows the words. So give it the
+# meaning it obviously wants: the directory the session started in, which
+# `fs.py:register` writes once as `cwd`.
+rule <intake-show-here> = implies(
+    { +says(user, sentence(show, files)), no heard(sentence(show, files)),
+      +cwd($dir) },
+    { +want(list($dir)), +heard(sentence(show, files)) } )
