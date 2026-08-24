@@ -3,224 +3,135 @@
 **A door onto a [UGM](https://github.com/ercasta/Universal-Graph-Machine) machine.**
 
 UGM is an agent that plans, acts, observes and explains itself on one graph
-substrate. Everything it concludes is already in that graph — its own design
-notes make the point that the missing piece was never more reasoning, it was a
-way to *be told*. HarneSkills is that: a terminal you can drive it from, with the
-graph on screen beside the transcript while it thinks.
-
-```
-┌────────────────────────────────────────┬──────────────────────────────┐
-│ > /load corpus/kettle.ugm              │ world 3  goal 27  act 4      │
-│   loaded corpus/kettle.ugm: 4 statem…  │ ┌ asked for/graph/rules/play┐│
-│ > /run                                 │  asked for:                  │
-│     1 [applied] a rule applied         │    boiling(kettle)   [held]  │
-│         +recall(boiling(kettle))       │      water(kettle)   [held]  │
-│     …                                  │      doing(heat(kettle))     │
-│   >> heat(kettle)                      │  did:                        │
-│   — 37 ticks, ended quiescent          │    heat(kettle)              │
-├────────────────────────────────────────┴──────────────────────────────┤
-│ > why boiling(kettle)                                                 │
-└───────────────────────────────────────────────────────────────────────┘
-```
-
----
+substrate. It recently shipped its own REPL (`ugm.repl`) — talk to it, one
+`.ugm` line at a time, with typo-correction against the loaded corpus's own
+vocabulary and a plain-English fallback for a line that isn't `.ugm` syntax
+at all. HarneSkills carves that REPL out and promotes it to be the thing
+this repository builds on: `harneskills.repl` *is* `ugm.repl`, ported here
+unmodified, wired up by a thin `harneskills.__main__`. The engine itself
+(`ugm.core`, and any rules a domain ships) stays where it is — an ordinary
+dependency, not code duplicated into this repo.
 
 ## Try it
 
 ```bash
-pip install -e ../ugm          # the engine, editable, from its own checkout
+pip install -e ../ugm      # the engine, editable, from its own checkout
 pip install -e .
-harneskills corpus/kettle.ugm  # or: python -m harneskills_tui
+python -m harneskills [corpus.ugm ...]     # corpus paths are optional
 ```
 
-Then, at the prompt:
+No corpus, no problem — `/godmode` lets you author a fact and a rule right at
+the prompt, then `/usermode` to go back to talking normally:
 
 ```
-/run                    think until there is nothing left
-/report                 what became of what was asked for
-/why boiling(kettle)    why it believes that, and on whose word
-/graph act              what left the agent
-/scenarios              something to play
+$ python -m harneskills
+harneskills> /godmode
+  authoring directly -- /usermode to go back
+harneskills[god]> fact +water(kettle)
+  (1 ticks, ended quiescent)
+harneskills[god]> rule <boil> = implies( { +water($w), no boiling($w) }, { +boiling($w) } )
+  (2 ticks, ended quiescent)
+harneskills[god]> /usermode
+  back to talking on the `user` channel
+harneskills> boiling(kettle)
+  + arrived(user, boiling(kettle))
+  + says(user, boiling(kettle))
+  + trusted(boiling(kettle))
+  (3 ticks, ended quiescent)
 ```
 
-No terminal? `python -m harneskills` is the same thing without Textual.
+(That last line is a *question*, answered by asking it and watching what
+sticks: typing `boiling(kettle)` in user mode says it, `<trust-user>` believes
+you unconditionally, and the `+`/`-` lines are the machine settling — nothing
+retracted here, so it was already true.)
 
----
-
-## The one idea worth knowing
-
-**What you type is the corpus language.** A line starting `rule`, `fact` or `say`
-goes straight into the machine, unchanged:
-
-```
-fact +water(kettle)
-rule <boil> = causes( { +doing(heat(?w)), +water(?w) }, { +boiling(?w) } )
-say user: +raining(here)
-```
-
-There is no second, friendlier syntax to learn and nothing to keep in sync — an
-interactive session is one document that happens to arrive slowly, and anything
-you type here you can paste into a `.ugm` file. Anything that is *not* a
-statement or a `/command` is read as a term to ask about: type `boiling(kettle)`
-and you get the verdict and the provenance trail.
-
----
-
-## What you can see
-
-The right-hand pane re-reads the machine while it thinks. Three views, because a
-reader has three different questions:
-
-| view | answers |
-|---|---|
-| **asked for** | the goal → plan → subgoal tree: *is it getting anywhere?* Rows are coloured `held` / `open` / **BLOCKED** |
-| **graph** | every settled proposition in one layer: *what does it believe?* |
-| **rules** | what can come to mind, and which have actually applied |
-
-Press <kbd>Ctrl+G</kbd> to cycle the layer, or <kbd>Enter</kbd> on a row to print
-its provenance in the transcript.
-
-**Layers** exist because a working machine holds ~150 propositions of bookkeeping
-for every 3 about the world, and showing them undifferentiated shows nothing:
-
-- `world` — what the corpus is about: relations *it* coined
-- `goal` — what is wanted, the plans for it, what they need
-- `act` — what left the agent, what it did, what it expected
-- `search` — how it is looking: fits, checks, recall, verdicts
-- `talk` — what arrived, who said it, where it was loaded from
-- `meta` — the bookkeeping: rules as data, tools, standing, silences
-
-The split is drawn from the engine's own `Machine.reserved` rather than a list
-kept here, so a relation your corpus coins is `world` automatically and a new
-engine relation lands in `meta` — neither needs this repo edited.
-
----
-
-## You are a tool
-
-UGM can register an *answerer*: something that answers a request without
-searching for it. HarneSkills registers **you** as one.
+Got a `.ugm` file already? Load it on the command line, or mid-session with
+`/load` — this repo ships no corpus of its own (see Scope, below), so `PATH`
+is wherever your domain's rules live, e.g. `../ugm/ugm/rules/delay.ugm`:
 
 ```
-/load corpus/ask.ugm
-/run
-  ? weather(today)
-> sunny(here)
+python -m harneskills PATH/TO/corpus.ugm
+harneskills> /load PATH/TO/another.ugm
 ```
 
-The agent asks, the driver blocks, and what comes back is
-`answered(<human>, question, answer)` — a *record that you said so*, not a
-belief. Whether to believe you is an ordinary rule in the corpus:
+Starts in **user mode**: a bare line is heard as something you're *saying*,
+wrapped as `say user: <line>` and believed only because `<trust-user>` (an
+ordinary rule, loaded at start) trusts the channel unconditionally. A line
+that parses as neither a proposition nor `.ugm` syntax is heard as a sentence
+instead of refused (`"show files"` → `sentence(show, files)`), left for
+whatever `intake` rule a loaded corpus gives it, or unbelieved if none does.
+A misspelled relation name — against whatever the loaded rules already use —
+gets autocorrected and echoed (`~ typed -> fixed`), never silently. See
+`harneskills/repl.py`'s docstring for the full account — it's UGM's own, not
+rewritten here.
 
 ```
-rule <believe-human> = implies( { +answered(<human>, ?q, ?a) }, { +?a } )
+/show      what is believed right now
+/load PATH load another .ugm file into this session
+/godmode   author directly -- a line is `.ugm` text (fact, rule, say, ...)
+/usermode  back to the default -- a line is what you're SAYING
+/quit      leave
 ```
 
-Delete it and you have an agent that consults you and then decides for itself.
-Wrap it as `+likely(?a)` and it takes your word as a hint. That the harness
-*cannot* decide this for you is the design working: an interface that believed
-its user directly would be settling something the corpus is entitled to argue
-with.
+## An example: file tools
 
----
-
-## Play the dungeon
-
-The engine ships a turn-based fight authored entirely in rules
-(`ugm/rules/dungeon.ugm`) — initiative, hit resolution, damage, fleeing, death
-and victory are all ordinary `implies`/`causes` over ordinary claims, and the
-engine has never heard of a goblin. Upstream runs it as a batch test with the
-player's moves scripted at the bottom of the corpus. Here you play it:
-
-```
-/play dungeon 7     seeded — the same fight every time
-/run
-  ? round 1 -- what does the hero do?
-  e.g. attack(goblin1)   attack(goblin2)
-> attack(goblin1)
+```bash
+harneskills-fs [corpus.ugm ...]
 ```
 
-It stops each round, asks, and carries on. The **play** tab keeps the scoreboard:
+Carved out of `ugm.fs_repl` the same way `harneskills.repl` was carved out of
+`ugm.repl`: three tools (`ls`, `stat`, `rename`), a corpus that holds a
+rename for approval, and a circuit breaker watching it, all loaded before
+handing off to the same REPL loop above.
 
 ```
-round 3 -- hero to act
+$ harneskills-fs
+harneskills> +want(list("C:\Users\you\Documents"))
+  + file(...), size(...), created(...)   -- the `ls` tool, an ordinary rule away
 
-> hero      hp 3   standing
-  goblin1   hp 5   standing
-  goblin2   hp 5   standing
+harneskills> cleanup "C:\Users\you\Documents" 7
+approve rename(notes.txt -> stale-notes.txt)? [y/N]
 ```
 
-Leave `/play`'s seed off for a genuinely external die. Answer blank to decline —
-the corpus has a standing policy (`<hero-holds>`) that swings for you.
-
-Nothing in the engine or the corpus was modified to make this work. A **cue** is
-a state the harness watches for between ticks; when it fires, the drive pauses,
-you are asked, and your answer is `say`'d on the `player` channel — which is all
-a player ever was. `<trust-player>` is the corpus rule that turns your utterance
-into an intention, and deleting it leaves your declarations on the record,
-believed by nobody.
-
-Because the roll is a *tool* rather than a hidden dice-roller, the provenance
-goes all the way down:
-
-```
-/why hp(goblin1, 1)
-  +hp(goblin1, 1) @M0, licensed by applied(<wound>)
-    because +hits(hero, goblin1, 4) @M0, licensed by applied(<hit>)
-    because +answered(dice, roll(d6, hurt(hero, goblin1), 4), 4) …
-    because +hp(goblin1, 5) @M0, via dungeon, licensed by loaded(hp(goblin1, 5))
-    because +answered(arith, calc(sub, 5, 4), 1) …
-```
-
-The roll that hurt it, the arithmetic that did the subtraction, and the round it
-happened in are all on the trail, because a tool *proposes* and a rule concludes.
-
-⚠ The hero can lose, and does at seed 7. Try 1, 2 or 11.
-
----
+Nothing about "listing" or "cleaning up" is built into the REPL or the
+tools — typing something that isn't `.ugm` syntax is heard as
+`sentence(show, files, in, "...")`, and it means whatever `examples/fs/fs_demo.ugm`
+says it means. A rename is held for approval by the same write-time trigger
+any corpus could use, not a special case in `fs_tools.py`.
 
 ## Layout
 
 ```
 harneskills/
-  runner.py     a Machine, its corpora and name scopes, driven a tick at a time
-  view.py       read-only projections: what holds, what is wanted, what applied
-  commands.py   the verb vocabulary, as data, shared by every front end
-  play.py       cues: where a machine stops so a person can speak into it
-  dungeon.py    the engine's fight corpus, made playable
-  repl.py       a plain terminal front end, no Textual
-harneskills_tui/
-  screen.py     transcript left, machine right, prompt below
-  panes.py      the graph pane
-  session.py    the driver thread, and the human-as-a-tool door
-corpus/
-  kettle.ugm    a goal, a plan, and an act that leaves the agent
-  weather.ugm   the boundary: the agent does not simply believe its user
-  ask.ugm       you, as a tool the agent consults
+  repl.py               the REPL loop itself -- carved out of ugm.repl, unmodified
+  __main__.py           wiring: a Machine, a Loader, the corpora named on argv, then repl.run
+  examples/
+    fs.py                the file-tools example's wiring -- carved out of ugm.fs_repl
+    fs_tools.py           its three answerers -- carved out of ugm.repl_fs
+examples/
+  circuit_breaker.ugm    shared infra the fs example loads (any domain might watch a rule)
+  fs/fs_demo.ugm         the fs example's own corpus
 ```
-
-`view.py` never concludes anything — it walks the graph, groups and formats, and
-that invariant is asserted in `tests/test_view.py`. A viewer that starts deriving
-is a second engine with no provenance.
-
----
 
 ## Scope
 
-**HarneSkills is a UI/UX layer over UGM. Nothing else.** The two were split
-precisely to separate these concerns, so the test for anything proposed here is
-one question: *is this how a human sees, drives, or authors for UGM?* Planning,
-arbitration, norms, procedures, credit assignment and provenance are the
-engine's. Earlier versions of this repo grew all of them; re-growing them would
-be un-splitting the split.
+**HarneSkills is a door onto UGM. Nothing else.** The engine — `ugm.core` —
+is a pinned external dependency; the harness itself (`harneskills/repl.py`,
+`harneskills/__main__.py`) bakes in no domain corpus, tools, or rules.
+`harneskills/examples/` is different on purpose: worked demonstrations of
+wiring a domain onto the harness, each its own console script
+(`harneskills-fs`, so far), never imported by the harness itself. Planning,
+arbitration, norms, procedures, credit assignment and provenance are all
+the engine's.
 
 ## Status
 
-Rebuilt against the current UGM (`restart`). ⚠ That engine is under active
-redesign — grades left the entry and `@` left the surface between two afternoons
-— so read `../ugm/docs/HANDOFF.md` before diagnosing an import error. The
-previous harness, built on the deleted production-rule/CNL engine, is in git
-history; nothing was ported from it.
-
-Run the suite with `pytest` (63 tests, including a headless drive of the real TUI
-and a whole dungeon fight played through it).
+Freshly carved from `ugm.repl` (2026-08-24) — the previous, bespoke
+harness (`runner.py`/`view.py`/`commands.py`/`play.py`/`dungeon.py`, a
+Textual TUI, its own corpus, its own tests) is in git history; nothing was
+ported from it. Verified end to end: `pip install -e ../ugm && pip install
+-e .`, then both transcripts above (the no-corpus `/godmode` session and
+`harneskills-fs` listing a real directory), plus `python -m ugm.selftest`
+(183 checks, 0 failing) against the same editable install. ⚠
+`universal-graph-machine` is under active redesign — read
+`../ugm/docs/HANDOFF.md` before diagnosing an import error.

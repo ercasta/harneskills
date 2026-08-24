@@ -5,39 +5,34 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "harneskills"
 version = "0.1.0"
-description = "HarneSkills — a door onto a UGM machine: drive it, watch the graph, ask it why"
+description = "HarneSkills — a plain terminal onto a UGM machine, carved out of ugm.repl"
 readme = { text = "HarneSkills", content-type = "text/markdown" }
 requires-python = ">=3.9"
 license = { text = "MIT" }
-keywords = ["tui", "textual", "agent", "knowledge-graph", "reasoning", "ugm"]
+keywords = ["repl", "agent", "knowledge-graph", "reasoning", "ugm"]
 
-# ⚠ Two dependencies, and that is the whole of it. UGM has none at all, and this
-# is a UI layer over UGM — so anything else here would be something the harness
-# had grown that is not seeing, driving or authoring.
+# One dependency, and that is the whole of it: the engine. This repo is a
+# REPL over UGM, not a second implementation of one.
 #
-# ⚠⚠ `universal-graph-machine` is pinned by VERSION and tracks a package that is
-# under active redesign: between one afternoon and the next it deleted grades
-# from the entry, removed `@` from the surface, and renamed nothing at all. An
-# unpinned floor is not a safety net here. If imports start failing, read
-# ../ugm/docs/HANDOFF.md before anything else — it records shape changes.
+# ⚠ `universal-graph-machine` is pinned by VERSION and tracks a package that
+# is under active redesign. An unpinned floor is not a safety net here. If
+# imports start failing, read ../ugm/docs/HANDOFF.md before anything else --
+# it records shape changes.
 dependencies = [
-    "universal-graph-machine>=0.3.0",
-    "textual>=8.2",
+    "universal-graph-machine>=0.4.0",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0", "pytest-asyncio>=0.24"]
+dev = ["pytest>=8.0"]
 
 [project.scripts]
-harneskills = "harneskills_tui.app:main"
-harneskills-repl = "harneskills.repl:main"
+harneskills = "harneskills.__main__:main"
+harneskills-fs = "harneskills.examples.fs:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "strict"
 norecursedirs = [".venv", "__pycache__", ".git", "*.egg-info"]
-markers = ["slow: marks tests as slow"]
 
 [tool.setuptools]
 py-modules = []
-packages = ["harneskills", "harneskills_tui"]
+packages = ["harneskills", "harneskills.examples"]

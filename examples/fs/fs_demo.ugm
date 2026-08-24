@@ -1,0 +1,86 @@
+# Filesystem bookkeeping, over `ugm/repl_fs.py`'s tools. Run interactively:
+#
+#     python -m ugm.fs_repl
+#
+# `ls` is a read-only tool and fires freely. `rename` is declared as an
+# `action` and every rename this corpus itself proposes is held for approval
+# by the SAME mechanism as `tools_approval.ugm`'s `deploy` -- a write-time
+# trigger, not a special case in the engine. A rename typed directly by a
+# person at the REPL (`fact +rename(...)`) is not produced by
+# `<propose-rename>`, so `<hold-rename>` does not see it and it fires
+# immediately -- the gate holds what an AUTOMATION proposes, not everything
+# of that shape. Wanting a person's own renames held too is one more
+# `<hold-...>` rule, not a different mechanism.
+
+action rename($dir, $old, $new)
+
+# `fact +want(list("some path"))`, typed at the REPL or by another rule,
+# deposits the goal; this is the whole of what turns it into a tool call.
+rule <list> = implies( { +want(list($dir)) },
+                       { +ls($dir), -want(list($dir)) } )
+
+# An INTAKE rule: `ugm/repl.py` hears anything that fails to parse as a
+# proposition as `sentence(w1, w2, ...)` instead of refusing it -- typing
+# `show files in "some path"` (no sign, no parens: not `.ugm` at all)
+# delivers `sentence(show, files, in, "some path")` on the same `user`
+# channel `say` uses. This rule is what gives THAT shape a meaning, by
+# concluding the exact same goal the precise form would have written --
+# canonicalization is nothing but an ordinary rule reading an ordinary
+# arrival. `no heard(...)` is not optional: `says(user, ...)` persists
+# (nothing ever retracts an utterance), so without it this rule re-fires
+# every time `<list>` consumes `want(list($dir))`, forever -- the same
+# discipline `<trust-user>` (`ugm/repl.py`) needed for the same reason.
+rule <intake-show> = implies(
+    { +says(user, sentence(show, files, in, $dir)), no heard(sentence(show, files, in, $dir)) },
+    { +want(list($dir)), +heard(sentence(show, files, in, $dir)) } )
+
+# `fact +want(stale_after("some path", 7))`. Every file `ls` found under
+# $dir, at least $days old by `now` (`ugm/fs_repl.py` seeds `now` once at
+# start), is flagged -- one rule, however many files `ls` found.
+# `no considered(...)` guards it, and `+considered` lands in the SAME
+# firing that decides -- not a later stage -- because a guard the rule's own
+# match does not immediately satisfy is no guard at all: the engine reselects
+# whatever still matches every tick, and a still-open binding it already
+# looked at wins arbitration again forever (the discipline `docs/guide.md`'s
+# `<pay>` spends `-pays(...)` on). It also makes asking again about the same
+# directory idempotent -- only files new since are reconsidered.
+#
+# `<flag-stale>` is exactly the rule that starved this way before the
+# guard existed, so it is also the one watched by
+# `ugm/rules/circuit_breaker.ugm` (loaded by `ugm/fs_repl.py`) -- belt and
+# suspenders: the guard should always be enough, and if a future edit
+# breaks it, 1000 unproductive reselections trips dormancy instead of
+# quietly burning the whole tick budget.
+fact +watched(<flag-stale>, flag_stale_tag)
+fact +tries(flag_stale_tag, 0)
+fact +threshold(flag_stale_tag, 1000)
+fact +cooldown_len(flag_stale_tag, 50)
+
+rule <flag-stale> = implies(
+    { +want(stale_after($dir, $days)), +file($dir, $name), no considered($dir, $name),
+      +created($dir, $name, $c), +now($t),
+      age_days($t, $c) as $age, at_least($age, $days) as $old },
+    { +stale($dir, $name), +considered($dir, $name) } )
+
+# The compounding step the bet is about: staleness becomes a GOAL
+# (`+rename(...)`), not a direct act. A corpus that wanted to archive
+# instead of rename changes only this rule -- `<list>`, the tools and the
+# approval gate are untouched.
+rule <propose-rename> = implies(
+    { +stale($dir, $name), prefixed($name) as $new },
+    { +rename($dir, $name, $new), -stale($dir, $name) } )
+
+fact +intercepts(<hold-rename>, after)
+rule <hold-rename> = implies(
+    { +producing(<propose-rename>, rename($dir, $old, $new)) },
+    { +instead(rename($dir, $old, $new), pending(rename($dir, $old, $new))) } )
+
+rule <approved-rename> = implies(
+    { +answered(<approve>, pending(rename($dir, $old, $new)), yes) },
+    { +rename($dir, $old, $new), -pending(rename($dir, $old, $new)),
+      -answered(<approve>, pending(rename($dir, $old, $new)), yes) } )
+
+rule <denied-rename> = implies(
+    { +answered(<approve>, pending(rename($dir, $old, $new)), no) },
+    { -pending(rename($dir, $old, $new)),
+      -answered(<approve>, pending(rename($dir, $old, $new)), no) } )
