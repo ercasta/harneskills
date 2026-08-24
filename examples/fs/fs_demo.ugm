@@ -33,6 +33,7 @@ rule <list> = implies( { +want(list($dir)) },
 rule <intake-show> = implies(
     { +says(user, sentence(show, file, in, $dir)), no heard(sentence(show, file, in, $dir)) },
     { +want(list($dir)), +heard(sentence(show, file, in, $dir)) } )
+=> attend($dir, 5)
 
 # `fact +want(stale_after("some path", 7))`. Every file `ls` found under
 # $dir, at least $days old by `now` (`ugm/fs_repl.py` seeds `now` once at
@@ -111,3 +112,46 @@ rule <intake-show-here> = implies(
     { +says(user, sentence(show, file)), no heard(sentence(show, file)),
       +cwd($dir) },
     { +want(list($dir)), +heard(sentence(show, file)) } )
+=> attend($dir, 5)
+
+
+# -- what is big, HERE ---------------------------------------------------
+# `show big` answers about the folder you are looking at, and it knows which
+# one that is because listing a folder ATTENDS it: the `=> attend($dir, 5)`
+# tails above. Attention is the engine's own (`ugm/core/attention.py`), not
+# a fact this corpus keeps -- a claim that fades on its own clock, five
+# ticks here, restored to five whenever a move touches the folder again.
+#
+# Three rules rather than one, and the middle one is the whole point.
+
+fact +big_is(1000)
+
+# One `want`, once per session. `says(user, ...)` cannot be unsaid --
+# retracting it loops, because `arrived` re-derives it -- so a bare sentence
+# gets a guard it never releases, exactly as <intake-show-here> does.
+rule <intake-show-big> = implies(
+    { +says(user, sentence(show, big)), +big_is($min), no asked_big(yes) },
+    { +want(big_here($min)), +asked_big(yes) } )
+
+# WHICH folder. This fires exactly once -- it spends the `want` that let it
+# match -- and that is what makes "here" mean the LAST folder rather than
+# every folder ever listed. `attentioned($dir)` only says $dir is in the
+# attention pool at all, and a folder listed ten moves ago is still in it
+# (a standing claim does not fade the way the queue does); what separates
+# them is that the engine ranks a rule's own applications by attention,
+# newest and strongest first, so the one binding takes is the folder just
+# looked at. List A, list B, ask: you get B.
+rule <focus-big> = implies(
+    { +want(big_here($min)), +file($dir, $name), attentioned($dir) },
+    { +want(big_files($min, $dir)), -want(big_here($min)) } )
+
+# Then every file in THAT folder, one rule however many files `ls` found --
+# `<flag-stale>`'s shape exactly, down to the guard landing in the same
+# firing that decides. `at_least` answers nothing when the file is too
+# small, and a computator that binds nothing is a rule that does not match:
+# the filter IS the match.
+rule <flag-big> = implies(
+    { +want(big_files($min, $dir)), +file($dir, $name),
+      +size($dir, $name, $bytes), no weighed($dir, $name),
+      at_least($bytes, $min) as $ok },
+    { +big($dir, $name), +weighed($dir, $name) } )

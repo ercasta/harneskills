@@ -218,6 +218,24 @@ Note the **quotes are required** on a path: unquoted, `show file in /tmp/x`
 fails to tokenize (`unexpected character '/'`) before it can even become a
 sentence.
 
+Once a folder is listed, `show big` reports the large files **in that
+folder** — the one you just looked at, not every folder listed this session:
+
+```
+harneskills> show file in "/tmp/a"
+harneskills> show file in "/tmp/b"
+harneskills> show big
+  + big(/tmp/b, huge.bin)
+```
+
+Listing a folder *attends* it (`=> attend($dir, 5)` on the intake rules),
+which is UGM's own attention rather than a fact this corpus keeps: a claim
+that fades on its own clock and is restored whenever a move touches the
+folder again. `attentioned($dir)` says only that a folder is in the pool at
+all — both are — so what picks `/tmp/b` is that the engine ranks a rule's
+own applications by attention, newest first, and `<focus-big>` spends the
+`want` that let it match, so exactly one binding takes.
+
 Nothing about "listing" or "cleaning up" is built into the REPL or the
 tools — typing something that isn't `.ugm` syntax is heard as
 `sentence(show, file, in, "...")`, and it means whatever `examples/fs/fs_demo.ugm`
