@@ -54,6 +54,35 @@ python -m harneskills PATH/TO/corpus.ugm
 harneskills> /load PATH/TO/another.ugm
 ```
 
+Typing the same paths every session gets old. `~/.config/harneskills/config`
+names the folders your corpora live in, one per line, and every `*.ugm`
+directly inside each one is loaded at startup:
+
+```
+# ~/.config/harneskills/config -- standing corpora, loaded in this order
+~/projects/Universal-Graph-Machine/ugm/rules
+~/corpora/kitchen
+```
+
+Blank lines and lines starting with `#` are ignored; `~` and `$VARS` expand;
+a relative folder is relative to the config file, not to your working
+directory (the thing most likely to read this file is a service). The sweep
+is **one level deep** on purpose — `ugm/rules/` and `ugm/rules/fs/` are
+different corpora that happen to nest, and quietly pulling in the second
+because you asked for the first would be choosing your rules for you. List
+the subfolder if you want it.
+
+Standing corpora load first, then anything named on the command line — so a
+file you name now can answer one that was already there. A folder in the
+config that has gone missing costs you that folder (`! config: ... no such
+folder`, on stderr) and not the session.
+
+```
+--config PATH   read that file instead of the default
+--no-config     skip the file entirely, for the session where the standing
+                corpus is the thing you're debugging
+```
+
 Starts in **user mode**: a bare line is heard as something you're *saying*,
 wrapped as `say user: <line>` and believed only because `<trust-user>` (an
 ordinary rule, loaded at start) trusts the channel unconditionally. A line
@@ -104,20 +133,25 @@ any corpus could use, not a special case in `fs_tools.py`.
 ```
 harneskills/
   repl.py               the REPL loop itself -- carved out of ugm.repl, unmodified
-  __main__.py           wiring: a Machine, a Loader, the corpora named on argv, then repl.run
+  __main__.py           wiring: a Machine, a Loader, the corpora to load, then repl.run
+  config.py             which folders the standing corpora come from -- paths only, no UGM
   examples/
     fs.py                the file-tools example's wiring -- carved out of ugm.fs_repl
     fs_tools.py           its three answerers -- carved out of ugm.repl_fs
 examples/
   circuit_breaker.ugm    shared infra the fs example loads (any domain might watch a rule)
   fs/fs_demo.ugm         the fs example's own corpus
+tests/
+  test_config.py         the config file's promises: which folders, which files, what order
 ```
 
 ## Scope
 
 **HarneSkills is a door onto UGM. Nothing else.** The engine — `ugm.core` —
 is a pinned external dependency; the harness itself (`harneskills/repl.py`,
-`harneskills/__main__.py`) bakes in no domain corpus, tools, or rules.
+`harneskills/__main__.py`, `harneskills/config.py`) bakes in no domain
+corpus, tools, or rules — the config file names folders, it does not ship
+any, and `config.py` never opens a `.ugm` or imports UGM.
 `harneskills/examples/` is different on purpose: worked demonstrations of
 wiring a domain onto the harness, each its own console script
 (`harneskills-fs`, so far), never imported by the harness itself. Planning,
