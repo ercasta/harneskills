@@ -2,7 +2,7 @@
 
     python -m harneskills --tools harneskills.examples.fs:register examples/fs
 
-`register` binds `fs_tools`'s three answerers, the five computators the
+`register` binds `fs_tools`'s three answerers, the eight computators the
 shipped corpus reads, an `approve` tool that asks at the terminal, and the
 `now`/`cwd` facts the corpus reads. Carved out of `ugm.fs_repl` with the
 imports repointed at `ugm` as an ordinary dependency, and the two corpora
@@ -46,17 +46,35 @@ def _computators(ldr: Loader) -> None:
     def minus(a, b):
         return max(0, int(a) - int(b))
 
+    # Formatting, not domain logic -- each turns a few ground values into
+    # the one string a `<reply-...>` rule in `fs_demo.ugm` hands straight
+    # to `+reply(user, $msg)`. A computator's result is resolved back into
+    # THIS loader's own table (`Loader.computator`'s own note), so the atom
+    # a reply rule binds is the exact one `harneskills.repl` will print --
+    # nothing downstream re-parses or re-quotes it.
+    def listed_msg(dirpath, n):
+        return f"{n} item(s) in {dirpath}"
+
+    def big_msg(name, size):
+        return f"{name} ({size} bytes)"
+
+    def renamed_msg(old, new):
+        return f"renamed {old} -> {new}"
+
     ldr.computator("age_days", age_days)
     ldr.computator("at_least", at_least)
     ldr.computator("prefixed", prefixed)
     ldr.computator("plus", plus)
     ldr.computator("minus", minus)
+    ldr.computator("listed_msg", listed_msg)
+    ldr.computator("big_msg", big_msg)
+    ldr.computator("renamed_msg", renamed_msg)
 
 
 def register(ldr: Loader, ask=input) -> None:
     """Everything `examples/fs/` leans on that is Python, onto any loader.
 
-    Three tools, five computators, the `approve` prompt, and two facts --
+    Three tools, eight computators, the `approve` prompt, and two facts --
     `now`, because the corpus reads `+now($t)` to age a file, and `cwd`,
     because it reads `+cwd($dir)` to know where a bare `show files` means.
     A machine that never wrote them simply never fires those rules.
@@ -86,5 +104,8 @@ def register(ldr: Loader, ask=input) -> None:
     # tool has walked somewhere else.
     for head, value in (("now", str(int(time.time()))), ("cwd", os.getcwd())):
         node = m.g.rel(ldr.atom(head), ldr.atom(value))
-        if not m.pad.holds(node):
+        # `m.holds` (shape), not `m.pad.holds` (exact node) -- `node` here is
+        # freshly minted and never the one a previous write anchored, now
+        # that UGM no longer interns. See `fs_tools._write`'s longer note.
+        if not m.holds(node):
             m.gate.write(node)

@@ -22,7 +22,15 @@ from ugm.core.text import Loader
 
 
 def _write(m: Machine, node) -> None:
-    if not m.pad.holds(node):
+    # `node` is FRESH -- `m.g.rel(...)` mints a distinct node every call now
+    # (UGM stopped interning: "`fact +p(a)` twice believes it twice"), so a
+    # node built here to ASK with is never the node an earlier `ls` already
+    # wrote, however identical the shape. `pad.holds` is the exact-node
+    # check and would never once catch a repeat -- every `show files` on the
+    # same directory would pile up a fresh `file(dir, name)` beside the
+    # last. `m.holds` is the shape check (`pad.holds_any`), which is what a
+    # caller holding a node it built rather than matched wants.
+    if not m.holds(node):
         m.gate.write(node)
 
 

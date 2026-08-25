@@ -67,6 +67,41 @@ Nothing built in knows what a sentence MEANS; an "intake" rule in the
 loaded corpus is what gives one. A sentence with no rule reading it just
 sits there, unbelieved, same as any other untrusted arrival -- and `/show`
 still lists it, so nothing is hidden.
+
+## The output boundary is a channel too, and a reply is the only thing
+## printed unasked
+
+This loop used to print every belief the tick just added or took away --
+convenient while nothing else told you what happened, and wrong: half of
+what a corpus believes is its OWN bookkeeping (`ant(...)`, `heard(...)`,
+`considered(...)`), never meant for a person reading a terminal, and a
+domain that wants to say something back had no way to mean that
+specifically -- the tick's whole diff was the only channel out.
+
+`reply($channel, $text)` is that channel, symmetric to `say $channel:
+$prop` on the way in: a corpus concludes it to speak TO `$channel`, the
+same way a person speaks to it by typing. `settle()` (below) prints
+exactly `$text` for a freshly concluded `reply(user, $text)` -- unquoted,
+one line, no `+`, because it is not a diff of belief, it is what the
+corpus is choosing to say. A reply to any OTHER channel is prefixed
+(`[gauge] ...`), since only `user`'s own replies are what this prompt is
+naturally addressed to. Nothing else a rule concludes reaches the
+terminal on its own any more.
+
+`DELIVER` below is the output half of the same idiom `<trust-user>` is
+the input half of -- loaded unconditionally, ORDINARY, replaceable. It
+marks a reply `delivered($channel, $text)`, which buys a corpus's own
+rule the same brake every intake rule already needs (`no says(...)`,
+`no heard(...)`): guard a reply on `no delivered($channel, $text)` and
+saying it once, while the belief that produced it is still standing,
+does not become saying it every tick forever. Marking is all it does --
+`settle()` prints from `reply(...)` directly, not from `delivered(...)`,
+so a reply appears the instant it is concluded, not one tick later.
+
+A corpus with no `reply(...)` rule of its own is now QUIET at this
+prompt, the same way it was always quiet about anything a person could
+not read out of a bare diff -- `/show` remains the whole belief state, on
+demand, nothing hidden, just not pushed at you unasked.
 """
 
 import os
@@ -188,12 +223,35 @@ def _autocorrect(line: str, vocab: "set[str]"):
 # new and starving every other rule out. Same discipline as a `<flag-stale>`
 # style rule: the guard is consumed in the SAME firing that acts on it, not
 # a later stage.
-# `=> brush(...)` is not optional. A move consumes what it matched on, and
-# this rule is NOT the last thing that should happen to a saying: every
-# intake rule in every corpus reads `says(user, ...)` too. Believing you is
-# one use of what you said, not the end of it.
+#
+# The trailing `after` is not optional either, and it is NOT `=> brush(says(
+# user, $p))` any more -- that used to be enough, and UGM's own move to
+# never intern (`Graph.rel` mints a distinct node every call now, "never
+# intern") quietly broke it into a no-op: `brush(says(user, $p))` REBUILDS
+# `says(user, $p)` by substitution, which mints a TWIN of the believed
+# occasion rather than re-attending it, so consuming the real one on this
+# firing was never undone. `<intake-show-big>` (examples/fs/fs_demo.ugm)
+# found it -- silent, because nothing ERRORED, the rule just never got a
+# second look. `after <trust-user> { $sp = says(user, $p) } => attend(...)`
+# is UGM's own fix for the identical bug in `delay.ugm`'s `<care>` (see
+# `../ugm/docs/HANDOFF.md`): the query is a MATCH against belief, so `$sp`
+# is the real occasion, not a rebuild -- and every intake rule in every
+# corpus reads `says(user, ...)` too, so this is not the last thing that
+# should happen to a saying. Believing you is one use of what you said,
+# not the end of it.
 TRUST_USER = ('rule <trust-user> = implies( { +says(user, $p), no trusted($p) }, '
-              '{ +$p, +trusted($p) } ) => brush(says(user, $p))')
+              '{ +$p, +trusted($p) } )\n'
+              'after <trust-user> { $sp = says(user, $p) } => attend($sp, 5, 1, 1)')
+
+# The output half of the same idiom -- see this module's docstring, "The
+# output boundary is a channel too". `no delivered(...)` is the brake a
+# `reply(...)`-concluding rule leans on, the same way every intake rule
+# leans on `no says(...)`/`no heard(...)`: without it, nothing here stops a
+# corpus's own guard from being the ONLY thing between one reply and an
+# infinite one. Marking is the whole of what this rule does -- `settle()`
+# prints from a fresh `reply(...)` directly, not from `delivered(...)`.
+DELIVER = ('rule <deliver> = implies( { +reply($channel, $text), no delivered($channel, $text) }, '
+           '{ +delivered($channel, $text) } )')
 
 HELP = """\
 /show      what is believed right now
@@ -213,12 +271,40 @@ example:  +want(list("C:\\Users\\ercas\\Documents"))
 A line that is not a proposition is heard as a sentence instead of
 refused -- "show files" becomes `sentence(show, files)`, on the same
 channel, meaning whatever the loaded corpus's own intake rules give it.
+This prompt prints only what a corpus replies -- `reply(user, "...")`,
+one line, no diff -- and stays quiet otherwise; `/show` is the whole
+belief state, any time.
 """
 
 
 
 def _visible(m: Machine, p) -> bool:
     return m.g.relation_of(p) not in m._bookkeeping
+
+
+def _reply_lines(m: Machine, fresh) -> "list[str]":
+    """Every `reply($channel, $text)` in `fresh`, as a printable line --
+    the one shape `settle()` pushes at a person unasked. See this module's
+    docstring, "The output boundary is a channel too". `$text` unquoted,
+    bare, no `+` -- it is not a diff, it is what the corpus chose to say.
+    `$channel` prefixes the line only when it is not `user`: the ordinary
+    case is one person at one prompt, and every line here is already
+    addressed to them.
+    """
+    out = []
+    for p in sorted(fresh):
+        rel = m.g.relation_of(p)
+        if rel is None or m.g.show(rel) != "reply":
+            continue
+        members = m.g.members(p)
+        if len(members) != 2:
+            continue
+        channel, text = members
+        line = m.g.show(text)
+        if m.g.show(channel) != "user":
+            line = f"[{m.g.show(channel)}] {line}"
+        out.append(line)
+    return out
 
 
 def _as_sentence(ldr: Loader, raw: str):
@@ -251,6 +337,7 @@ def run(m: Machine, ldr: Loader, limit: int = 400,
     """
     stdin = stdin or sys.stdin
     ldr.load(TRUST_USER)
+    ldr.load(DELIVER)
     extra = "".join(
         "%-10s %s\n" % (name, ((fn.__doc__ or "").strip().splitlines() or [""])[0])
         for name, fn in (commands or {}).items())
@@ -258,19 +345,13 @@ def run(m: Machine, ldr: Loader, limit: int = 400,
     seen = set(m.pad.believed())
     god = False
 
-    def settle(label: str = "") -> None:
+    def settle() -> None:
         nonlocal seen
-        steps = m.run(limit=limit)
+        m.run(limit=limit)
         now = set(m.pad.believed())
-        for p in sorted(now - seen):
-            if _visible(m, p):
-                print(f"  + {m.g.show(p)}")
-        for p in sorted(seen - now):
-            if _visible(m, p):
-                print(f"  - {m.g.show(p)}")
+        for line in _reply_lines(m, now - seen):
+            print(line)
         seen = now
-        ended = steps[-1].state if steps else "nothing to do"
-        print(f"  ({len(steps)} ticks{label}, ended {ended})")
 
     while True:
         if echo_prompt:
@@ -341,6 +422,7 @@ def run(m: Machine, ldr: Loader, limit: int = 400,
                     # the new one.
                     m, ldr = fresh
                     ldr.load(TRUST_USER)
+                    ldr.load(DELIVER)
                     seen = set(m.pad.believed())
                 continue
         line, corrections = _autocorrect(line, _vocabulary(m))

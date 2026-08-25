@@ -315,25 +315,37 @@ def test_reload_picks_up_a_rule_edited_mid_session(tmp_path, monkeypatch, capsys
     entry = _entry()
     folder = tmp_path / "rules"
     corpus = str(folder / "r.ugm")
-    v1 = "rule <r> = implies( { +ping(a), no pong(a) }, { +pong(a) } )\n"
-    v2 = "rule <r> = implies( { +ping(a), no zap(a) }, { +zap(a) } )\n"
+    # `<r>` replies rather than merely concluding -- the REPL only ever
+    # prints a `reply(...)`, not a raw belief diff, so that is the one
+    # thing this test can watch for at the prompt without reaching for
+    # `/show` on every line.
+    v1 = ('rule <r> = implies( { +ping(a), no pong(a) }, '
+          '{ +pong(a), +reply(user, "pong") } )\n')
+    v2 = ('rule <r> = implies( { +ping(a), no zap(a) }, '
+          '{ +zap(a), +reply(user, "zap") } )\n')
     write(corpus, v1)
     conf = write(str(tmp_path / "config"), str(folder) + "\n")
     monkeypatch.setenv("HARNESKILLS_CONFIG", conf)
 
+    # User mode, not god mode, and not a bare `fact` -- UGM no longer
+    # attends a loaded fact on its own (a deliberate change: attending is
+    # "taking care of something", and a fact loaded cold is background,
+    # never news). A person's own line is news, which is exactly what
+    # user mode already delivers it as (`say user: ...`, wrapped by
+    # `harneskills.repl`), and <trust-user> both believes it AND -- by
+    # firing -- attends what it concluded, which is what wakes `<r>`.
     monkeypatch.setattr("sys.stdin", Script(
-        "/godmode\n",
-        "fact +ping(a)\n",
+        "+ping(a)\n",
         lambda: write(corpus, v2),      # the edit, while sitting at the prompt
         "/reload\n",
-        "fact +ping(a)\n",
+        "+ping(a)\n",
         "/quit\n",
     ))
     assert entry.main([]) == 0
     out = capsys.readouterr().out
     before, _, after = out.partition("reloading")
-    assert "pong(a)" in before and "zap(a)" not in before
-    assert "zap(a)" in after, "the edited rule never took"
+    assert "pong" in before and "zap" not in before
+    assert "zap" in after, "the edited rule never took"
     # <r> was redeclared -- which UGM refuses within one machine, so this
     # also proves the reload built a new one rather than loading over.
     assert "already declared" not in out
@@ -354,7 +366,10 @@ def test_user_mode_still_works_after_a_reload(tmp_path, monkeypatch, capsys):
     any corpus -- forget it and a bare line stops being believed."""
     entry = _entry()
     monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "none"))
-    monkeypatch.setattr("sys.stdin", Script("/reload\n", "kettle(on)\n", "/quit\n"))
+    # The prompt itself only ever prints a `reply(...)`, never a raw belief
+    # -- `/show` is what still lists everything, `<trust-user>` included.
+    monkeypatch.setattr("sys.stdin", Script(
+        "/reload\n", "kettle(on)\n", "/show\n", "/quit\n"))
     assert entry.main([]) == 0
     _, _, after = capsys.readouterr().out.partition("reloading")
     assert "trusted(kettle(on))" in after

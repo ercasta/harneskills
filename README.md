@@ -35,44 +35,47 @@ python -m harneskills --no-config \
 ```
 loaded: examples/circuit_breaker.ugm, examples/fs/fs_demo.ugm
 harneskills> show file
-  + ls(/your/cwd)
-  + file(/your/cwd, README.md)
-  + size(/your/cwd, README.md, 15086)
-  ...
+N item(s) in /your/cwd
 harneskills> show files
   ~ files -> file
-  + ls(/your/cwd)
-  ...
 ```
+
+The prompt only ever prints what the corpus REPLIES (`reply(user, "...")`,
+see below) — `show files` the second time is the same sentence, already
+heard, so it stays quiet; `/show` still lists every `file(...)`/`size(...)`
+`ls` found, on demand.
 
 `--no-config` is only there to keep a config you may already have out of the
 way; drop it once you write one. Corpora can equally arrive mid-session —
 `/load examples/fs` takes a folder as happily as a file.
 
-No corpus, no problem — `/godmode` lets you author a fact and a rule right at
-the prompt, then `/usermode` to go back to talking normally:
+No corpus, no problem — `/godmode` lets you author a rule right at the
+prompt, then `/usermode` to go back to talking normally:
 
 ```
 $ python -m harneskills
 harneskills> /godmode
   authoring directly -- /usermode to go back
-harneskills[god]> fact +water(kettle)
-  (1 ticks, ended quiescent)
-harneskills[god]> rule <boil> +water($w) no boiling($w) -> +boiling($w)
-  (2 ticks, ended quiescent)
+harneskills[god]> rule <boil> = implies({ +water($w), no boiling($w) }, { +boiling($w), +reply(user, "the kettle is boiling") })
 harneskills[god]> /usermode
   back to talking on the `user` channel
-harneskills> boiling(kettle)
-  + arrived(user, boiling(kettle))
-  + says(user, boiling(kettle))
-  + trusted(boiling(kettle))
-  (3 ticks, ended quiescent)
+harneskills> water(kettle)
+the kettle is boiling
 ```
 
-(That last line is a *question*, answered by asking it and watching what
-sticks: typing `boiling(kettle)` in user mode says it, `<trust-user>` believes
-you unconditionally, and the `+`/`-` lines are the machine settling — nothing
-retracted here, so it was already true.)
+The rule loads first, on purpose. A loaded `fact` carries no attention of
+its own — UGM's own choice: attending is *taking care of something*, and a
+fact loaded cold is background, never news (`../ugm/docs/HANDOFF.md`). The
+last line is what still starts things: typing `water(kettle)` in user mode
+is a *saying*, wrapped as `say user: water(kettle)` and delivered as an
+arrival, which UGM does attend — that's what wakes `<boil>` up to conclude
+`boiling(kettle)`, not `<trust-user>` believing you (which only ever
+believes exactly what you typed). A bare `fact +water(kettle)` typed in
+`/godmode` would sit there believed and inert, the same as one loaded from
+a file — say it instead, or pair it with your own `attend(...)`. And the
+one line the prompt prints, `the kettle is boiling`, is not a diff of
+belief — `<boil>` said so itself, concluding `+reply(user, "...")`; see
+"The output boundary is a channel too", further down.
 
 Got a `.ugm` file already? Load it on the command line, or mid-session with
 `/load` — this repo ships no corpus of its own (see Scope, below), so `PATH`
@@ -108,7 +111,7 @@ folder`, on stderr) and not the session, and neither does a corpus that
 fails to parse — it is named on stderr and skipped.
 
 A domain is often not only `.ugm`. The fs corpus below leans on three tools,
-five computators and an approval prompt, all Python, and a rule mentioning
+eight computators and an approval prompt, all Python, and a rule mentioning
 `<approve>` is a *parse error* until something has registered an answerer by
 that name. A `tools:` line names that half — `module:callable`, called as
 `callable(loader)`:
@@ -130,13 +133,14 @@ that doesn't import, doesn't resolve, isn't callable, or raises is a
 ```
 $ python -m harneskills
 loaded: ~/corpora/fs/circuit_breaker.ugm, ~/corpora/fs/fs_demo.ugm
-harneskills> /godmode
-harneskills[god]> fact +want(list("/tmp/hk-fs"))
-  + ls(/tmp/hk-fs)
-  + file(/tmp/hk-fs, alpha.txt)
-  + size(/tmp/hk-fs, alpha.txt, 0)
-  + created(/tmp/hk-fs, alpha.txt, 1787583736)
+harneskills> +want(list("/tmp/hk-fs"))
+1 item(s) in /tmp/hk-fs
 ```
+
+Said at the ordinary prompt, not `/godmode` — the point being made here is
+tools compounding over a real graph, not authoring, and a plain line is an
+arrival (attended) the moment `<trust-user>` believes it, which is what
+gets `<list>` a turn at all.
 
 ```
 --config PATH   read that file instead of the default
@@ -155,6 +159,16 @@ A misspelled relation name — against whatever the loaded rules already use —
 gets autocorrected and echoed (`~ typed -> fixed`), never silently. See
 `harneskills/repl.py`'s docstring for the full account — it's UGM's own, not
 rewritten here.
+
+The prompt itself stays QUIET beyond that: it prints exactly one shape,
+a freshly concluded `reply(user, "...")` — one line, no `+`, not a diff
+of belief. `<deliver>` (loaded alongside `<trust-user>`) is the output
+half of the same idiom, marking `delivered(user, "...")` so a corpus's
+own rule can guard against saying the same thing twice, the same brake
+every intake rule already needs. A corpus with no `reply(...)` rule of
+its own is silent here, same as it always was about anything a bare
+belief diff couldn't say on its own — `/show` is still the whole belief
+state, any time, nothing hidden.
 
 ```
 /show      what is believed right now
@@ -187,10 +201,10 @@ files under `examples/`.
 $ python -m harneskills --no-config --tools harneskills.examples.fs:register \
       examples/circuit_breaker.ugm examples/fs
 harneskills> +want(list("C:\Users\you\Documents"))
-  + file(...), size(...), created(...)   -- the `ls` tool, an ordinary rule away
+12 item(s) in C:\Users\you\Documents   -- the `ls` tool, an ordinary rule away
 
-harneskills> cleanup "C:\Users\you\Documents" 7
-approve rename(notes.txt -> stale-notes.txt)? [y/N]
+harneskills> +want(stale_after("C:\Users\you\Documents", 7))
+approve pending(rename(C:\Users\you\Documents, notes.txt, stale-notes.txt))? [y/N]
 ```
 
 ⚠ There is no `harneskills-fs` command any more. It was a second way to
@@ -225,7 +239,7 @@ folder** — the one you just looked at, not every folder listed this session:
 harneskills> show file in "/tmp/a"
 harneskills> show file in "/tmp/b"
 harneskills> show big
-  + big(/tmp/b, huge.bin)
+huge.bin (2048000 bytes)
 ```
 
 Listing a folder *attends* it (`=> attend($dir, 5)` on the intake rules),
@@ -282,6 +296,44 @@ Textual TUI, its own corpus, its own tests) is in git history; nothing was
 ported from it. Verified end to end: `pip install -e ../ugm && pip install
 -e .`, then both transcripts above (the no-corpus `/godmode` session and
 the fs example listing a real directory with no config file at all), plus `python -m ugm.selftest`
-(183 checks, 0 failing) against the same editable install. ⚠
+(203 checks, 0 failing) against the same editable install. ⚠
 `universal-graph-machine` is under active redesign — read
 `../ugm/docs/HANDOFF.md` before diagnosing an import error.
+
+**Re-verified 2026-08-25** against the session that stopped attending a
+loaded `fact` and stopped interning. Three fixes, all on this side of the
+dependency, none in `ugm.core` itself:
+
+- `fs_tools.py`'s own dedup check compared exact NODES (`m.pad.holds`),
+  which `never intern` made a check that could never once catch a repeat
+  — every `show file` on a directory already listed piled up a fresh twin
+  of every fact `ls` had already written. `m.holds` (the shape check) is
+  what a caller holding a freshly built node, rather than one it matched,
+  needs.
+- `<trust-user>`'s own `=> brush(says(user, $p))` quietly stopped working
+  for the identical reason UGM's own `delay.ugm` `<care>` did (see the
+  HANDOFF): `brush(...)` REBUILDS its argument by substitution, which
+  mints a twin now rather than re-attending the believed occasion. Fixed
+  the way UGM fixed it — `after <trust-user> { $sp = says(user, $p) } =>
+  attend($sp, 5, 1, 1)`, a QUERY against belief, never a rebuild.
+- `examples/fs/fs_demo.ugm`'s `<intake-show-big>`/`<rearm-big>` called
+  `attentioned(sentence(show, big))` with the literal spelled out. A
+  PREDICATE's ground argument is never resolved against belief the way an
+  ordinary member is (`core/rules.py`'s match loop `walk()`s it and hands
+  it over unchanged) — so that argument was always the rule's OWN
+  load-time copy, never the node the channel actually delivered and the
+  engine actually attended. Fixed by binding it first, `<focus-big>`'s own
+  working idiom: `+says(user, sentence(show, big)) as $s, attentioned($s)`.
+
+None of the three raised an error or a test failure on their own — `show
+big` just never answered, and a re-listed directory just quietly grew
+duplicate facts. This repo's own test suite (`pytest`) does not reach
+`examples/`; the fs corpus is exercised only by hand and by this README,
+which is what let the second and third sit unnoticed until this pass.
+
+On top of the fixes: a **reply channel**, symmetric to the intake one --
+see `harneskills/repl.py`'s docstring, "The output boundary is a channel
+too". The prompt no longer prints a raw belief diff; a corpus concludes
+`+reply(user, "...")` to speak, and three new rules in `fs_demo.ugm`
+(`<reply-listed>`, `<reply-big>`, `<reply-renamed>`) are what make the fs
+example say anything at this prompt at all now.
