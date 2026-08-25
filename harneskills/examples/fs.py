@@ -55,7 +55,7 @@ def _computators(ldr: Loader) -> None:
     def listed_msg(dirpath, n):
         return f"{n} item(s) in {dirpath}"
 
-    def big_msg(name, size):
+    def sized_msg(name, size):
         return f"{name} ({size} bytes)"
 
     def renamed_msg(old, new):
@@ -67,7 +67,7 @@ def _computators(ldr: Loader) -> None:
     ldr.computator("plus", plus)
     ldr.computator("minus", minus)
     ldr.computator("listed_msg", listed_msg)
-    ldr.computator("big_msg", big_msg)
+    ldr.computator("sized_msg", sized_msg)
     ldr.computator("renamed_msg", renamed_msg)
 
 

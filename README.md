@@ -35,15 +35,18 @@ python -m harneskills --no-config \
 ```
 loaded: examples/circuit_breaker.ugm, examples/fs/fs_demo.ugm
 harneskills> show file
+README.md (15086 bytes)
+pyproject.toml (1185 bytes)
+...
 N item(s) in /your/cwd
 harneskills> show files
   ~ files -> file
 ```
 
 The prompt only ever prints what the corpus REPLIES (`reply(user, "...")`,
-see below) — `show files` the second time is the same sentence, already
-heard, so it stays quiet; `/show` still lists every `file(...)`/`size(...)`
-`ls` found, on demand.
+see below) — one line per entry, then the count — `show files` the second
+time is the same sentence, already heard, so it stays quiet; `/show` still
+lists every `file(...)`/`size(...)` `ls` found, on demand.
 
 `--no-config` is only there to keep a config you may already have out of the
 way; drop it once you write one. Corpora can equally arrive mid-session —
@@ -134,6 +137,7 @@ that doesn't import, doesn't resolve, isn't callable, or raises is a
 $ python -m harneskills
 loaded: ~/corpora/fs/circuit_breaker.ugm, ~/corpora/fs/fs_demo.ugm
 harneskills> +want(list("/tmp/hk-fs"))
+alpha.txt (0 bytes)
 1 item(s) in /tmp/hk-fs
 ```
 
@@ -201,7 +205,9 @@ files under `examples/`.
 $ python -m harneskills --no-config --tools harneskills.examples.fs:register \
       examples/circuit_breaker.ugm examples/fs
 harneskills> +want(list("C:\Users\you\Documents"))
-12 item(s) in C:\Users\you\Documents   -- the `ls` tool, an ordinary rule away
+notes.txt (2048 bytes)                  -- the `ls` tool, an ordinary rule away
+...
+12 item(s) in C:\Users\you\Documents
 
 harneskills> +want(stale_after("C:\Users\you\Documents", 7))
 approve pending(rename(C:\Users\you\Documents, notes.txt, stale-notes.txt))? [y/N]
@@ -334,6 +340,20 @@ which is what let the second and third sit unnoticed until this pass.
 On top of the fixes: a **reply channel**, symmetric to the intake one --
 see `harneskills/repl.py`'s docstring, "The output boundary is a channel
 too". The prompt no longer prints a raw belief diff; a corpus concludes
-`+reply(user, "...")` to speak, and three new rules in `fs_demo.ugm`
-(`<reply-listed>`, `<reply-big>`, `<reply-renamed>`) are what make the fs
-example say anything at this prompt at all now.
+`+reply(user, "...")` to speak, and rules in `fs_demo.ugm`
+(`<reply-listed>`, `<reply-file>`, `<reply-big>`, `<reply-renamed>`) are
+what make the fs example say anything at this prompt at all now.
+
+**Found running it, not by reasoning about it first:** the first cut of
+`<reply-file>` matched `+file($dir, $name), +size($dir, $name, $bytes)`
+directly and never fired -- `ls` writes those through the gate
+(`fs_tools.py`'s own `deposit`), not through a rule's consequent, so
+neither carries attention on its own; the fix anchors the same way
+`<reply-listed>` already did, off `answered(<ls>, ls($dir), $n)`. That
+alone then made `<reply-listed>` and `<reply-file>` two DIFFERENT rules
+sharing one attended occasion, and whichever fired first on a tick
+consumed it -- so `show file` reported either a count or a listing,
+never both, depending on which rule the table ranked first. Same brake
+as everything else here: `after <reply-listed>/<reply-file> { $a =
+answered(<ls>, ls($dir), $n) } => attend($a, 5, 1, 1)` re-attends it
+after either one consumes it, so the other still gets its turn.

@@ -202,19 +202,19 @@ rule <flag-big> = implies(
 # `harneskills/repl.py` prints exactly one shape unasked: a freshly
 # concluded `reply(user, $text)` (see that module's docstring, "The output
 # boundary is a channel too"). Everything above this line decides WHAT
-# happened; these three rules are the ones that decide what a person
-# reading the prompt is TOLD about it -- an "outtake" set, symmetric to
-# the `<intake-...>` rules above, and just as replaceable: a corpus that
-# wants quieter or louder replies edits these, not the harness.
+# happened; these rules are the ones that decide what a person reading the
+# prompt is TOLD about it -- an "outtake" set, symmetric to the
+# `<intake-...>` rules above, and just as replaceable: a corpus that wants
+# quieter or louder replies edits these, not the harness.
 #
-# All three key on an ANSWER (`answered(<tool>, request, said)`) rather
-# than on the request itself, because the answer is what `_answer` already
-# attends the moment a tool has something to report (`core/machine.py`) --
-# the request alone can fire before the tool has run. `no replied(...)`
-# is the same brake every rule above needs and for the same reason
-# (`<flag-stale>`'s own note): ONE reply per occasion, not one per tick it
-# stays believed. It does not re-arm the way `<intake-show-big>` does --
-# a second `show file` on the SAME folder stays quiet, a known
+# Every one keys on an ANSWER (`answered(<tool>, request, said)`) or a
+# WRITTEN fact rather than on the request itself, because that is what
+# `_answer`/a move already attends the moment there is something to
+# report -- the request alone can fire before the tool has run. `no
+# replied(...)` is the same brake every rule above needs and for the same
+# reason (`<flag-stale>`'s own note): ONE reply per occasion, not one per
+# tick it stays believed. None of these re-arm the way `<intake-show-big>`
+# does -- a second `show file` on the SAME folder stays quiet, a known
 # simplification, not an oversight; re-arming on attention fading is the
 # same technique, just not spent twice in one corpus.
 
@@ -223,9 +223,44 @@ rule <reply-listed> = implies(
       listed_msg($dir, $n) as $msg },
     { +reply(user, $msg), +replied(ls($dir)) } )
 
+# The count alone does not say WHAT is there -- one reply per entry `ls`
+# found, `<flag-big>`'s own shape ("one rule however many files ls
+# found"), so `show file` still lists, the same job the old raw belief
+# diff did before this corpus had a reply channel at all.
+#
+# `+answered(<ls>, ls($dir), $n)` is not read for `$n` here -- it is the
+# ANCHOR. `ls` writes `file(...)`/`size(...)` directly (`fs_tools.py`'s own
+# `deposit`, through the gate, not through a rule's own consequent), so
+# neither carries any attention of its own -- only the answer itself does
+# (`Machine._answer`'s own `_attend_written`), the same reason
+# `<reply-listed>` reads it. Without this line every candidate here scores
+# zero overlap and none of them are ever offered, silently -- `show file`
+# announcing a count and then nothing is exactly that, found live.
+rule <reply-file> = implies(
+    { +answered(<ls>, ls($dir), $n), +file($dir, $name), +size($dir, $name, $bytes),
+      no replied(file($dir, $name)), sized_msg($name, $bytes) as $msg },
+    { +reply(user, $msg), +replied(file($dir, $name)) } )
+
+# Both rules above CONSUME the one `answered(<ls>, ...)` occasion every
+# time either of them fires ("using a thing is what takes it off the
+# list", `core/attention.py`'s own note) -- and two rules sharing one
+# occasion is exactly the case that note says needs an explicit re-attend,
+# not an inferred one. Found live: with only `<reply-listed>` reading it,
+# it always won by default; the moment `<reply-file>` started reading the
+# SAME occasion too, whichever of them fired first on a given tick
+# silently starved the rest for the whole directory -- `show file`
+# reporting a count and naming not one entry, or naming every entry and
+# never a count, depending on which rule the table happened to rank
+# first. `brush(...)` is not the fix here either, for the same reason
+# `<trust-user>` needed `after ... => attend(...)` instead of it: it
+# REBUILDS `answered(<ls>, ls($dir), $n)` by substitution, which mints a
+# twin now that UGM no longer interns. A QUERY, never a rebuild.
+after <reply-listed> { $a = answered(<ls>, ls($dir), $n) } => attend($a, 5, 1, 1)
+after <reply-file> { $a = answered(<ls>, ls($dir), $n) } => attend($a, 5, 1, 1)
+
 rule <reply-big> = implies(
     { +big($dir, $name), +size($dir, $name, $bytes), no replied(big($dir, $name)),
-      big_msg($name, $bytes) as $msg },
+      sized_msg($name, $bytes) as $msg },
     { +reply(user, $msg), +replied(big($dir, $name)) } )
 
 # Fires whichever way a rename actually happened -- typed directly, or
