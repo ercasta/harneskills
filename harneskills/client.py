@@ -33,6 +33,21 @@ import threading
 from . import config as cfg
 from . import ws
 
+USAGE = """\
+usage: python -m harneskills.client [ws://HOST:PORT] [--token TOKEN]
+                                    [--server PATH] [--help]
+
+With no address, reads `server.json` (see `harneskills.config.server_path`,
+or `--server PATH` to name a different one) and connects to whatever is
+serving there -- the ordinary case, once something is running
+`python -m harneskills --serve ...` on this machine.
+
+  ws://HOST:PORT   connect here instead of discovering a server
+  --token TOKEN    the token to present -- read from server.json otherwise
+  --server PATH    a server.json to read instead of the default location
+  --help, -h       this message
+"""
+
 
 def _server_details(path: str) -> "dict":
     with open(path, "r", encoding="utf-8") as fh:
@@ -169,6 +184,13 @@ def run(host: str, port: int, token=None, stdin=None,
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if any(a in ("--help", "-h", "-?") for a in argv):
+        # Checked before anything else touches argv or the network -- a
+        # request for help is not a request to connect to something, and
+        # `--help` parsed as a server address would fail with a confusing
+        # DNS-shaped error instead of the usage it actually asked for.
+        print(USAGE, end="")
+        return 0
     where, token, rest = None, None, []
     while argv:
         arg = argv.pop(0)
@@ -177,6 +199,10 @@ def main(argv=None) -> int:
             token = inline or (argv.pop(0) if argv else None)
         elif flag == "--server":
             where = inline or (argv.pop(0) if argv else None)
+        elif flag.startswith("-"):
+            print("! no such option: %s" % arg, file=sys.stderr)
+            print(USAGE, end="", file=sys.stderr)
+            return 2
         else:
             rest.append(arg)
     if rest:

@@ -127,3 +127,25 @@ def test_no_server_found_is_a_message_not_a_traceback(tmp_path, monkeypatch, cap
     monkeypatch.setenv("HARNESKILLS_SERVER", str(tmp_path / "nope.json"))
     assert client.main([]) == 2
     assert "no server to connect to" in capsys.readouterr().err
+
+
+# --- --help --------------------------------------------------------------
+
+@pytest.mark.parametrize("flag", ["--help", "-h", "-?"])
+def test_help_prints_usage_and_touches_nothing_else(flag, capsys, monkeypatch):
+    # Checked before the network or even server discovery -- `--help`
+    # parsed as a server address used to fail with a confusing
+    # DNS-lookup-shaped error instead of the usage it actually asked for.
+    monkeypatch.delenv("HARNESKILLS_SERVER", raising=False)
+    assert client.main([flag]) == 0
+    assert "usage:" in capsys.readouterr().out
+
+
+def test_help_wins_over_other_arguments_on_the_line():
+    assert client.main(["ws://nope:1", "--help"]) == 0
+
+
+def test_an_unknown_flag_is_refused_with_usage_not_read_as_an_address(capsys):
+    assert client.main(["--bogus"]) == 2
+    err = capsys.readouterr().err
+    assert "no such option: --bogus" in err and "usage:" in err
