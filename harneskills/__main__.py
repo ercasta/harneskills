@@ -1,100 +1,84 @@
-"""HarneSkills: a plain terminal REPL over a UGM corpus.
+"""HarneSkills: a prompt over an entity-component world and the systems
+that change it.
 
-    python -m harneskills [--config PATH | --no-config]
-                          [--tools MODULE:CALLABLE ...] [corpus.ugm | folder ...]
+    python -m harneskills [--config PATH | --no-config] [module:callable ...]
 
-A thin door onto `harneskills.repl`, itself carved out of `ugm.repl` and
-kept close to it -- see that module's docstring for what typing at the
-prompt means. This file contributes nothing beyond wiring: a fresh `Machine`, one
-`Loader` for the session, the corpora to load, then a handoff to the REPL
-loop. It knows nothing about any particular domain -- a UGM-side corpus
-(e.g. `ugm/rules/fs/` upstream, loaded via its own `ugm.fs_repl` entry
-point) brings its own tools and rules; HarneSkills is the terminal, not the
-domain.
+A thin door onto `harneskills.repl`. This file contributes nothing beyond
+wiring: a fresh `Loop` (which brings its own empty `World`), the domains to
+install, then a handoff to the REPL.
 
-"The corpora to load" is two lists, in this order: the standing ones, from
-the folders named in `~/.config/harneskills/config` (see
-`harneskills.config`), then whatever is named on the command line. Standing
-first because the command line is what you are saying NOW, and it should be
-able to answer what was already there. `--no-config` skips the file
-entirely -- the escape hatch for the session where the standing corpus is
+"The domains to install" is two lists, in this order: the standing ones,
+from `~/.config/harneskills/config` (see `harneskills.config`), then
+whatever is named on the command line. Standing first because systems run
+in installation order, and a domain you are naming NOW should get to see a
+world the standing ones have already set up. `--no-config` skips the file
+entirely -- the escape hatch for the session where the standing domain is
 the thing you are debugging.
 
-`build` is separate from `main` because `/reload` runs it again: a rule you
-have just edited cannot be loaded over the one already in the machine, so
-re-reading a corpus means a whole new machine, and the REPL loop swaps to
-it. `/reset` is the same act under the name people reach for when the mess
-is theirs rather than the corpus's.
+Every positional argument is a domain: `module:callable`, imported and
+called as `callable(loop)`. There is no other kind of argument, because
+there is no other kind of thing to load. Nothing about any domain is in
+here -- `harneskills.examples.fs` is imported when, and only when,
+something names it.
 
-Before either list, the `tools:` lines: `module:callable`, imported and
-called as `callable(loader)`. A domain whose rules lean on Python -- an
-answerer, a computator -- gets to bring that half along, because a rule
-mentioning `<approve>` will not parse until something has registered it.
-This is still not the harness knowing a domain: it imports what the config
-names, the same way it opens the folders the config names, and it ships
-neither.
+`build` is separate from `main` because `/reload` runs it again: a system
+is a Python function, so picking up an edit means re-importing the module
+AND starting the world over -- systems already registered cannot be
+un-registered, and every component in the world was put there by the old
+ones. The REPL loop swaps to the new `Loop`. `/reset` is the same act under the name
+people reach for when the mess is theirs rather than the module's.
 """
 
-import importlib
-import os
-import sys
+from __future__ import annotations
 
-from ugm.core.machine import Machine
-from ugm.core.text import Loader, ParseError, load
+import importlib
+import sys
 
 from . import config as cfg
 from . import repl
+from .loop import Loop
 
 
-def _split_argv(argv) -> "tuple[list[str], str, list[str], bool]":
-    """`(paths, where, tools, ok)` -- flags out, corpora left alone.
+def _split_argv(argv) -> "tuple[list[str], str, bool]":
+    """`(specs, where, ok)` -- flags out, domain specs left alone.
 
     `where` is the config file to read, already defaulted, or None for
-    `--no-config`. `--tools` is the config's `tools:` line spelled on the
-    command line, repeatable, and it is what makes `--no-config` usable at
-    all: a domain's Python half has to come from somewhere, and someone who
-    has just cloned this repo should not have to write a config file in
-    their home directory to try the thing out.
-
-    Hand-rolled rather than argparse because the whole grammar is three
-    flags and a list of paths, and because a `.ugm` path beginning with a
-    dash is a thing argparse would take from us.
+    `--no-config`. Hand-rolled rather than argparse because the whole
+    grammar is two flags and a list of specs.
     """
-    paths, tools, named, skip, rest = [], [], None, False, list(argv)
+    specs, named, skip, rest = [], None, False, list(argv)
     while rest:
         arg = rest.pop(0)
         if arg == "--no-config":
             skip = True
-        elif arg in ("--config", "--tools"):
+        elif arg == "--config":
             if not rest:
-                print("! %s needs an argument" % arg, file=sys.stderr)
-                return [], None, [], False
-            if arg == "--config":
-                named = rest.pop(0)
-            else:
-                tools.append(rest.pop(0))
+                print("! --config needs an argument", file=sys.stderr)
+                return [], None, False
+            named = rest.pop(0)
         elif arg.startswith("--config="):
             named = arg[len("--config="):]
-        elif arg.startswith("--tools="):
-            tools.append(arg[len("--tools="):])
+        elif arg.startswith("-"):
+            print("! no such option: %s" % arg, file=sys.stderr)
+            return [], None, False
         else:
-            paths.append(arg)
+            specs.append(arg)
     if skip and named is not None:
         print("! --config and --no-config say opposite things", file=sys.stderr)
-        return [], None, [], False
-    return paths, (None if skip else (named or cfg.config_path())), tools, True
+        return [], None, False
+    return specs, (None if skip else (named or cfg.config_path())), True
 
 
-def _register_tools(ldr, specs) -> "list[str]":
-    """Import each `module:callable` and hand it the loader. Returns problems.
+def install(loop, specs) -> "list[str]":
+    """Import each `module:callable` and hand it the loop. Returns problems.
 
     ⚠ The bare `except` around the call is deliberate and is NOT laziness.
     What is being called is arbitrary code named by a text file -- there is
-    no exception type it is entitled to raise and no type it is forbidden
-    to. The choice is between naming the spec and going on, or a service
-    that restart-loops on somebody's typo with the traceback going nowhere
-    anyone can read it. A domain that failed to register is a corpus that
-    will fail to parse a moment later, and that message names the file.
+    no exception type it is entitled to raise and none it is forbidden to.
+    The choice is between naming the spec and going on, or a service that
+    restart-loops on somebody's typo with the traceback going nowhere
+    anyone can read it. A domain that failed to install is a prompt that
+    understands nothing you type, and this message is what says why.
     """
     problems = []
     for spec in specs:
@@ -103,105 +87,73 @@ def _register_tools(ldr, specs) -> "list[str]":
         if not sep or not module_name or not attr:
             problems.append("%s: expected module:callable" % spec)
             continue
+        # `/reload` means "I edited that file" more often than not, and a
+        # module already in `sys.modules` would otherwise be handed back
+        # exactly as it was at startup -- a reload that reliably changed
+        # nothing is worse than no reload at all. First time through,
+        # importing IS reading it from disk, so there is nothing to redo.
+        cached = module_name in sys.modules
         try:
-            fn = getattr(importlib.import_module(module_name), attr)
+            module = importlib.import_module(module_name)
+            if cached:
+                module = importlib.reload(module)
         except ImportError as e:
             problems.append("%s: %s" % (spec, e))
             continue
-        except AttributeError:
+        fn = getattr(module, attr, None)
+        if fn is None:
             problems.append("%s: no %s in %s" % (spec, attr, module_name))
             continue
         if not callable(fn):
             problems.append("%s: %s is not callable" % (spec, attr))
             continue
         try:
-            fn(ldr)
+            loop.install(fn)
         except Exception as e:  # noqa: BLE001 -- see the note above
             problems.append("%s: %s: %s" % (spec, type(e).__name__, e))
     return problems
 
 
-def build(where, paths, cli_tools=()) -> "tuple[Machine, Loader]":
-    """A machine with the config's tools registered and every corpus loaded.
+def build(where, specs) -> Loop:
+    """A loop with every standing domain installed, then every named one.
 
     Called once at startup and again for every `/reload` -- which is why it
-    re-reads the config file rather than closing over what it said the first
-    time. Edit `~/.config/harneskills/config`, type `/reload`, and the new
-    folder is in the session without leaving it.
+    re-reads the config file rather than closing over what it said the
+    first time. Add a line to `~/.config/harneskills/config`, type
+    `/reload`, and that domain is in the session without leaving it.
     """
-    standing, tools, problems = [], [], []
-    if where is not None:
-        folders, tools = cfg.read_config(where)
-        # A folder named in the config that isn't there is worth saying out
-        # loud once, on stderr, and then continuing: the session is fine
-        # without it, and a config outliving one of its checkouts is normal.
-        standing, problems = cfg.corpus_files(folders)
-    tools = tools + list(cli_tools)
-
-    # A path on the command line may be a folder too, read the same one
-    # level deep -- so `examples/fs` means what `/load examples/fs` means.
-    named_paths, named_problems = [], []
-    for path in paths:
-        if os.path.isdir(path):
-            found, trouble = cfg.corpus_files([path])
-            named_paths += found
-            named_problems += trouble
-        else:
-            named_paths.append(path)
-    problems += named_problems
-
-    m = Machine()
-    ldr = load(m, "", scope="harneskills")
-    # Tools first, and before ANY corpus: a `.ugm` rule referring to an
-    # answerer that does not exist yet is a parse error, not a late binding.
-    problems += _register_tools(ldr, tools)
+    standing = cfg.read_domains(where) if where is not None else []
+    loop = Loop()
+    wanted = standing + [s for s in specs if s not in standing]
+    problems = install(loop, wanted)
     for problem in problems:
-        print("  ! config: %s" % problem, file=sys.stderr)
-
-    loaded = []
-    for path in standing + named_paths:
-        # A corpus that will not load must not take the session with it.
-        # Standing corpora are loaded by a machine nobody is watching --
-        # under a service, an exception here is a restart loop, and the one
-        # thing you cannot do about it is read the traceback. So: say which
-        # file and why, on stderr, and go on with the ones that did load.
-        # ⚠ `ldr.load` is not transactional. A corpus that fails PART WAY
-        # leaves its earlier statements in the machine, and there is no
-        # rollback to reach for -- which is why the message says `partly
-        # loaded` rather than pretending the file was skipped whole.
-        try:
-            with open(path, "r", encoding="utf-8") as fh:
-                ldr.load(fh.read())
-        except OSError as e:
-            print("  ! %s: %s" % (path, e.strerror or e), file=sys.stderr)
-            continue
-        except ParseError as e:
-            print("  ! %s: partly loaded, then: %s" % (path, e), file=sys.stderr)
-            continue
-        loaded.append(path)
-    if loaded:
-        print("loaded:", ", ".join(loaded))
-    return m, ldr
+        print("  ! %s" % problem, file=sys.stderr)
+    installed = [s for s in wanted if not any(p.startswith(s + ":") for p in problems)]
+    if installed:
+        print("installed:", ", ".join(installed))
+    else:
+        print("no domains installed -- nothing will understand what you type;"
+              " try `python -m harneskills harneskills.examples.fs:install`")
+    return loop
 
 
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    paths, where, tools, ok = _split_argv(argv)
+    specs, where, ok = _split_argv(argv)
     if not ok:
         return 2
 
     def reload_(arg):
-        """start over: re-read the config and every corpus from disk"""
-        print("  reloading -- everything typed this session is gone")
-        return build(where, paths, tools)
+        """start over: re-import every domain and empty the world"""
+        print("  reloading -- everything this session learned is gone")
+        return build(where, specs)
 
-    m, ldr = build(where, paths, tools)
+    loop = build(where, specs)
     # Two names for one act, because both are things people mean by it: you
-    # edited a rule and want it in, or you made a mess and want it out. UGM
-    # gives no way to tell them apart -- a rule cannot be redeclared into a
-    # machine that has it, so either way the answer is a new machine built
-    # from the same sources.
-    return repl.run(m, ldr, commands={"/reload": reload_, "/reset": reload_})
+    # edited a rule and want it in, or you made a mess and want it out.
+    # Either way the answer is the same -- a new loop over a new world,
+    # built from the same sources.
+    return repl.run(loop, commands={"/reload": reload_, "/reset": reload_})
 
 
 if __name__ == "__main__":

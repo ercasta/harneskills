@@ -1,359 +1,336 @@
 # HarneSkills
 
-**A door onto a [UGM](https://github.com/ercasta/Universal-Graph-Machine) machine.**
+**An entity-component world, a loop that runs systems over it, and a
+prompt onto both.**
 
-UGM is an agent that plans, acts, observes and explains itself on one graph
-substrate. It recently shipped its own REPL (`ugm.repl`) — talk to it, one
-`.ugm` line at a time, with typo-correction against the loaded corpus's own
-vocabulary and a plain-English fallback for a line that isn't `.ugm` syntax
-at all. HarneSkills carves that REPL out and promotes it to be the thing
-this repository builds on: `harneskills.repl` is `ugm.repl` carved out and
-kept close to it, wired up by a thin `harneskills.__main__`. It has diverged
-in exactly one place — a `commands` seam, so a caller can add a slash command
-the loop knows nothing about (`/reload` is the only user of it so far). The engine itself
-(`ugm.core`, and any rules a domain ships) stays where it is — an ordinary
-dependency, not code duplicated into this repo.
+There is no engine. An *entity* is an identity with no data — `#7`. A
+*component* is data with no identity — `Size(bytes=4300)`. A *system* is a
+Python function that asks for the entities carrying a set of components
+and walks them. The *loop* calls every system, in order, over and over,
+until a whole pass changes nothing — and that is when you get your prompt
+back. Three small modules, no dependencies:
+
+```
+harneskills/world.py   entities, components, and the queries systems ask.
+harneskills/loop.py    call every system, in order, until nothing changes.
+harneskills/repl.py    a line in, a reply out. Knows no domain.
+```
+
+A **domain** is one callable — `install(loop)` — that registers systems
+and spawns what they read. The harness ships none; you name the one you
+want. `harneskills.examples.fs` is the worked example: listing, ageing and
+renaming real files, with every rename an automation proposes held for
+your approval by one component.
 
 ## Try it
 
 ```bash
-pip install -e ../ugm      # the engine, editable, from its own checkout
 pip install -e .
-python -m harneskills [corpus.ugm | folder ...]     # paths are optional
-```
-
-Nothing to configure to try it. The file-tools example is in this checkout,
-and one line brings both halves of it — the Python (`--tools`) and the
-corpus (a folder path, read one level deep):
-
-```bash
-python -m harneskills --no-config \
-    --tools harneskills.examples.fs:register \
-    examples/circuit_breaker.ugm examples/fs
+python -m harneskills --no-config harneskills.examples.fs:install
 ```
 
 ```
-loaded: examples/circuit_breaker.ugm, examples/fs/fs_demo.ugm
+installed: harneskills.examples.fs:install
 harneskills> show file
-README.md (15086 bytes)
-pyproject.toml (1185 bytes)
-...
-N item(s) in /your/cwd
-harneskills> show files
-  ~ files -> file
+archive/
+draft.txt (6 bytes)
+old.md (4 bytes)
+scan.pdf (4300 bytes)
+todo.txt (17 bytes)
+5 item(s) in /tmp/notes
+harneskills> show big
+scan.pdf (4300 bytes)
+harneskills> shwo file in /tmp/notes/archive
+  ~ shwo -> show
+0 item(s) in /tmp/notes/archive
 ```
 
-The prompt only ever prints what the corpus REPLIES (`reply(user, "...")`,
-see below) — one line per entry, then the count — `show files` the second
-time is the same sentence, already heard, so it stays quiet; `/show` still
-lists every `file(...)`/`size(...)` `ls` found, on demand.
+`show big` answers about the folder you last *looked* at — list `/tmp/a`,
+list `/tmp/b`, ask, and you get `/tmp/b`. That is one component, `Focus`,
+which exactly one folder entity carries at a time. Nothing fades and
+nothing is ranked.
 
-`--no-config` is only there to keep a config you may already have out of the
-way; drop it once you write one. Corpora can equally arrive mid-session —
-`/load examples/fs` takes a folder as happily as a file.
-
-No corpus, no problem — `/godmode` lets you author a rule right at the
-prompt, then `/usermode` to go back to talking normally:
+Ageing files, and the approval that guards them:
 
 ```
-$ python -m harneskills
-harneskills> /godmode
-  authoring directly -- /usermode to go back
-harneskills[god]> rule <boil> = implies({ +water($w), no boiling($w) }, { +boiling($w), +reply(user, "the kettle is boiling") })
-harneskills[god]> /usermode
-  back to talking on the `user` channel
-harneskills> water(kettle)
+harneskills> stale after 7 days
+2 of 5 older than 7 day(s) in /tmp/notes
+approve rename draft.txt -> stale-draft.txt in /tmp/notes? [y/N] y
+renamed draft.txt -> stale-draft.txt
+approve rename old.md -> stale-old.md in /tmp/notes? [y/N] n
+left old.md alone
+```
+
+One question per tick, and what happened to the last answer is on screen
+before the next question is asked. Type the rename yourself and nobody
+asks you anything:
+
+```
+harneskills> rename huge.bin to enormous.bin
+renamed huge.bin -> enormous.bin
+```
+
+That difference is not a feature — it is one component. `propose_rename`
+attaches `NeedsApproval` because an *automation* proposed it; typing it
+yourself spawns the same `RenameWish` without the tag, and the system that
+acts asks for exactly that:
+
+```python
+w.each(RenameWish, NeedsApproval)             # ask about these
+w.each(RenameWish, without=NeedsApproval)     # do these
+```
+
+Approving is `w.detach(entity, NeedsApproval)` — the same wish, no longer
+waiting. Nothing is copied from a held queue to a live one. Holding your
+own renames too would be one more `attach`, not a different design.
+
+## How a turn works
+
+You type `show file`. The REPL spawns one entity carrying one component —
+`Said(user, "show file")` — and runs the loop:
+
+| tick | system | what changed |
+|------|--------|--------------|
+| 1 | `hear` | destroys the `Said` entity, spawns one carrying `ListWanted(#4)` |
+| 1 | `list_dir` | destroys the goal, calls `ls` — an entity per entry, each with `Entry`/`Size`/`Modified` — moves `Focus`, spawns `Listed(#4, 5)` |
+| 1 | `reply_listing` | destroys the `Listed`, spawns six `Reply` entities |
+| 2 | *(everything)* | nothing changes — settled |
+
+Then the prompt prints the replies and destroys them. Every arrow there is
+an entity spawned by one system and destroyed by another; nothing is a
+call from one system into the next, so inserting a system between any two
+of them is just registering it in between.
+
+**System order is the whole of arbitration.** No attention, no scoring, no
+ranking of who most deserves a turn. Systems run in the order they were
+installed, every tick, and the same input produces the same output in the
+same order every time. If a listing should report entries and *then* count
+them, register the entry system first.
+
+**A system fires by changing something.** The loop reads `world.revision`
+before and after; a system that re-attached a component equal to the one
+already there did not fire. That is what "settled" is measured in — and
+why `World.attach` comparing before it stores is load-bearing rather than
+a convenience.
+
+**A system loops.** `flag_big` walks every entry in the folder in a `for`,
+in one call, and destroys the goal entity that let it run. It cannot fire
+twice on the same goal because the goal is gone — so there is no per-file
+bookkeeping to write, and none to get wrong.
+
+**A budget is the circuit breaker.** Two systems can feed each other
+forever. The loop counts ticks, stops at 200, and names the systems still
+firing:
+
+```
+  ! gave up after 200 ticks, still firing: kitchen.ping, kitchen.pong
+```
+
+A system is named for its module and its function, because two domains
+installed at once will both have one called `hear`.
+
+## The world
+
+```python
+entry = w.spawn(Entry(folder, "notes.txt"), Size(2048))   # a new entity
+w.attach(entry, Stale())                                  # now it is also stale
+w.detach(entry, Stale)                                    # now it is not
+w.each(Entry, Size, without=IsDir)                        # [(entity, entry, size), ...]
+w.destroy(entity)                                         # finished with it
+```
+
+**A component is a value.** `Size(17) == Size(17)`, so re-attaching one
+that is already there changes nothing and the world still settles. It also
+means a component is *replaced*, not edited: `w.attach(e, Size(4300))`,
+never `size.bytes = 4300` — a component mutated in place is a change
+nothing can see.
+
+**A tag is a component with no fields.** `Stale()`, `IsDir()`,
+`NeedsApproval()`. Every instance equals every other, so attaching one is
+exactly "this entity is in that set" and detaching it is "no longer".
+
+**A relationship is an entity in a component.** `Entry(folder=#1,
+name='todo.txt')` — no object graph, no back references to keep in step.
+Renaming makes the point: the entity is the same afterwards, still in its
+folder, still carrying whatever any system concluded about it. Only its
+`Entry` component is replaced.
+
+**A query is an intersection**, walked from the rarest component asked
+for, oldest entity first. `each` hands back the entity and then the
+components in the order asked for.
+
+**Destroying is what makes a system fire once** per thing asked of it.
+Goals and occasions are destroyed by whoever acts on them; standing
+entities — a folder, an entry, the session — are not.
+
+## Writing a domain
+
+```python
+from harneskills.world import Component, Reply, Said
+
+class Kettle(Component):
+    def __init__(self, name): self.name = name
+
+class WantBoiled(Component): pass      # a tag: asked for, not yet done
+class Boiling(Component): pass
+
+def install(loop):
+    loop.system(hear)
+    loop.system(boil)
+    loop.world.spawn(Kettle("kettle"))
+    loop.world.learn("kettle", "boil")     # what autocorrect aims at
+
+def hear(w):
+    for entity, said in w.each(Said):
+        if said.text == "boil the kettle":
+            w.destroy(entity)
+            for kettle, _ in w.each(Kettle):
+                w.attach(kettle, WantBoiled())
+
+def boil(w):
+    for entity, kettle, _ in w.each(Kettle, WantBoiled):
+        w.detach(entity, WantBoiled)
+        w.attach(entity, Boiling())
+        w.spawn(Reply("user", "the %s is boiling" % kettle.name))
+```
+
+```
+$ python -m harneskills --no-config mykitchen:install
+harneskills> boil the kettle
 the kettle is boiling
 ```
 
-The rule loads first, on purpose. A loaded `fact` carries no attention of
-its own — UGM's own choice: attending is *taking care of something*, and a
-fact loaded cold is background, never news (`../ugm/docs/HANDOFF.md`). The
-last line is what still starts things: typing `water(kettle)` in user mode
-is a *saying*, wrapped as `say user: water(kettle)` and delivered as an
-arrival, which UGM does attend — that's what wakes `<boil>` up to conclude
-`boiling(kettle)`, not `<trust-user>` believing you (which only ever
-believes exactly what you typed). A bare `fact +water(kettle)` typed in
-`/godmode` would sit there believed and inert, the same as one loaded from
-a file — say it instead, or pair it with your own `attend(...)`. And the
-one line the prompt prints, `the kettle is boiling`, is not a diff of
-belief — `<boil>` said so itself, concluding `+reply(user, "...")`; see
-"The output boundary is a channel too", further down.
+Three conventions, and the harness enforces none of them:
 
-Got a `.ugm` file already? Load it on the command line, or mid-session with
-`/load` — this repo ships no corpus of its own (see Scope, below), so `PATH`
-is wherever your domain's rules live, e.g. `../ugm/ugm/rules/delay.ugm`:
+- **`Said(user, "...")`** is what a typed line arrives as. A line no
+  system claims is still there when the world settles, and the prompt says
+  so (`(nothing understood: ...)`) instead of guessing.
+- **`Reply(channel, "...")`** is the only thing printed unasked — one
+  line, bare, then the entity destroyed, because a thing said is over and
+  saying it again is a new act. A reply to a channel other than `user` is
+  prefixed (`[gauge] ...`).
+- **`w.learn(...)`** registers words. A typed word close to exactly *one*
+  of them is corrected and echoed (`~ shwo -> show`), never silently.
+  Close means one edit for a short word and two for a long one, with a
+  swapped pair counting as one — so `shwo` reaches `show`, and `for` stays
+  two edits from `to` and is left alone. A tie is left alone too.
+  Correction stops at the first word that looks like a path and never
+  resumes: `show file in /etc/rc.d` reaches the systems with `rc.d` intact,
+  and a folder called `Documnets` is not a typo this prompt has an opinion
+  about.
 
-```
-python -m harneskills PATH/TO/corpus.ugm
-harneskills> /load PATH/TO/another.ugm
-```
+## Standing domains
 
-Typing the same paths every session gets old. `~/.config/harneskills/config`
-names the folders your corpora live in, one per line, and every `*.ugm`
-directly inside each one is loaded at startup:
-
-```
-# ~/.config/harneskills/config -- standing corpora, loaded in this order
-~/projects/Universal-Graph-Machine/ugm/rules
-~/corpora/kitchen
-```
-
-Blank lines and lines starting with `#` are ignored; `~` and `$VARS` expand;
-a relative folder is relative to the config file, not to your working
-directory (the thing most likely to read this file is a service). The sweep
-is **one level deep** on purpose — `ugm/rules/` and `ugm/rules/fs/` are
-different corpora that happen to nest, and quietly pulling in the second
-because you asked for the first would be choosing your rules for you. List
-the subfolder if you want it.
-
-Standing corpora load first, then anything named on the command line — so a
-file you name now can answer one that was already there. A folder in the
-config that has gone missing costs you that folder (`! config: ... no such
-folder`, on stderr) and not the session, and neither does a corpus that
-fails to parse — it is named on stderr and skipped.
-
-A domain is often not only `.ugm`. The fs corpus below leans on three tools,
-eight computators and an approval prompt, all Python, and a rule mentioning
-`<approve>` is a *parse error* until something has registered an answerer by
-that name. A `tools:` line names that half — `module:callable`, called as
-`callable(loader)`:
+Typing the same specs every session gets old.
+`~/.config/harneskills/config` names them, one `module:callable` per line,
+installed in the order written:
 
 ```
 # ~/.config/harneskills/config
-tools: harneskills.examples.fs:register
-~/corpora/fs
+harneskills.examples.fs:install
+mykitchen:install
 ```
 
-`tools:` lines run **before any corpus loads**, wherever they sit in the
-file — they have to, or the corpus that needs them cannot parse. With those
-two lines, `python -m harneskills` drives the file tools directly; nothing
-about the fs domain is in the harness, which imports what the config names
-exactly as it opens the folders the config names, and ships neither. A spec
-that doesn't import, doesn't resolve, isn't callable, or raises is a
-`! config: ...` on stderr and not a dead session.
-
-```
-$ python -m harneskills
-loaded: ~/corpora/fs/circuit_breaker.ugm, ~/corpora/fs/fs_demo.ugm
-harneskills> +want(list("/tmp/hk-fs"))
-alpha.txt (0 bytes)
-1 item(s) in /tmp/hk-fs
-```
-
-Said at the ordinary prompt, not `/godmode` — the point being made here is
-tools compounding over a real graph, not authoring, and a plain line is an
-arrival (attended) the moment `<trust-user>` believes it, which is what
-gets `<list>` a turn at all.
+Blank lines and lines starting with `#` are ignored; the same spec twice
+is installed once. Standing domains install first, then anything named on
+the command line — so a domain you name now sees a world the standing ones
+already set up. A spec that doesn't import, doesn't resolve, isn't
+callable, or raises is a `! ...` on stderr and not a dead session.
 
 ```
 --config PATH   read that file instead of the default
 --no-config     skip the file entirely, for the session where the standing
-                corpus is the thing you're debugging
+                domain is the thing you're debugging
 ```
 
-Starts in **user mode**: a bare line is heard as something you're *saying*,
-wrapped as `say user: <line>` and believed only because `<trust-user>` (an
-ordinary rule, loaded at start) trusts the channel unconditionally. A line
-that parses as neither a proposition nor `.ugm` syntax is heard as a sentence
-instead of refused (`"show files"` → `sentence(show, file)`, the plural
-autocorrected first), left for
-whatever `intake` rule a loaded corpus gives it, or unbelieved if none does.
-A misspelled relation name — against whatever the loaded rules already use —
-gets autocorrected and echoed (`~ typed -> fixed`), never silently. See
-`harneskills/repl.py`'s docstring for the full account — it's UGM's own, not
-rewritten here.
-
-The prompt itself stays QUIET beyond that: it prints exactly one shape,
-a freshly concluded `reply(user, "...")` — one line, no `+`, not a diff
-of belief. `<deliver>` (loaded alongside `<trust-user>`) is the output
-half of the same idiom, marking `delivered(user, "...")` so a corpus's
-own rule can guard against saying the same thing twice, the same brake
-every intake rule already needs. A corpus with no `reply(...)` rule of
-its own is silent here, same as it always was about anything a bare
-belief diff couldn't say on its own — `/show` is still the whole belief
-state, any time, nothing hidden.
-
 ```
-/show      what is believed right now
-/load PATH load another .ugm file into this session
-/godmode   author directly -- a line is `.ugm` text (fact, rule, say, ...)
-/usermode  back to the default -- a line is what you're SAYING
-/reload    start over: re-read the config and every corpus from disk
+/show      every entity in the world right now, and what it carries
+/systems   the systems installed, in the order they run each tick
+/reload    start over: re-import every domain and empty the world
 /reset     the same act, under the name you reach for when the mess is yours
 /quit      leave
 ```
 
-`/reload` is the edit-a-rule loop: change a `.ugm` file in another window,
-type `/reload`, and it's in. It has to build a **whole new machine** — UGM
-won't redeclare a rule into one that already has it, so there is no such
-thing as reloading a single rule in place — which is why everything you
-typed this session goes with it. It re-reads `~/.config/harneskills/config`
-too, so a folder or `tools:` line added mid-session takes effect without
-leaving the REPL.
-
-## An example: file tools
-
-Three tools (`ls`, `stat`, `rename`), a corpus that holds a rename for
-approval, and a circuit breaker watching it — carved out of `ugm.fs_repl`
-the same way `harneskills.repl` was carved out of `ugm.repl`. Its Python
-half is one function, `harneskills.examples.fs:register`, nameable from
-`--tools` or a config `tools:` line; its corpus is two ordinary `.ugm`
-files under `examples/`.
-
-```
-$ python -m harneskills --no-config --tools harneskills.examples.fs:register \
-      examples/circuit_breaker.ugm examples/fs
-harneskills> +want(list("C:\Users\you\Documents"))
-notes.txt (2048 bytes)                  -- the `ls` tool, an ordinary rule away
-...
-12 item(s) in C:\Users\you\Documents
-
-harneskills> +want(stale_after("C:\Users\you\Documents", 7))
-approve pending(rename(C:\Users\you\Documents, notes.txt, stale-notes.txt))? [y/N]
-```
-
-⚠ There is no `harneskills-fs` command any more. It was a second way to
-start a session carrying its own hardcoded corpus list, which meant this
-repo's `examples/fs/fs_demo.ugm` and your copy of it could both be live with
-nothing to say which one you were talking to. One way in now, and the corpus
-is whatever you point it at.
-
-Bare `show file` works too, and lists the directory the session started in
-— `fs.py:register` writes that once as `cwd`, and `<intake-show-here>` reads
-it.
-
-**One spelling, singular, everywhere.** `file` is already the vocabulary —
-`ls` writes `file($dir, $name)` — so the plural is one edit away from a word
-the machine knows and autocorrect turns `show files` into the same rule for
-free, echoing `~ files -> file`. Spell the intake plural instead and you get
-the opposite: `files` becomes the only place the word occurs, `file` is a
-different word that happens to be a relation, and nothing relates them. Pick
-one and near misses fall towards it. What this does *not* buy is `show fi`:
-`_autocorrect` never considers a span of two characters or fewer, whatever
-the distance, because at that length everything is near everything — a guard
-in `harneskills/repl.py` that no corpus can spell its way out of.
-
-Note the **quotes are required** on a path: unquoted, `show file in /tmp/x`
-fails to tokenize (`unexpected character '/'`) before it can even become a
-sentence.
-
-Once a folder is listed, `show big` reports the large files **in that
-folder** — the one you just looked at, not every folder listed this session:
-
-```
-harneskills> show file in "/tmp/a"
-harneskills> show file in "/tmp/b"
-harneskills> show big
-huge.bin (2048000 bytes)
-```
-
-Listing a folder *attends* it (`=> attend($dir, 5)` on the intake rules),
-which is UGM's own attention rather than a fact this corpus keeps: a claim
-that fades on its own clock and is restored whenever a move touches the
-folder again. `attentioned($dir)` says only that a folder is in the pool at
-all — both are — so what picks `/tmp/b` is that the engine ranks a rule's
-own applications by attention, newest first, and `<focus-big>` spends the
-`want` that let it match, so exactly one binding takes.
-
-Nothing about "listing" or "cleaning up" is built into the REPL or the
-tools — typing something that isn't `.ugm` syntax is heard as
-`sentence(show, file, in, "...")`, and it means whatever `examples/fs/fs_demo.ugm`
-says it means. A rename is held for approval by the same write-time trigger
-any corpus could use, not a special case in `fs_tools.py`.
+`/reload` is the edit-a-system loop: change a module in another window,
+type `/reload`, and the new function is what runs. It re-imports every
+domain (`importlib.reload`) and builds a **new world** — systems already
+registered cannot be un-registered, and every component in the world was
+put there by the old ones — so everything the session learned goes with it. It re-reads the
+config file too, so a domain added mid-session takes effect without
+leaving the prompt.
 
 ## Layout
 
 ```
 harneskills/
-  repl.py               the REPL loop itself -- carved out of ugm.repl, plus a `commands` seam
-  __main__.py           wiring: a Machine, a Loader, the corpora to load, then repl.run
-  config.py             which folders and which `tools:` the config names -- strings only, no UGM
+  world.py              entities, components, and the queries systems ask
+  loop.py               every system, in order, until nothing changes
+  repl.py               a line in, a reply out -- knows no domain
+  __main__.py           wiring: a Loop, the domains to install, then repl.run
+  config.py             which domains the config names -- strings only, imports nothing
   examples/
-    fs.py                the file-tools example's Python half: `register(ldr)`, and nothing else
-                           -- name it with `--tools` or a config `tools:` line
-    fs_tools.py           its three answerers -- carved out of ugm.repl_fs
-examples/
-  circuit_breaker.ugm    shared infra the fs example loads (any domain might watch a rule)
-  fs/fs_demo.ugm         the fs example's own corpus
+    model.py              the file domain's components: what a thing can BE
+    fs.py                 its eleven systems, and what words reach them
+    fs_tools.py           ls, stat, rename -- what those words do to a real disk
 tests/
-  test_config.py         the config file's promises: which folders, which files, what order
+  test_world.py         identity, values, and the intersection of the two
+  test_loop.py          order, settling, the budget, a system that raises
+  test_repl.py          autocorrect, and a scripted session
+  test_fs.py            the example end to end: words in, real files out
+  test_config.py        which domains, in what order
+  test_main.py          a domain named is a domain installed
 ```
 
 ## Scope
 
-**HarneSkills is a door onto UGM. Nothing else.** The engine — `ugm.core` —
-is a pinned external dependency; the harness itself (`harneskills/repl.py`,
-`harneskills/__main__.py`, `harneskills/config.py`) bakes in no domain
-corpus, tools, or rules — the config file names folders, it does not ship
-any, and `config.py` never opens a `.ugm` or imports UGM.
-`harneskills/examples/` is different on purpose: worked demonstrations of
-wiring a domain onto the harness, each a `register(loader)` the config or
-`--tools` can name, never imported by the harness itself unless you ask for
-it by name. Planning,
-arbitration, norms, procedures, credit assignment and provenance are all
-the engine's.
+**The harness bakes in no domain.** `world.py`, `loop.py`, `repl.py`,
+`__main__.py` and `config.py` ship no systems, no components beyond `Said`
+and `Reply`, no vocabulary and no knowledge of files; the config file names callables, it does not ship any,
+and `config.py` imports nothing it names. `harneskills/examples/` is
+different on purpose: worked demonstrations, each an `install(loop)` the
+config or the command line can name, never imported unless you ask for it
+by name.
 
 ## Status
 
-Freshly carved from `ugm.repl` (2026-08-24) — the previous, bespoke
-harness (`runner.py`/`view.py`/`commands.py`/`play.py`/`dungeon.py`, a
-Textual TUI, its own corpus, its own tests) is in git history; nothing was
-ported from it. Verified end to end: `pip install -e ../ugm && pip install
--e .`, then both transcripts above (the no-corpus `/godmode` session and
-the fs example listing a real directory with no config file at all), plus `python -m ugm.selftest`
-(203 checks, 0 failing) against the same editable install. ⚠
-`universal-graph-machine` is under active redesign — read
-`../ugm/docs/HANDOFF.md` before diagnosing an import error.
+**Rewritten 2026-08-26.** The UGM dependency is gone, and with it the
+`.ugm` corpus format, the loader, the graph, attention, arbitration and
+the two `examples/*.ugm` files — all in git history. What replaced the
+engine is `loop.py`: 43 lines of code that call functions until nothing
+changes, over `world.py`'s entity-component store.
 
-**Re-verified 2026-08-25** against the session that stopped attending a
-loaded `fact` and stopped interning. Three fixes, all on this side of the
-dependency, none in `ugm.core` itself:
+The filesystem example is the same demo it always was — listing, ageing,
+proposing, approving, renaming — reimplemented as eleven systems over
+three tools, and it is now covered by tests (`tests/test_fs.py`) rather
+than by hand. The previous README noted that the suite never reached
+`examples/` and that two bugs had sat there unnoticed as a result; that
+gap is closed. `pytest` is 99 checks, 0 failing, and every transcript
+above was run.
 
-- `fs_tools.py`'s own dedup check compared exact NODES (`m.pad.holds`),
-  which `never intern` made a check that could never once catch a repeat
-  — every `show file` on a directory already listed piled up a fresh twin
-  of every fact `ls` had already written. `m.holds` (the shape check) is
-  what a caller holding a freshly built node, rather than one it matched,
-  needs.
-- `<trust-user>`'s own `=> brush(says(user, $p))` quietly stopped working
-  for the identical reason UGM's own `delay.ugm` `<care>` did (see the
-  HANDOFF): `brush(...)` REBUILDS its argument by substitution, which
-  mints a twin now rather than re-attending the believed occasion. Fixed
-  the way UGM fixed it — `after <trust-user> { $sp = says(user, $p) } =>
-  attend($sp, 5, 1, 1)`, a QUERY against belief, never a rebuild.
-- `examples/fs/fs_demo.ugm`'s `<intake-show-big>`/`<rearm-big>` called
-  `attentioned(sentence(show, big))` with the literal spelled out. A
-  PREDICATE's ground argument is never resolved against belief the way an
-  ordinary member is (`core/rules.py`'s match loop `walk()`s it and hands
-  it over unchanged) — so that argument was always the rule's OWN
-  load-time copy, never the node the channel actually delivered and the
-  engine actually attended. Fixed by binding it first, `<focus-big>`'s own
-  working idiom: `+says(user, sentence(show, big)) as $s, attentioned($s)`.
+Three things the old design needed and this one does not:
 
-None of the three raised an error or a test failure on their own — `show
-big` just never answered, and a re-listed directory just quietly grew
-duplicate facts. This repo's own test suite (`pytest`) does not reach
-`examples/`; the fs corpus is exercised only by hand and by this README,
-which is what let the second and third sit unnoticed until this pass.
+- **Guard facts.** `considered(...)`, `weighed(...)`, `replied(...)`,
+  `heard(...)` existed because a pattern rule re-matched what was still
+  believed every tick. A system that destroys its goal and loops over the
+  work in Python cannot fire twice on the same goal.
+- **Attention.** "The folder you are looking at" was a claim that faded on
+  a clock, restored whenever a move touched it, ranked against every other
+  claim. It is now `Focus`, a tag exactly one folder entity carries.
+- **Interning care.** Facts were graph nodes, and whether two identical
+  shapes were the same node decided whether a check worked. Here identity
+  and data are simply different things: an entity is the identity, a
+  component is the data, and `Size(17) == Size(17)` without either of them
+  being the same file.
 
-On top of the fixes: a **reply channel**, symmetric to the intake one --
-see `harneskills/repl.py`'s docstring, "The output boundary is a channel
-too". The prompt no longer prints a raw belief diff; a corpus concludes
-`+reply(user, "...")` to speak, and rules in `fs_demo.ugm`
-(`<reply-listed>`, `<reply-file>`, `<reply-big>`, `<reply-renamed>`) are
-what make the fs example say anything at this prompt at all now.
+What the entity-component split buys over the tuple store it replaced,
+found while porting rather than argued for in advance:
 
-**Found running it, not by reasoning about it first:** the first cut of
-`<reply-file>` matched `+file($dir, $name), +size($dir, $name, $bytes)`
-directly and never fired -- `ls` writes those through the gate
-(`fs_tools.py`'s own `deposit`), not through a rule's consequent, so
-neither carries attention on its own; the fix anchors the same way
-`<reply-listed>` already did, off `answered(<ls>, ls($dir), $n)`. That
-alone then made `<reply-listed>` and `<reply-file>` two DIFFERENT rules
-sharing one attended occasion, and whichever fired first on a tick
-consumed it -- so `show file` reported either a count or a listing,
-never both, depending on which rule the table ranked first. Same brake
-as everything else here: `after <reply-listed>/<reply-file> { $a =
-answered(<ls>, ls($dir), $n) } => attend($a, 5, 1, 1)` re-attends it
-after either one consumes it, so the other still gets its turn.
+- A rename is one `attach`. The entity does not change, so `Stale`,
+  `Big`, and everything else a system had concluded about that file stays
+  attached to it — where the tuple version had to rewrite four facts keyed
+  by the old name and hope nothing else referred to it.
+- The approval gate stopped being a second queue. `NeedsApproval` is a tag
+  on the wish, `w.each(RenameWish, without=NeedsApproval)` is the system
+  that acts, and approving detaches it.
+- `/show` became worth reading: one line per entity, every component it
+  carries, `Big()` and `IsDir()` visible on the files that have them.

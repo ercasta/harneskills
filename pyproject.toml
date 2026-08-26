@@ -4,23 +4,20 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harneskills"
-version = "0.1.0"
-description = "HarneSkills — a plain terminal onto a UGM machine, carved out of ugm.repl"
+version = "0.2.0"
+description = "A world model, a game loop of Python rules over it, and a prompt onto both"
 readme = { text = "HarneSkills", content-type = "text/markdown" }
 requires-python = ">=3.9"
 license = { text = "MIT" }
-keywords = ["repl", "agent", "knowledge-graph", "reasoning", "ugm"]
+keywords = ["repl", "agent", "rules", "game-loop", "world-model"]
 
-# One dependency, and that is the whole of it: the engine. This repo is a
-# REPL over UGM, not a second implementation of one.
-#
-# ⚠ `universal-graph-machine` is pinned by VERSION and tracks a package that
-# is under active redesign. An unpinned floor is not a safety net here. If
-# imports start failing, read ../ugm/docs/HANDOFF.md before anything else --
-# it records shape changes.
-dependencies = [
-    "universal-graph-machine>=0.4.0",
-]
+# No dependencies, and that is the whole of it. The engine used to be one
+# -- `universal-graph-machine`, a graph substrate this repo was a terminal
+# onto -- and the loop in `harneskills/loop.py` is what replaced it: call
+# every rule, in order, until nothing changes. A rule is a Python function
+# of one `World`, so a domain brings itself and needs nothing installed
+# underneath it.
+dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]

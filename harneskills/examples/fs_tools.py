@@ -1,88 +1,121 @@
-"""Filesystem tools for the `fs` example (`docs/tools-approval.md`'s bet,
-upstream in `ugm`: listing and bookkeeping compound into automations, over
-one graph). Carved out of `ugm.repl_fs`, unmodified beyond the imports.
+"""The three things this example does to a real filesystem: `ls`, `stat`,
+`rename`. Each one takes the world and writes what it learned into it.
 
-Three answerers -- `ls`, `stat`, `rename` -- and nothing else. `ls`/`stat` are
-read-only and answer freely; `rename` is the one that touches the world, and
-`examples/fs/fs_demo.ugm` holds it for approval the same way UGM's own
-`tools_approval.ugm` holds `deploy` (§19 triggers, no new machinery).
+A tool is not a system. It has no query and is not called every tick -- a
+system decides one is warranted and calls it, which keeps the "when" and
+the "what" in different files: `fs.py` decides that a person asking to see
+a folder means listing it, and this module knows what listing IS.
 
-A tool "builds in the corpus's name scope" (§22): `ls` deposits one
-`file`/`size`/`created` fact per directory entry directly, through the same
-Loader the corpus's own rules are read against, so a rule can query what it
-found without a second round trip per file. What it *answers* -- `counted(n)`
-or `failed(reason)` -- is the one thing a rule reacts to; the facts are read
-because the loader index says something wrote them, same as any other belief.
+What a tool writes is OBSERVATION, as components on the entity the thing
+already has: `Size`, `Modified`, `IsDir`, and `Entry` itself for something
+seen for the first time. `Failed` is spawned on an entity of its own --
+it did not work, and this is what the OS said. Nothing here decides what
+to SAY about any of it; `fs.py` has a system that turns a `Failed` into a
+reply.
+
+⚠ Two invariants this module owns, and nothing else can:
+
+* `Contents.by_name` is the folder's index, mutated in place. It is the
+  one hand-kept structure in the domain, and every mutation here lands
+  beside a `spawn`/`destroy` that moves `revision` on its own -- except
+  the vanished-entry sweep, which says so with `world.changed()`.
+* An entry that has gone from the disk is destroyed. Re-listing a folder
+  is a refresh, not an accumulation, and a world still carrying an entity
+  for a deleted file is one where every later system reasons about
+  something that is not there.
 """
+
+from __future__ import annotations
 
 import os
 
-from ugm.core.machine import Machine
-from ugm.core.text import Loader
+from . import model as fs
 
 
-def _write(m: Machine, node) -> None:
-    # `node` is FRESH -- `m.g.rel(...)` mints a distinct node every call now
-    # (UGM stopped interning: "`fact +p(a)` twice believes it twice"), so a
-    # node built here to ASK with is never the node an earlier `ls` already
-    # wrote, however identical the shape. `pad.holds` is the exact-node
-    # check and would never once catch a repeat -- every `show files` on the
-    # same directory would pile up a fresh `file(dir, name)` beside the
-    # last. `m.holds` is the shape check (`pad.holds_any`), which is what a
-    # caller holding a node it built rather than matched wants.
-    if not m.holds(node):
-        m.gate.write(node)
+def _reason(e: OSError) -> str:
+    return str(e.strerror or e)
 
 
-def register(ldr: Loader) -> None:
-    """Bind `ls`, `stat` and `rename` as answerers in `ldr`'s scope."""
-    m = ldr.m
+def _observe(w, path: str, entity, name: str) -> bool:
+    """`Size`/`Modified`/`IsDir` for one entry. False if it is not there.
 
-    def deposit(head: str, *args: str):
-        node = m.g.rel(ldr.atom(head), *[ldr.atom(a) for a in args])
-        _write(m, node)
-        return node
+    ⚠ `st_mtime`, not `st_ctime`. On Linux `ctime` is the inode's last
+    CHANGE time, not a creation time -- `chmod` moves it and a restored
+    backup resets it -- so a system ageing files by it calls a file
+    written years ago fresh the moment anything touches its metadata. What
+    anyone asking "is this stale" means is when it was last written.
+    """
+    full = os.path.join(path, name)
+    try:
+        st = os.stat(full)
+    except OSError:
+        # Listed a moment ago and gone now, or in a directory we may read
+        # but whose entries we may not stat. Neither is worth taking a
+        # whole listing down for: the entity keeps its `Entry`, and a
+        # system that needs a `Size` simply does not match it.
+        return False
+    w.attach(entity, fs.Size(st.st_size), fs.Modified(int(st.st_mtime)))
+    if os.path.isdir(full):
+        w.attach(entity, fs.IsDir())
+    else:
+        w.detach(entity, fs.IsDir)
+    return True
 
-    def ls(mach: Machine, prop) -> object:
-        (dirnode,) = mach.g.members(prop)
-        dirpath = mach.g.show(dirnode)
-        try:
-            names = sorted(os.listdir(dirpath))
-        except OSError as e:
-            return deposit("failed", str(e.strerror or e))
-        for name in names:
-            full = os.path.join(dirpath, name)
-            deposit("file", dirpath, name)
-            try:
-                st = os.stat(full)
-            except OSError:
-                continue
-            deposit("size", dirpath, name, str(st.st_size))
-            deposit("created", dirpath, name, str(int(st.st_ctime)))
-            if os.path.isdir(full):
-                deposit("is_dir", dirpath, name)
-        return ldr.atom(str(len(names)))
 
-    def stat(mach: Machine, prop) -> object:
-        dirnode, namenode = mach.g.members(prop)
-        dirpath, name = mach.g.show(dirnode), mach.g.show(namenode)
-        try:
-            st = os.stat(os.path.join(dirpath, name))
-        except OSError as e:
-            return deposit("failed", str(e.strerror or e))
-        deposit("size", dirpath, name, str(st.st_size))
-        deposit("created", dirpath, name, str(int(st.st_ctime)))
-        return ldr.atom("done")
+def ls(w, folder):
+    """Every entry of the folder, into the world. Returns how many, or None
+    if the directory could not be read (`Failed` says why)."""
+    path = w.get(folder, fs.Folder).path
+    contents = w.get(folder, fs.Contents)
+    try:
+        names = sorted(os.listdir(path))
+    except OSError as e:
+        w.spawn(fs.Failed("list %s" % path, _reason(e)))
+        return None
+    for name in names:
+        entity = contents.by_name.get(name)
+        if entity is None:
+            entity = w.spawn(fs.Entry(folder, name))
+            contents.by_name[name] = entity
+        _observe(w, path, entity, name)
+    for gone in sorted(set(contents.by_name) - set(names)):
+        w.destroy(contents.by_name.pop(gone))
+        w.changed(folder)
+    return len(names)
 
-    def rename(mach: Machine, prop) -> object:
-        dirnode, oldnode, newnode = mach.g.members(prop)
-        dirpath, old, new = (mach.g.show(x) for x in (dirnode, oldnode, newnode))
-        try:
-            os.rename(os.path.join(dirpath, old), os.path.join(dirpath, new))
-        except OSError:
-            return ldr.atom("failed")
-        return ldr.atom("done")
 
-    ldr.answerer("ls", "ls", ls)
-    ldr.answerer("stat", "stat", stat)
-    ldr.answerer("rename", "rename", rename)
+def stat(w, entity) -> bool:
+    """One entry's size and age, into the world."""
+    entry = w.get(entity, fs.Entry)
+    path = w.get(entry.folder, fs.Folder).path
+    if not _observe(w, path, entity, entry.name):
+        w.spawn(fs.Failed("stat %s" % os.path.join(path, entry.name),
+                          "cannot stat"))
+        return False
+    return True
+
+
+def rename(w, entity, new_name: str) -> bool:
+    """Rename on disk, then move the world along with it.
+
+    The entity does not change -- it is the same file, now called
+    something else, still carrying whatever any system had concluded about
+    it. Only its `Entry` component is replaced, and the folder's index
+    re-keyed. Announces `Renamed`, an occasion, taken by whichever system
+    reports it.
+    """
+    entry = w.get(entity, fs.Entry)
+    path = w.get(entry.folder, fs.Folder).path
+    try:
+        os.rename(os.path.join(path, entry.name), os.path.join(path, new_name))
+    except OSError as e:
+        w.spawn(fs.Failed("rename %s to %s" % (entry.name, new_name), _reason(e)))
+        return False
+    contents = w.get(entry.folder, fs.Contents)
+    contents.by_name.pop(entry.name, None)
+    contents.by_name[new_name] = entity
+    was = entry.name
+    w.attach(entity, fs.Entry(entry.folder, new_name))
+    _observe(w, path, entity, new_name)
+    w.spawn(fs.Renamed(entity, was))
+    return True

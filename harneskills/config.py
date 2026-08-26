@@ -1,51 +1,41 @@
-"""Where a session's corpora and their tools come from when nobody types a path.
+"""Which domains a session installs when nobody types anything.
 
     ~/.config/harneskills/config
 
-One folder per line, loaded in the order written; every `*.ugm` file
-directly inside each one is loaded, alphabetically within the folder. A
-line whose first non-blank character is `#` is a comment; a blank line is
-nothing. `~` and `$VARS` are expanded, and a relative folder is taken
-relative to the config file's own directory -- not the working directory,
-because the thing most likely to read this file is a service whose cwd is
-not yours.
+One `module:callable` per line, installed in the order written::
 
-A line beginning `tools:` names Python instead:
+    # ~/.config/harneskills/config -- standing domains
+    harneskills.examples.fs:install
+    mykitchen:install
 
-    tools: harneskills.examples.fs:register
+A line whose first non-blank character is `#` is a comment; a blank line is
+nothing. That is the entire file format.
 
-...a `module:callable` taken as `callable(loader)`, run BEFORE any corpus
-loads no matter where the line sits. It has to be before: a rule that
-mentions `<approve>` is a parse error until something has registered an
-answerer by that name, so a corpus with a Python half cannot be a standing
-corpus unless its Python half arrives first. That is the whole reason this
-line kind exists -- naming a callable is the same act as naming a folder,
-and the harness still ships neither.
+A domain is a Python callable taking the `Loop` -- `install(loop)` -- and
+expected to register systems and spawn what they read. There is no other
+kind of line, because there is no other kind of content: a system is
+Python, so a domain's model and its behaviour are the same import, and a
+config that named folders of data would be naming files nothing reads.
 
-The sweep is deliberately ONE level deep. `../ugm/ugm/rules/` and
-`../ugm/ugm/rules/fs/` are different corpora that happen to nest, and a
-harness that quietly pulled in the second because you asked for the first
-would be choosing your rules for you. List the subfolder if you want it.
-
-This module reads a path list and stats the filesystem. It does not open a
-`.ugm` file, know what one contains, import UGM, or import anything a
-`tools:` line names -- a `tools:` spec leaves here as the string it arrived
-as. Loading and importing are `__main__`'s job, and the ordering above is
-the whole of the contract between them.
+⚠ This module resolves NOTHING. It reads a path and returns the strings it
+found, in file order; importing them, calling them, and saying what went
+wrong is `__main__`'s job. Keeping it that way is what lets the config file
+be tested without importing anything it names.
 """
+
+from __future__ import annotations
 
 import os
 
 APP = "harneskills"
-TOOLS = "tools:"
 
 
 def config_path() -> str:
     """The config file this session would read.
 
-    `$HARNESKILLS_CONFIG` wins outright (a full path to a file, so a service
-    or a test can point somewhere else). Otherwise the XDG location, which
-    on a stock box is `~/.config/harneskills/config`.
+    `$HARNESKILLS_CONFIG` wins outright (a full path to a file, so a
+    service or a test can point somewhere else). Otherwise the XDG
+    location, which on a stock box is `~/.config/harneskills/config`.
     """
     override = os.environ.get("HARNESKILLS_CONFIG")
     if override:
@@ -55,73 +45,29 @@ def config_path() -> str:
     return os.path.join(os.path.expanduser(base), APP, "config")
 
 
-def read_config(path=None) -> "tuple[list[str], list[str]]":
-    """`(folders, tools)` named in `path` -- folders expanded and absolute,
-    tool specs left as written, both in file order.
+def read_domains(path=None) -> "list[str]":
+    """Every `module:callable` named in `path`, in file order.
 
     No file is not an error -- it is the ordinary case for someone who has
-    never written one, and it means "no standing corpora", exactly as if
-    the file were empty.
+    never written one, and it means "no standing domains", exactly as if
+    the file were empty. The same spec named twice is kept once:
+    installing a domain twice registers its systems twice, and every one
+    of them would then run twice a tick.
     """
     if path is None:
         path = config_path()
     try:
         with open(path, "r", encoding="utf-8") as fh:
             raw = fh.read()
-    except (FileNotFoundError, NotADirectoryError):
-        return [], []
-    here = os.path.dirname(os.path.abspath(path))
-    folders, tools = [], []
+    except (FileNotFoundError, IsADirectoryError, NotADirectoryError, PermissionError):
+        return []
+    specs, seen = [], set()
     for line in raw.splitlines():
-        # Only a leading `#` comments a line out. `#` is a legal character
-        # in a directory name, and stripping from the first one anywhere
-        # would silently truncate a real path into a shorter real path.
         line = line.strip()
         if not line or line.startswith("#"):
             continue
-        if line.startswith(TOOLS):
-            # No expansion here: this is an import path, not a filesystem
-            # one, and `~` or `$HOME` in it is a typo rather than a wish.
-            tools.append(line[len(TOOLS):].strip())
+        if line in seen:
             continue
-        folder = os.path.expanduser(os.path.expandvars(line))
-        folders.append(os.path.normpath(os.path.join(here, folder)))
-    return folders, tools
-
-
-def read_folders(path=None) -> "list[str]":
-    """Just the folders -- `read_config(path)[0]`, for a caller with no tools."""
-    return read_config(path)[0]
-
-
-def corpus_files(folders) -> "tuple[list[str], list[str]]":
-    """Every `*.ugm` directly in each folder, plus what went wrong.
-
-    Returns `(paths, problems)`. A folder that is missing, or is there but
-    holds no corpus, is a `problem` string and not an exception: a config
-    file outliving one of its checkouts should cost you that folder, not
-    the session. The same file reached through two folders (a symlink, a
-    bind mount) is loaded once -- loading a rule twice is not always
-    harmless, and the second load is never what was meant.
-    """
-    paths, problems, seen = [], [], set()
-    for folder in folders:
-        if not os.path.isdir(folder):
-            problems.append("%s: no such folder" % folder)
-            continue
-        try:
-            names = sorted(n for n in os.listdir(folder) if n.endswith(".ugm"))
-        except OSError as e:
-            problems.append("%s: %s" % (folder, e.strerror or e))
-            continue
-        if not names:
-            problems.append("%s: no .ugm files" % folder)
-            continue
-        for name in names:
-            path = os.path.join(folder, name)
-            key = os.path.realpath(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            paths.append(path)
-    return paths, problems
+        seen.add(line)
+        specs.append(line)
+    return specs

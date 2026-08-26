@@ -1,0 +1,192 @@
+"""What the prompt promises: a line in, a reply out, and nothing else
+printed unasked."""
+
+import io
+
+import pytest
+
+from harneskills import repl
+from harneskills.loop import Loop
+from harneskills.world import Component, Reply, Said
+
+VOCAB = {"show", "file", "files", "big", "in", "stale", "after", "days"}
+
+
+# --- autocorrect ------------------------------------------------------
+
+def test_a_near_miss_is_corrected_and_reported():
+    line, fixes = repl._autocorrect("shwo file", VOCAB)
+    assert (line, fixes) == ("show file", [("shwo", "show")])
+
+
+def test_a_word_it_knows_is_left_exactly_alone():
+    assert repl._autocorrect("show file", VOCAB) == ("show file", [])
+
+
+def test_a_swapped_pair_counts_as_one_mistake():
+    # The commonest way to mistype a word you know how to spell.
+    assert repl._autocorrect("fiel", VOCAB)[1] == [("fiel", "file")]
+
+
+def test_a_word_near_two_words_equally_is_not_guessed_at():
+    # `dats` is one edit from `days` and one from `data`: ambiguous, so it
+    # stays as typed and the domain's own rules decide it means nothing.
+    line, fixes = repl._autocorrect("dats", VOCAB | {"data"})
+    assert (line, fixes) == ("dats", [])
+
+
+def test_a_word_too_far_from_anything_is_left_alone():
+    assert repl._autocorrect("dinner", VOCAB) == ("dinner", [])
+
+
+def test_a_short_word_has_to_be_closer_than_a_long_one():
+    # `for` is two edits from `to`, which for a three-letter word is a
+    # different word rather than a typo -- "what is for dinner" must not
+    # become a sentence nobody typed.
+    assert repl._autocorrect("what is for dinner", VOCAB | {"to"})[1] == []
+    # Two edits into a long word is still unmistakable.
+    assert repl._autocorrect("stalle", VOCAB)[1] == [("stalle", "stale")]
+
+
+def test_two_characters_are_never_corrected():
+    # At that length everything is near everything.
+    assert repl._autocorrect("fi", VOCAB) == ("fi", [])
+
+
+@pytest.mark.parametrize("path", [
+    "/etc/rc.d", "~/Documnets", "..\\Windows", '"my notes"', "notes.txt"])
+def test_a_path_is_never_corrected(path):
+    line = "show file in %s" % path
+    assert repl._autocorrect(line, VOCAB) == (line, [])
+
+
+def test_correction_stops_at_a_path_and_does_not_resume():
+    # Every word of a folder name is a word this prompt has no business
+    # having an opinion about.
+    line = "show file in /tmp/x stale big"
+    assert repl._autocorrect(line, VOCAB)[0] == line
+
+
+def test_spacing_is_preserved_exactly():
+    assert repl._autocorrect("show   file", VOCAB)[0] == "show   file"
+
+
+# --- a session --------------------------------------------------------
+
+def drive(loop, typed, **kwargs):
+    """Type these lines at the prompt; give back everything printed."""
+    out = io.StringIO()
+    import contextlib
+    with contextlib.redirect_stdout(out):
+        code = repl.run(loop, stdin=io.StringIO("".join(l + "\n" for l in typed)),
+                        echo_prompt=False, **kwargs)
+    assert code == 0
+    return out.getvalue().splitlines()
+
+
+class Secret(Component):
+    pass
+
+
+@pytest.fixture
+def loop():
+    lp = Loop()
+    lp.world.learn("hello")
+
+    @lp.system
+    def greet(w):
+        for entity, said in w.each(Said):
+            if said.text == "hello":
+                w.destroy(entity)
+                w.spawn(Reply("user", "hello yourself"))
+    return lp
+
+
+def test_a_line_becomes_a_saying_and_a_reply_is_printed_bare(loop):
+    assert "hello yourself" in drive(loop, ["hello", "/quit"])
+
+
+def test_a_typo_is_corrected_against_what_a_domain_registered(loop):
+    printed = drive(loop, ["helo", "/quit"])
+    assert "  ~ helo -> hello" in printed
+    assert "hello yourself" in printed
+
+
+def test_a_line_no_rule_took_is_reported_not_guessed_at(loop):
+    assert "  (nothing understood: what is for dinner)" in drive(
+        loop, ["what is for dinner", "/quit"])
+
+
+def test_a_reply_to_another_channel_says_which(loop):
+    def gauge(w):
+        if not w.each(Secret):
+            w.spawn(Secret(), Reply("gauge", "97%"))
+    loop.system(gauge, name="gauge")
+    assert "[gauge] 97%" in drive(loop, ["/quit"])
+
+
+def test_nothing_else_a_system_spawns_reaches_the_terminal(loop):
+    def quiet(w):
+        if not w.each(Secret):
+            w.spawn(Secret())
+    loop.system(quiet, name="quiet")
+    assert [l for l in drive(loop, ["hello", "/quit"]) if "Secret" in l] == []
+
+
+def test_show_is_the_whole_world_on_demand(loop):
+    # A `Reply` would not still be here to look at -- it is printed and
+    # destroyed before the first prompt. Anything else stands.
+    loop.world.spawn(Secret())
+    printed = drive(loop, ["/show", "/quit"])
+    assert any(line.strip() == "#1    Secret()" for line in printed)
+
+
+def test_systems_lists_them_in_the_order_they_run(loop):
+    loop.system(lambda w: None, name="second")
+    printed = drive(loop, ["/systems", "/quit"])
+    assert printed[-2:] == ["   1. test_repl.greet", "   2. second"]
+
+
+def test_a_system_that_blew_up_is_named_at_the_prompt(loop):
+    @loop.system
+    def explodes(w):
+        raise ValueError("nope")
+
+    assert "  ! test_repl.explodes: ValueError: nope" in drive(loop, ["hello", "/quit"])
+
+
+def test_a_system_that_never_settles_is_stopped_and_named(loop):
+    loop.system(lambda w: w.spawn(Secret()), name="ping")   # spawn is never idempotent
+    printed = drive(loop, ["/quit"])
+    assert any("still firing: ping" in l for l in printed)
+
+
+def test_an_unknown_command_is_said_rather_than_typed_at_the_world(loop):
+    assert "  ! no such command: /nope" in drive(
+        loop, ["/nope", "/quit"], commands={"/other": lambda arg: None})
+
+
+def test_a_command_may_hand_back_a_whole_new_loop(loop):
+    fresh = Loop()
+
+    def announce(w):
+        if not w.each(Secret):
+            w.spawn(Secret(), Reply("user", "new world"))
+    fresh.system(announce, name="announce")
+    printed = drive(loop, ["/swap", "hello", "/quit"],
+                    commands={"/swap": lambda arg: fresh})
+    assert "new world" in printed
+    # The old loop's rules are gone with it, so `hello` means nothing now.
+    assert "hello yourself" not in printed
+    assert "  (nothing understood: hello)" in printed
+
+
+def test_a_command_that_handles_itself_returns_none(loop):
+    seen = []
+    drive(loop, ["/note something", "/quit"],
+          commands={"/note": lambda arg: seen.append(arg)})
+    assert seen == ["something"]
+
+
+def test_end_of_input_leaves_the_same_way_quit_does(loop):
+    assert drive(loop, []) is not None

@@ -1,3 +1,5 @@
-"""Worked examples of a domain wired onto `harneskills.repl` -- each one a
-demo, not part of the harness itself (see the top-level README's "Scope").
+"""Worked examples of a domain: components, the systems over them, and the
+words that reach them. Each one is a demo, installed only when something
+names it, never part of the harness itself (see the top-level README's
+"Scope").
 """

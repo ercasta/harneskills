@@ -1,20 +1,31 @@
-"""HarneSkills -- a door onto a UGM machine.
+"""HarneSkills -- an entity-component world, a loop that runs systems over
+it, and a prompt onto both.
 
-UGM (the `ugm` package, an external dependency here -- see `pyproject.toml`)
-is an agent that plans, acts, observes and explains itself on one graph
-substrate. This package is not a second engine: it is UGM's own REPL,
-carved out and promoted to be the thing this repository works on. Load a
-`.ugm` corpus and talk to it:
+    python -m harneskills harneskills.examples.fs:install
 
-    python -m harneskills corpus.ugm
+Three small modules and no engine:
 
-See `harneskills.repl` for what typing at the prompt means.
+* `harneskills.world` -- entities (identity, no data) and components
+  (data, no identity). Everything anything knows.
+* `harneskills.loop` -- call every system, in order, until a whole pass
+  changes nothing. A system is a function of one `World`.
+* `harneskills.repl` -- a line becomes `Said(user, "...")`, the loop runs,
+  and whatever a system spawned as `Reply(user, "...")` is printed.
+
+A DOMAIN is one callable, `install(loop)`, that registers systems and
+spawns what they read -- named on the command line or in
+`~/.config/harneskills/config`, never shipped by the harness.
+`harneskills.examples.fs` is the worked one: listing, ageing and renaming
+real files, with every rename an automation proposes held for approval by
+one component.
 """
 
 from __future__ import annotations
 
-from . import repl
+from . import loop, repl, world
+from .loop import Loop
+from .world import World
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
-__all__ = ["repl", "__version__"]
+__all__ = ["Loop", "World", "loop", "repl", "world", "__version__"]
