@@ -12,6 +12,9 @@ Three small modules and no engine:
 * `harneskills.repl` -- a line becomes `Said(user, "...")`, the loop runs,
   and whatever a system spawned as `Reply(user, "...")` is printed.
 
+...and `harneskills.save`, which writes the world down every time it
+settles, so a restart is not an amnesia.
+
 A DOMAIN is one callable, `install(loop)`, that registers systems and
 spawns what they read -- named on the command line or in
 `~/.config/harneskills/config`, never shipped by the harness.
@@ -22,10 +25,10 @@ one component.
 
 from __future__ import annotations
 
-from . import loop, repl, world
+from . import loop, repl, save, world
 from .loop import Loop
 from .world import World
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
-__all__ = ["Loop", "World", "loop", "repl", "world", "__version__"]
+__all__ = ["Loop", "World", "loop", "repl", "save", "world", "__version__"]

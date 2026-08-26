@@ -76,32 +76,75 @@ def test_nothing_here_imports_what_it_names(tmp_path):
 
 def test_bare_arguments_are_domains(monkeypatch, tmp_path):
     monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "config"))
-    specs, where, ok = _split_argv(["a:install", "b:install"])
+    monkeypatch.setenv("HARNESKILLS_STATE", str(tmp_path / "world.json"))
+    specs, where, state, ok = _split_argv(["a:install", "b:install"])
     assert (specs, ok) == (["a:install", "b:install"], True)
     assert where == str(tmp_path / "config")
+    assert state == str(tmp_path / "world.json")
 
 
-def test_no_config_means_no_config_file(monkeypatch):
-    specs, where, ok = _split_argv(["--no-config", "a:install"])
+def test_no_config_means_no_config_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("HARNESKILLS_STATE", str(tmp_path / "world.json"))
+    specs, where, state, ok = _split_argv(["--no-config", "a:install"])
     assert (specs, where, ok) == (["a:install"], None, True)
+    assert state is not None, "--no-config says nothing about the world"
 
 
-def test_config_names_a_file_either_way(tmp_path):
-    for argv in (["--config", "/somewhere"], ["--config=/somewhere"]):
-        specs, where, ok = _split_argv(argv)
-        assert (specs, where, ok) == ([], "/somewhere", True)
+def test_no_state_means_the_world_starts_empty(monkeypatch, tmp_path):
+    monkeypatch.setenv("HARNESKILLS_CONFIG", str(tmp_path / "config"))
+    specs, where, state, ok = _split_argv(["--no-state"])
+    assert (state, ok) == (None, True)
+    assert where is not None, "--no-state says nothing about the domains"
 
 
-def test_config_and_no_config_together_is_refused(capsys):
-    assert _split_argv(["--config", "/x", "--no-config"])[2] is False
+def test_each_flag_names_a_file_either_way(tmp_path):
+    for argv in (["--config", "/c", "--state", "/s"],
+                 ["--config=/c", "--state=/s"]):
+        specs, where, state, ok = _split_argv(argv)
+        assert (specs, where, state, ok) == ([], "/c", "/s", True)
+
+
+def test_a_flag_and_its_negation_together_are_refused(capsys):
+    assert _split_argv(["--config", "/x", "--no-config"])[3] is False
+    assert "opposite" in capsys.readouterr().err
+    assert _split_argv(["--no-state", "--state=/x"])[3] is False
     assert "opposite" in capsys.readouterr().err
 
 
-def test_config_without_an_argument_is_refused(capsys):
-    assert _split_argv(["--config"])[2] is False
+def test_a_flag_without_an_argument_is_refused(capsys):
+    assert _split_argv(["--config"])[3] is False
+    assert "needs an argument" in capsys.readouterr().err
+    assert _split_argv(["a:install", "--state"])[3] is False
     assert "needs an argument" in capsys.readouterr().err
 
 
+def test_a_negation_with_an_argument_is_refused(capsys):
+    assert _split_argv(["--no-state=/x"])[3] is False
+    assert "takes no argument" in capsys.readouterr().err
+
+
 def test_an_unknown_flag_is_refused_rather_than_taken_for_a_domain(capsys):
-    assert _split_argv(["--tools", "a:install"])[2] is False
+    assert _split_argv(["--tools", "a:install"])[3] is False
     assert "no such option" in capsys.readouterr().err
+
+
+# --- state_path -------------------------------------------------------
+
+def test_the_world_lives_in_the_xdg_state_directory(monkeypatch, tmp_path):
+    monkeypatch.delenv("HARNESKILLS_STATE", raising=False)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    assert cfg.state_path() == str(tmp_path / "state" / "harneskills" / "world.json")
+
+
+def test_state_falls_back_under_home(monkeypatch, tmp_path):
+    monkeypatch.delenv("HARNESKILLS_STATE", raising=False)
+    monkeypatch.delenv("XDG_STATE_HOME", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    assert cfg.state_path() == str(
+        tmp_path / ".local" / "state" / "harneskills" / "world.json")
+
+
+def test_the_state_env_override_wins(monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "ignored"))
+    monkeypatch.setenv("HARNESKILLS_STATE", str(tmp_path / "elsewhere.json"))
+    assert cfg.state_path() == str(tmp_path / "elsewhere.json")

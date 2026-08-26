@@ -1,6 +1,8 @@
-"""Which domains a session installs when nobody types anything.
+"""Which domains a session installs when nobody types anything, and where
+the world is kept between runs.
 
-    ~/.config/harneskills/config
+    ~/.config/harneskills/config          the domains
+    ~/.local/state/harneskills/world.json the world itself
 
 One `module:callable` per line, installed in the order written::
 
@@ -43,6 +45,23 @@ def config_path() -> str:
     base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
         os.path.expanduser("~"), ".config")
     return os.path.join(os.path.expanduser(base), APP, "config")
+
+
+def state_path() -> str:
+    """Where the world is kept between runs (see `harneskills.save`).
+
+    `$HARNESKILLS_STATE` wins outright. Otherwise the XDG STATE location
+    -- `~/.local/state/harneskills/world.json` on a stock box -- which is
+    the right one of the four: this is neither configuration you would
+    edit nor a cache you could throw away without losing something, it is
+    what the program knew last time.
+    """
+    override = os.environ.get("HARNESKILLS_STATE")
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    base = os.environ.get("XDG_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "state")
+    return os.path.join(os.path.expanduser(base), APP, "world.json")
 
 
 def read_domains(path=None) -> "list[str]":

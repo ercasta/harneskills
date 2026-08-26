@@ -265,3 +265,89 @@ def test_the_world_settles_after_every_line(folder):
     for line in ("show file", "show big", "stale after 7 days", "show file"):
         loop.world.spawn(Said("user", line))
         assert loop.run().hot == [], "%r never settled" % line
+
+
+# --- surviving a restart ----------------------------------------------
+
+def restart(folder, path, ask="n"):
+    """What `python -m harneskills` does on the way up: an empty world,
+    the file read into it, and only then the domain installed."""
+    from harneskills import save
+    loop = Loop()
+    assert save.read(loop.world, path) == []
+    fs.install(loop, ask=lambda prompt: ask, cwd=lambda: folder)
+    return loop
+
+
+def test_the_world_survives_a_restart(folder, tmp_path):
+    from harneskills import save
+    path = str(tmp_path / "world.json")
+    loop = session(folder)
+    say(loop, "show file")
+    save.write(loop.world, path)
+
+    back = restart(folder, path)
+    w = back.world
+    here = folder_of(w, folder)
+    # It knows the folder without going near the disk again -- `show big`
+    # answers off what was restored.
+    assert sorted(w.get(here, Contents).by_name) == ["alpha.txt", "huge.bin", "sub"]
+    assert say(back, "show big") == ["huge.bin (5000 bytes)"]
+
+
+def test_what_was_concluded_survives_too(folder, tmp_path):
+    from harneskills import save
+    path = str(tmp_path / "world.json")
+    loop = session(folder, answers=["n"])          # found, proposed, refused
+    say(loop, "stale after 7 days")
+    save.write(loop.world, path)
+
+    w = restart(folder, path).world
+    entity = named(w, folder_of(w, folder), "alpha.txt")
+    assert w.has(entity, Stale), "a claim a system made is part of the world"
+
+
+def test_the_folder_you_were_looking_at_survives(folder, tmp_path):
+    from harneskills import save
+    path = str(tmp_path / "world.json")
+    loop = session(folder)
+    say(loop, "show file")
+    save.write(loop.world, path)
+
+    w = restart(folder, path).world
+    assert [e.id for e, _, _ in w.each(Folder, Focus)] == [folder_of(w, folder).id]
+
+
+def test_installing_over_a_restored_world_replaces_only_the_session(folder, tmp_path):
+    from harneskills import save
+    from harneskills.examples.model import Session as SessionComponent
+    path = str(tmp_path / "world.json")
+    loop = session(folder)
+    say(loop, "show file")
+    before = len(loop.world)
+    loop.world.attach(loop.world.each(SessionComponent)[0][0],
+                      SessionComponent("/somewhere/else", 1, 1))
+    save.write(loop.world, path)
+
+    w = restart(folder, path).world
+    # One session, not two -- and it belongs to the process now running.
+    assert len(w.each(SessionComponent)) == 1
+    assert w.the(SessionComponent).cwd == folder
+    assert len(w) == before, "nothing else was spawned over the top"
+
+
+def test_a_restarted_world_does_not_reuse_an_id_something_points_at(folder, tmp_path):
+    from harneskills import save
+    path = str(tmp_path / "world.json")
+    loop = session(folder)
+    say(loop, "show file")
+    save.write(loop.world, path)
+
+    back = restart(folder, path)
+    w = back.world
+    here = folder_of(w, folder)
+    known = {e.id for e in w.entities()}
+    say(back, "show file in %s" % os.path.join(folder, "sub"))
+    fresh = [e.id for e in w.entities() if e.id not in known]
+    assert fresh and not (set(fresh) & known)
+    assert w.get(here, Contents).by_name["huge.bin"].id in known

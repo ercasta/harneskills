@@ -26,6 +26,17 @@ let you: a system is a Python function, so writing one means editing a
 module and `/reload`ing. What you get back for that is a system that can
 loop, branch, call a library and read a clock.
 
+## The world outlives the process, and this loop is where it is written
+
+Nothing here opens a file. `on_settle(loop)` is called every time the
+world stops moving and everything it had to say has been printed -- the
+one moment there is a consistent world to write down -- and what the
+caller does with that is the caller's business
+(`harneskills.__main__` hands it to `harneskills.save`). Writing on every
+settle rather than on the way out is deliberate: a prompt living in a
+service is killed, not quit, and a save that only ran at `/quit` would be
+a save that never ran.
+
 ## The output is a channel, and a reply is the only thing printed unasked
 
 Nothing about the world's state reaches the terminal on its own. A domain
@@ -170,13 +181,19 @@ def _drain(loop, said: bool = True) -> None:
 
 
 def run(loop, prompt: str = "harneskills", stdin: Optional[TextIO] = None,
-        echo_prompt: bool = True, commands=None) -> int:
+        echo_prompt: bool = True, commands=None, on_settle=None) -> int:
     """`commands` is `{"/name": fn}`, the one seam this loop has for a
     caller that knows something it does not. `fn(argument_text)` may return
     None -- it handled itself -- or a fresh `Loop` to carry on with, which
     is how `/reload` exists: re-importing an edited domain means building
     the world again from nothing, and only this loop can swap the one it is
     holding. Each fn's first docstring line is its help text.
+
+    `on_settle(loop)` is called every time the world stops moving and
+    everything it had to say has been printed -- the moment there is a
+    consistent world to write down, which is what `harneskills.save` is
+    handed. It is called with the loop rather than closing over one
+    because `/reload` swaps it.
     """
     stdin = stdin or sys.stdin
     extra = "".join(
@@ -191,11 +208,13 @@ def run(loop, prompt: str = "harneskills", stdin: Optional[TextIO] = None,
         ticks, hot = loop.run(after_tick=lambda: _drain(loop, said=False))
         _drain(loop)
         if hot:
-            # The budget ran out with rules still firing -- almost always
-            # two rules feeding each other. Name them: that is the whole of
-            # what anyone needs to find the pair.
+            # The budget ran out with systems still firing -- almost always
+            # two feeding each other. Name them: that is the whole of what
+            # anyone needs to find the pair.
             print("  ! gave up after %d ticks, still firing: %s"
                   % (ticks, ", ".join(sorted(set(hot)))))
+        if on_settle is not None:
+            on_settle(loop)
 
     # Whatever a domain seeded at install time may already have something
     # to say. Ask before the first prompt, not after the first line.

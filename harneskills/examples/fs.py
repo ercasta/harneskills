@@ -366,8 +366,20 @@ def install(loop, ask=input, clock=time.time, cwd=os.getcwd) -> None:
     `clock` and `cwd` are arguments because a domain that reads the world
     outside the world should say where it does it. Both are read ONCE,
     here -- see `model.Session`.
+
+    ⚠ The world handed in may already hold everything this domain knew
+    last time (`harneskills.save`), and reconciling that is this
+    function's job -- nothing in the harness can tell a restored entity
+    from a fresh one. The policy here: every folder and entry stays
+    exactly as it was, and the `Session` is REPLACED, because the clock
+    and the working directory belong to the process now running and not
+    to the one that wrote the file. `attach` on the entity that already
+    carries one is the whole of that -- same entity, new component.
     """
     for system in SYSTEMS:
         loop.system(_approver(ask) if system is None else system)
-    loop.world.learn(*WORDS)
-    loop.world.spawn(Session(cwd(), int(clock()), BIG_BYTES))
+    world = loop.world
+    world.learn(*WORDS)
+    was = world.first(Session)
+    world.attach(was[0] if was else world.spawn(),
+                 Session(cwd(), int(clock()), BIG_BYTES))

@@ -1,7 +1,8 @@
 """HarneSkills: a prompt over an entity-component world and the systems
 that change it.
 
-    python -m harneskills [--config PATH | --no-config] [module:callable ...]
+    python -m harneskills [--config PATH | --no-config]
+                          [--state PATH | --no-state] [module:callable ...]
 
 A thin door onto `harneskills.repl`. This file contributes nothing beyond
 wiring: a fresh `Loop` (which brings its own empty `World`), the domains to
@@ -36,37 +37,48 @@ import sys
 
 from . import config as cfg
 from . import repl
+from . import save
 from .loop import Loop
 
 
-def _split_argv(argv) -> "tuple[list[str], str, bool]":
-    """`(specs, where, ok)` -- flags out, domain specs left alone.
+def _split_argv(argv) -> "tuple[list[str], str, str, bool]":
+    """`(specs, config, state, ok)` -- flags out, domain specs left alone.
 
-    `where` is the config file to read, already defaulted, or None for
-    `--no-config`. Hand-rolled rather than argparse because the whole
-    grammar is two flags and a list of specs.
+    `config` is the config file to read and `state` the world to restore,
+    each already defaulted, or None for its `--no-` flag. Hand-rolled
+    rather than argparse because the whole grammar is four flags and a
+    list of specs.
     """
-    specs, named, skip, rest = [], None, False, list(argv)
+    specs, rest = [], list(argv)
+    named = {"--config": None, "--state": None}
+    skipped = {"--config": False, "--state": False}
+    default = {"--config": cfg.config_path, "--state": cfg.state_path}
     while rest:
         arg = rest.pop(0)
-        if arg == "--no-config":
-            skip = True
-        elif arg == "--config":
-            if not rest:
-                print("! --config needs an argument", file=sys.stderr)
-                return [], None, False
-            named = rest.pop(0)
-        elif arg.startswith("--config="):
-            named = arg[len("--config="):]
+        flag, _, inline = arg.partition("=")
+        if flag in ("--no-config", "--no-state"):
+            if inline:
+                print("! %s takes no argument" % flag, file=sys.stderr)
+                return [], None, None, False
+            skipped["--" + flag[len("--no-"):]] = True
+        elif flag in named:
+            if not inline and not rest:
+                print("! %s needs an argument" % flag, file=sys.stderr)
+                return [], None, None, False
+            named[flag] = inline or rest.pop(0)
         elif arg.startswith("-"):
             print("! no such option: %s" % arg, file=sys.stderr)
-            return [], None, False
+            return [], None, None, False
         else:
             specs.append(arg)
-    if skip and named is not None:
-        print("! --config and --no-config say opposite things", file=sys.stderr)
-        return [], None, False
-    return specs, (None if skip else (named or cfg.config_path())), True
+    for flag in named:
+        if skipped[flag] and named[flag] is not None:
+            print("! %s and --no-%s say opposite things"
+                  % (flag, flag[2:]), file=sys.stderr)
+            return [], None, None, False
+    settled = {flag: None if skipped[flag] else (named[flag] or default[flag]())
+               for flag in named}
+    return specs, settled["--config"], settled["--state"], True
 
 
 def install(loop, specs) -> "list[str]":
@@ -114,18 +126,28 @@ def install(loop, specs) -> "list[str]":
     return problems
 
 
-def build(where, specs) -> Loop:
-    """A loop with every standing domain installed, then every named one.
+def build(where, specs, state=None) -> Loop:
+    """A loop with the world restored, then every domain installed.
 
-    Called once at startup and again for every `/reload` -- which is why it
-    re-reads the config file rather than closing over what it said the
+    Called once at startup and again for every `/reload` -- which is why
+    it re-reads the config file rather than closing over what it said the
     first time. Add a line to `~/.config/harneskills/config`, type
     `/reload`, and that domain is in the session without leaving it.
+
+    `state` is a path to restore from, or None to start empty -- which is
+    what `/reset` passes, and what `--no-state` means for the whole
+    session. The order here is load-then-install and it matters; see this
+    module's docstring.
     """
     standing = cfg.read_domains(where) if where is not None else []
     loop = Loop()
+    problems = []
+    if state is not None:
+        problems += ["state: %s" % p for p in save.read(loop.world, state)]
+        if len(loop.world):
+            print("restored %d entities from %s" % (len(loop.world), state))
     wanted = standing + [s for s in specs if s not in standing]
-    problems = install(loop, wanted)
+    problems += install(loop, wanted)
     for problem in problems:
         print("  ! %s" % problem, file=sys.stderr)
     installed = [s for s in wanted if not any(p.startswith(s + ":") for p in problems)]
@@ -137,23 +159,54 @@ def build(where, specs) -> Loop:
     return loop
 
 
+def _keeper(state):
+    """`on_settle(loop)` -- write the world down every time it stops moving.
+
+    Every settle, not on the way out: a prompt living in a service is
+    killed, not quit. Skipped when nothing has changed since the last
+    write, so reading `/systems` or typing a line nobody understood costs
+    nothing.
+
+    A save that fails is said once per distinct complaint and then the
+    session goes on. Losing the world on a full disk is bad; refusing to
+    talk to you about it as well is worse.
+    """
+    written, complained = {}, set()
+
+    def keep(loop):
+        world = loop.world
+        if state is None or written.get(id(world)) == world.revision:
+            return
+        try:
+            save.write(world, state)
+        except (OSError, save.SaveError) as e:
+            if str(e) not in complained:
+                complained.add(str(e))
+                print("  ! state: %s" % e, file=sys.stderr)
+            return
+        written[id(world)] = world.revision
+    return keep
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    specs, where, ok = _split_argv(argv)
+    specs, where, state, ok = _split_argv(argv)
     if not ok:
         return 2
 
     def reload_(arg):
-        """start over: re-import every domain and empty the world"""
-        print("  reloading -- everything this session learned is gone")
-        return build(where, specs)
+        """re-import every domain; the world comes back with it"""
+        print("  reloading -- the code is re-read, the world is restored")
+        return build(where, specs, state)
 
-    loop = build(where, specs)
-    # Two names for one act, because both are things people mean by it: you
-    # edited a rule and want it in, or you made a mess and want it out.
-    # Either way the answer is the same -- a new loop over a new world,
-    # built from the same sources.
-    return repl.run(loop, commands={"/reload": reload_, "/reset": reload_})
+    def reset_(arg):
+        """re-import every domain and start the world EMPTY"""
+        print("  resetting -- everything this world knew is gone")
+        return build(where, specs, None)
+
+    loop = build(where, specs, state)
+    return repl.run(loop, on_settle=_keeper(state),
+                    commands={"/reload": reload_, "/reset": reset_})
 
 
 if __name__ == "__main__":

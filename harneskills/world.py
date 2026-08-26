@@ -194,6 +194,22 @@ class World:
             self.attach(entity, *components)
         return entity
 
+    def _adopt(self, entity_id: int) -> Entity:
+        """The handle for this id, making the entity if it is not here.
+
+        The one thing that exists for `harneskills.save`, and the only way
+        an entity ever gets an id it did not just take from the counter. It
+        keeps the counter above whatever it has seen, so a restored world
+        cannot hand a new entity an id some component still points at --
+        and it does NOT move `revision`, because restoring is not something
+        that happened to the world, it IS the world.
+        """
+        entity = self._entities.get(entity_id)
+        if entity is None:
+            entity = self._entities[entity_id] = Entity(self, entity_id)
+            self._next = max(self._next, entity_id)
+        return entity
+
     def destroy(self, entity: Entity) -> bool:
         """It is not here any more, and neither is anything on it. True if
         it was. What a system calls on an occasion it has finished with."""

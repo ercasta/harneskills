@@ -14,6 +14,7 @@ back. Three small modules, no dependencies:
 harneskills/world.py   entities, components, and the queries systems ask.
 harneskills/loop.py    call every system, in order, until nothing changes.
 harneskills/repl.py    a line in, a reply out. Knows no domain.
+harneskills/save.py    the world on disk, so a restart is not an amnesia.
 ```
 
 A **domain** is one callable — `install(loop)` — that registers systems
@@ -49,6 +50,21 @@ harneskills> shwo file in /tmp/notes/archive
 list `/tmp/b`, ask, and you get `/tmp/b`. That is one component, `Focus`,
 which exactly one folder entity carries at a time. Nothing fades and
 nothing is ranked.
+
+None of that is lost when the process is. The world is written to
+`~/.local/state/harneskills/world.json` every time it settles, so the
+next run starts knowing the folder, the entries, which of them are big or
+stale, and which one you were looking at:
+
+```
+$ python -m harneskills harneskills.examples.fs:install
+restored 7 entities from ~/.local/state/harneskills/world.json
+installed: harneskills.examples.fs:install
+harneskills> show big
+scan.pdf (4300 bytes)
+```
+
+— answered without going near the disk. See **Persistence**, below.
 
 Ageing files, and the approval that guards them:
 
@@ -241,23 +257,78 @@ callable, or raises is a `! ...` on stderr and not a dead session.
 --config PATH   read that file instead of the default
 --no-config     skip the file entirely, for the session where the standing
                 domain is the thing you're debugging
+--state PATH    keep the world somewhere else
+--no-state      don't restore and don't write -- every run from nothing
 ```
+
+## Persistence
+
+The world is written to `~/.local/state/harneskills/world.json`
+(`$HARNESKILLS_STATE`, or `$XDG_STATE_HOME`) **every time it settles** —
+not on the way out. A prompt living in a service is killed, not quit, and
+a save that only ran at `/quit` would be a save that never ran. A settle
+that changed nothing writes nothing.
+
+An entity is an integer and a component is a value with named fields, so
+the file is just that:
+
+```json
+{"version": 1, "next": 23, "entities": [
+  {"id": 3, "components": [
+     {"type": "harneskills.examples.model:Folder",
+      "fields": {"path": "/tmp/notes"}}]}]}
+```
+
+Four things worth knowing:
+
+- **A component is rebuilt without its `__init__`.** `Entry(folder, name)`
+  takes positional arguments that are not its field names; there is no
+  signature a loader could call in general. It comes back as
+  `object.__new__(cls)` with its `__dict__` restored, so a domain can
+  write any constructor it likes.
+- **Ids are preserved, and so is the counter.** Every reference in every
+  component is an id, so `{"$entity": 3}` has to come back as `#3` — and a
+  world that resumed counting at 1 would hand a new entity an id something
+  is still pointing at.
+- **A field may hold** `None`, `bool`, `int`, `float`, `str`, `list`,
+  `tuple`, `dict` with string keys, and an `Entity`, nested however deep.
+  Anything else — a set, an open file — is refused *by name* when saving
+  rather than written as something it is not.
+- **The restore happens before any domain installs**, and reconciling that
+  is the domain's own business: nothing in the harness can tell a
+  `Session` a domain just spawned from one restored out of a file.
+  `fs.install` is the worked answer — it `attach`es a fresh `Session` to
+  the entity that already carries one, so the clock and the working
+  directory belong to the process now running while every folder and entry
+  stays where it was.
+
+A file that isn't there is a first run, not an error. A corrupt one costs
+you the world and not the session (`! state: ...`, and the file is left
+alone to look at). A component whose class no longer exists — a domain
+renamed, a version behind — is skipped and named; the entity keeps
+everything else it carried.
 
 ```
 /show      every entity in the world right now, and what it carries
 /systems   the systems installed, in the order they run each tick
-/reload    start over: re-import every domain and empty the world
-/reset     the same act, under the name you reach for when the mess is yours
+/reload    re-import every domain; the world comes back with it
+/reset     re-import every domain and start the world EMPTY
 /quit      leave
 ```
 
 `/reload` is the edit-a-system loop: change a module in another window,
 type `/reload`, and the new function is what runs. It re-imports every
 domain (`importlib.reload`) and builds a **new world** — systems already
-registered cannot be un-registered, and every component in the world was
-put there by the old ones — so everything the session learned goes with it. It re-reads the
-config file too, so a domain added mid-session takes effect without
+registered cannot be un-registered — and then restores the state file
+into it, so the code is new and the world is the one you had. It re-reads
+the config file too, so a domain added mid-session takes effect without
 leaving the prompt.
+
+`/reset` is the same act with the restore skipped: an empty world, and
+since the next settle writes, it empties the file too. That is the
+difference between "I edited a system" and "I made a mess" — with
+`--no-state` there is nothing to bring back and the two are one act
+again.
 
 ## Layout
 
@@ -266,7 +337,8 @@ harneskills/
   world.py              entities, components, and the queries systems ask
   loop.py               every system, in order, until nothing changes
   repl.py               a line in, a reply out -- knows no domain
-  __main__.py           wiring: a Loop, the domains to install, then repl.run
+  save.py               the world as JSON: entities are ints, components are values
+  __main__.py           wiring: restore, install, then repl.run
   config.py             which domains the config names -- strings only, imports nothing
   examples/
     model.py              the file domain's components: what a thing can BE
@@ -276,6 +348,7 @@ tests/
   test_world.py         identity, values, and the intersection of the two
   test_loop.py          order, settling, the budget, a system that raises
   test_repl.py          autocorrect, and a scripted session
+  test_save.py          the same world, ids and all, next time
   test_fs.py            the example end to end: words in, real files out
   test_config.py        which domains, in what order
   test_main.py          a domain named is a domain installed
@@ -284,8 +357,8 @@ tests/
 ## Scope
 
 **The harness bakes in no domain.** `world.py`, `loop.py`, `repl.py`,
-`__main__.py` and `config.py` ship no systems, no components beyond `Said`
-and `Reply`, no vocabulary and no knowledge of files; the config file names callables, it does not ship any,
+`__main__.py`, `config.py` and `save.py` ship no systems, no components
+beyond `Said` and `Reply`, no vocabulary and no knowledge of files; the config file names callables, it does not ship any,
 and `config.py` imports nothing it names. `harneskills/examples/` is
 different on purpose: worked demonstrations, each an `install(loop)` the
 config or the command line can name, never imported unless you ask for it
@@ -304,8 +377,16 @@ proposing, approving, renaming — reimplemented as eleven systems over
 three tools, and it is now covered by tests (`tests/test_fs.py`) rather
 than by hand. The previous README noted that the suite never reached
 `examples/` and that two bugs had sat there unnoticed as a result; that
-gap is closed. `pytest` is 99 checks, 0 failing, and every transcript
+gap is closed. `pytest` is 137 checks, 0 failing, and every transcript
 above was run.
+
+**Persistence, 2026-08-26.** The world is written down every time it
+settles and restored before any domain installs, so a restart is not an
+amnesia -- see **Persistence**, above. It cost `save.py` and one method
+on `World`, which is the entity-component split paying for itself again:
+entities are integers, components are values with named fields, and there
+is nothing else in a world to write. `/reload` and `/reset` finally mean
+different things because of it.
 
 Three things the old design needed and this one does not:
 
