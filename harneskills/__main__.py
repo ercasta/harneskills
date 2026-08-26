@@ -1,12 +1,17 @@
-"""HarneSkills: a prompt over an entity-component world and the systems
-that change it.
+"""HarneSkills: an entity-component world, and every door onto it.
 
     python -m harneskills [--config PATH | --no-config]
-                          [--state PATH | --no-state] [module:callable ...]
+                          [--state PATH | --no-state]
+                          [--serve[=HOST:PORT]] [--token TOKEN] [--headless]
+                          [module:callable ...]
 
-A thin door onto `harneskills.repl`. This file contributes nothing beyond
-wiring: a fresh `Loop` (which brings its own empty `World`), the domains to
-install, then a handoff to the REPL.
+A thin door onto `harneskills.engine`. This file contributes nothing
+beyond wiring: a fresh `Engine` around a `Loop` (which brings its own
+world), the domains to install, a `harneskills.repl.Terminal` attached to
+it -- and, if asked, a `harneskills.serve.Listener` attached alongside it,
+so a second door opens onto the SAME running world rather than a second
+one. Nothing about any domain is in here -- `harneskills.examples.fs` is
+imported when, and only when, something names it.
 
 "The domains to install" is two lists, in this order: the standing ones,
 from `~/.config/harneskills/config` (see `harneskills.config`), then
@@ -16,69 +21,120 @@ world the standing ones have already set up. `--no-config` skips the file
 entirely -- the escape hatch for the session where the standing domain is
 the thing you are debugging.
 
-Every positional argument is a domain: `module:callable`, imported and
-called as `callable(loop)`. There is no other kind of argument, because
-there is no other kind of thing to load. Nothing about any domain is in
-here -- `harneskills.examples.fs` is imported when, and only when,
-something names it.
+## One process, several doors
+
+`--serve` attaches a `harneskills.serve.Listener` beside the terminal --
+not instead of it. Anyone at a WebSocket and whoever is sitting at this
+terminal (tmux or otherwise) are looking at the same world, in the same
+tick, and a reply to `user` reaches both. `--headless` is the other half:
+no `Terminal` at all, for the case where this process IS the server and a
+person drives it entirely through connections -- systemd's own idea of
+"a service", not "a REPL somebody happens to be running as one".
+
+`--token` names the token a client must present; without it, one is
+generated (`os.urandom`) and written, with the host and port actually
+bound, to `harneskills.config.server_path()` -- `harneskills/serve.py`'s
+own note on why that file, and not the port alone, is the whole of the
+security story.
 
 `build` is separate from `main` because `/reload` runs it again: a system
 is a Python function, so picking up an edit means re-importing the module
 AND starting the world over -- systems already registered cannot be
 un-registered, and every component in the world was put there by the old
-ones. The REPL loop swaps to the new `Loop`. `/reset` is the same act under the name
-people reach for when the mess is theirs rather than the module's.
+ones. `/reload` restores the state file into the fresh world; `/reset` is
+the same act with that skipped, so the world start EMPTY -- see
+`harneskills.engine`'s own `_command` for where those two land.
 """
 
 from __future__ import annotations
 
 import importlib
+import json
+import os
 import sys
 
 from . import config as cfg
 from . import repl
 from . import save
+from . import serve
+from .engine import Engine
 from .loop import Loop
 
+FLAGS = {
+    "--config": "value", "--no-config": "flag",
+    "--state": "value", "--no-state": "flag",
+    "--serve": "optional", "--token": "value", "--headless": "flag",
+}
 
-def _split_argv(argv) -> "tuple[list[str], str, str, bool]":
-    """`(specs, config, state, ok)` -- flags out, domain specs left alone.
 
-    `config` is the config file to read and `state` the world to restore,
-    each already defaulted, or None for its `--no-` flag. Hand-rolled
-    rather than argparse because the whole grammar is four flags and a
-    list of specs.
+def _split_argv(argv):
+    """`(specs, options, ok)` -- flags out, domain specs left alone.
+
+    `options` is `{"config": path_or_None, "state": path_or_None,
+    "serve": (host, port)_or_None, "token": str_or_None, "headless":
+    bool}`. Hand-rolled rather than argparse because a `module:callable`
+    spec beginning with a dash is a thing argparse would take from us, and
+    because the grammar is still small enough to read in one function.
     """
     specs, rest = [], list(argv)
-    named = {"--config": None, "--state": None}
-    skipped = {"--config": False, "--state": False}
-    default = {"--config": cfg.config_path, "--state": cfg.state_path}
+    raw = {}
     while rest:
         arg = rest.pop(0)
         flag, _, inline = arg.partition("=")
-        if flag in ("--no-config", "--no-state"):
+        kind = FLAGS.get(flag)
+        if kind is None:
+            if arg.startswith("-") and arg not in FLAGS:
+                print("! no such option: %s" % arg, file=sys.stderr)
+                return [], None, False
+            specs.append(arg)
+            continue
+        if kind == "flag":
             if inline:
                 print("! %s takes no argument" % flag, file=sys.stderr)
-                return [], None, None, False
-            skipped["--" + flag[len("--no-"):]] = True
-        elif flag in named:
+                return [], None, False
+            raw[flag] = True
+        elif kind == "value":
             if not inline and not rest:
                 print("! %s needs an argument" % flag, file=sys.stderr)
-                return [], None, None, False
-            named[flag] = inline or rest.pop(0)
-        elif arg.startswith("-"):
-            print("! no such option: %s" % arg, file=sys.stderr)
-            return [], None, None, False
-        else:
-            specs.append(arg)
-    for flag in named:
-        if skipped[flag] and named[flag] is not None:
-            print("! %s and --no-%s say opposite things"
-                  % (flag, flag[2:]), file=sys.stderr)
-            return [], None, None, False
-    settled = {flag: None if skipped[flag] else (named[flag] or default[flag]())
-               for flag in named}
-    return specs, settled["--config"], settled["--state"], True
+                return [], None, False
+            raw[flag] = inline or rest.pop(0)
+        else:   # "optional" -- --serve, with or without =HOST:PORT
+            # The value, if there is one, may ONLY arrive via `=`. A bare
+            # `--serve` followed by a separate token is ambiguous with a
+            # domain spec that happens to come next on the command line
+            # (`--serve fs:install` -- serve on the default address and
+            # then install `fs`, or serve at the address named `fs:install`?
+            # -- and there is no reading of the second that makes sense,
+            # so only the first is offered. `ls --color[=WHEN]` draws the
+            # same line for the same reason.
+            raw[flag] = inline or True
+
+    if "--no-config" in raw and "--config" in raw:
+        print("! --config and --no-config say opposite things", file=sys.stderr)
+        return [], None, False
+    if "--no-state" in raw and "--state" in raw:
+        print("! --state and --no-state say opposite things", file=sys.stderr)
+        return [], None, False
+
+    config = None if "--no-config" in raw else raw.get("--config") or cfg.config_path()
+    state = None if "--no-state" in raw else raw.get("--state") or cfg.state_path()
+    serve_at = None
+    if "--serve" in raw:
+        value = raw["--serve"]
+        address = "" if value is True else value
+        host, _, port = address.partition(":")
+        try:
+            serve_at = (host or "127.0.0.1", int(port) if port else 8765)
+        except ValueError:
+            print("! --serve wants HOST:PORT, not %r" % address, file=sys.stderr)
+            return [], None, False
+    if "--headless" in raw and serve_at is None:
+        print("! --headless with no --serve is a process nothing drives",
+              file=sys.stderr)
+        return [], None, False
+    options = {"config": config, "state": state, "serve": serve_at,
+              "token": raw.get("--token"), "headless": "--headless" in raw}
+    return specs, options, True
 
 
 def install(loop, specs) -> "list[str]":
@@ -136,8 +192,8 @@ def build(where, specs, state=None) -> Loop:
 
     `state` is a path to restore from, or None to start empty -- which is
     what `/reset` passes, and what `--no-state` means for the whole
-    session. The order here is load-then-install and it matters; see this
-    module's docstring.
+    session. The order here is load-then-install and it matters -- see
+    `harneskills.engine`'s own note on it.
     """
     standing = cfg.read_domains(where) if where is not None else []
     loop = Loop()
@@ -188,25 +244,61 @@ def _keeper(state):
     return keep
 
 
+def _write_server_file(path: str, host: str, port: int, token) -> None:
+    """`server.json`, beside the world: how a client on this machine finds
+    this process and proves it is allowed to. Written 0600 where the
+    platform supports it -- a file only the account running this process
+    can read is the whole of the authentication story
+    (`harneskills.serve`'s own docstring)."""
+    folder = os.path.dirname(path)
+    if folder:
+        os.makedirs(folder, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as fh:
+        json.dump({"host": host, "port": port, "token": token}, fh)
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass   # e.g. Windows, where this is not how a file is kept private
+
+
 def main(argv=None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
-    specs, where, state, ok = _split_argv(argv)
+    specs, options, ok = _split_argv(argv)
     if not ok:
         return 2
+    where, state = options["config"], options["state"]
 
-    def reload_(arg):
+    def reload_(engine, arg):
         """re-import every domain; the world comes back with it"""
         print("  reloading -- the code is re-read, the world is restored")
         return build(where, specs, state)
 
-    def reset_(arg):
+    def reset_(engine, arg):
         """re-import every domain and start the world EMPTY"""
         print("  resetting -- everything this world knew is gone")
         return build(where, specs, None)
 
     loop = build(where, specs, state)
-    return repl.run(loop, on_settle=_keeper(state),
+    engine = Engine(loop, on_settle=_keeper(state),
                     commands={"/reload": reload_, "/reset": reset_})
+
+    if not options["headless"]:
+        engine.attach(repl.Terminal())
+
+    if options["serve"] is not None:
+        host, port = options["serve"]
+        token = options["token"] or os.urandom(18).hex()
+        server_path = cfg.server_path()
+
+        def announce(bound_host, bound_port, token_) -> None:
+            _write_server_file(server_path, bound_host, bound_port, token_)
+            print("serving on %s:%d -- details in %s"
+                  % (bound_host, bound_port, server_path))
+
+        engine.attach(serve.Listener(host=host, port=port, token=token,
+                                     announce=announce))
+
+    return engine.run()
 
 
 if __name__ == "__main__":

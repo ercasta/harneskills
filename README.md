@@ -3,25 +3,32 @@
 **An entity-component world, a loop that runs systems over it, and a
 prompt onto both.**
 
-There is no engine. An *entity* is an identity with no data — `#7`. A
-*component* is data with no identity — `Size(bytes=4300)`. A *system* is a
-Python function that asks for the entities carrying a set of components
-and walks them. The *loop* calls every system, in order, over and over,
-until a whole pass changes nothing — and that is when you get your prompt
-back. Three small modules, no dependencies:
+No dependency underneath it does the deciding. An *entity* is an identity
+with no data — `#7`. A *component* is data with no identity —
+`Size(bytes=4300)`. A *system* is a Python function that asks for the
+entities carrying a set of components and walks them. The *loop* calls
+every system, in order, over and over, until a whole pass changes nothing
+— and that is when the world has something to say. Everything else here
+is arranged around that loop, not underneath it:
 
 ```
-harneskills/world.py   entities, components, and the queries systems ask.
-harneskills/loop.py    call every system, in order, until nothing changes.
-harneskills/repl.py    a line in, a reply out. Knows no domain.
-harneskills/save.py    the world on disk, so a restart is not an amnesia.
+harneskills/world.py    entities, components, and the queries systems ask.
+harneskills/loop.py     call every system, in order, until nothing changes.
+harneskills/engine.py   ONE thread that runs the loop; any number of channels
+                          attached to it -- a terminal, several WebSockets.
+harneskills/repl.py     a terminal channel -- stdin in, prose out.
+harneskills/serve.py    a WebSocket channel -- JSON in, JSON out.
+harneskills/client.py   a small program that speaks to a served engine.
+harneskills/save.py     the world on disk, so a restart is not an amnesia.
 ```
 
 A **domain** is one callable — `install(loop)` — that registers systems
 and spawns what they read. The harness ships none; you name the one you
 want. `harneskills.examples.fs` is the worked example: listing, ageing and
 renaming real files, with every rename an automation proposes held for
-your approval by one component.
+approval — asked as an ordinary reply, on whichever channel answers it,
+because nothing here may stop the world to wait for one person's keypress
+(see "Many doors, one world", below).
 
 ## Try it
 
@@ -265,6 +272,91 @@ callable, or raises is a `! ...` on stderr and not a dead session.
 --no-state      don't restore and don't write -- every run from nothing
 ```
 
+## Many doors, one world
+
+`python -m harneskills` attaches ONE `harneskills.repl.Terminal` to the
+engine and hands the whole process over to it -- which is all the story
+there has ever been to type at this prompt. `--serve` attaches a SECOND
+door alongside it, a `harneskills.serve.Listener`, without touching the
+first:
+
+```bash
+python -m harneskills --serve harneskills.examples.fs:install
+```
+
+```
+installed: harneskills.examples.fs:install
+serving on 127.0.0.1:8765 -- details in ~/.local/state/harneskills/server.json
+harneskills> show file
+```
+
+Now, from anywhere else on the same machine (or over `ssh` to it) --
+another terminal, a cron job, a browser tab:
+
+```bash
+python -m harneskills.client
+```
+
+```
+  connected as ch3
+harneskills> show file
+a.txt (3 bytes)
+1 item(s) in /tmp/notes
+```
+
+That reply is not this second session's own -- it is the SAME reply the
+first prompt would print, because both are channels on the SAME engine,
+watching the SAME settle. A `Reply(user, "...")` -- what every reply in
+this domain is -- reaches every attached channel; type `show file` at
+either prompt and both print the listing. This is the ordinary MUD answer
+to "several people, one world," not a feature bolted on for it: `Said`
+and `Reply` already carried a channel, and `harneskills.engine.Engine` is
+what makes that channel a REAL one, addressable, rather than the one
+implicit terminal there used to only ever be.
+
+**One thread ever touches the world.** A channel's own thread only ever
+calls `engine.post(...)` -- never `world.spawn`, never `loop.run` -- and
+the engine's own thread is the only one that acts on it. That is the
+whole of why several people typing at once does not need a lock around
+anything: there is exactly one tick running at a time, always, and a
+channel is a mailbox into it, not a second cook in the kitchen.
+
+**Nothing may block the world for everyone else.** The old `fs.approve`
+called `input(prompt)` and waited, which was fine when the terminal was
+the only channel there was -- and wrong the moment a second one could be
+attached, since it would freeze every channel's world, not just the one
+that asked. The fix was not a workaround, it was the thing this whole
+domain already does for every goal that has to wait: suspend as a
+component. `approve` spawns the question as an ordinary `Reply` and marks
+the wish `Asked`; `hear_answer` reads "y" or "n" off whichever channel it
+arrives on. There is no callback sitting anywhere waiting to be called --
+the suspension IS the state, in the world, same as everything else here.
+
+**How a client finds the engine.** `harneskills.serve.Listener` binds
+loopback TCP only -- there are no filesystem permissions to borrow the
+way a Unix socket would lend, so any local process could open the port,
+and the first message on a fresh connection must be `{"hello": "<token>"}`
+if a token was set. `--serve` (with no explicit `--token`) makes one up
+(`os.urandom`) and writes it, with the host and port actually bound, to
+`harneskills.config.server_path()` (`~/.local/state/harneskills/server.json`,
+`0600` where the platform supports it) -- which is also the file
+`harneskills.client` reads when you do not name a server on its own
+command line. A client on the same machine, run by the same account (an
+`ssh` session included), finds it and connects with no further ceremony;
+nothing here is TLS, so do not bind this past loopback.
+
+```
+--serve[=HOST:PORT]   open a WebSocket door too (default 127.0.0.1:8765)
+--token TOKEN          require this token rather than a generated one
+--headless             no terminal at all -- the process IS the server
+```
+
+`--headless` is for the case where nobody is meant to be sitting at this
+process's own stdin -- a server with no console session, driven entirely
+by whoever connects. Running it under `tmux` (as the standing service
+does) rather than headless costs nothing and keeps the option of typing
+at it directly, the same way you always could.
+
 ## Persistence
 
 The world is written to `~/.local/state/harneskills/world.json`
@@ -348,18 +440,26 @@ again.
 harneskills/
   world.py              entities, components, and the queries systems ask
   loop.py               every system, in order, until nothing changes
-  repl.py               a line in, a reply out -- knows no domain
+  engine.py             one thread, the world, and the channels attached to it
+  repl.py               a Terminal channel -- stdin in, prose out
+  ws.py                 the WebSocket handshake and frame codec, both directions
+  serve.py              a Listener channel -- spawns a Connection per socket
+  client.py             a plain WebSocket+JSON speaker; holds no world of its own
   save.py               the world as JSON: entities are ints, components are values
-  __main__.py           wiring: restore, install, then repl.run
-  config.py             which domains the config names -- strings only, imports nothing
+  __main__.py           wiring: restore, install, attach channels, engine.run
+  config.py             which domains, and where the world/server files live
   examples/
     model.py              the file domain's components: what a thing can BE
-    fs.py                 its eleven systems, and what words reach them
+    fs.py                 its thirteen systems, and what words reach them
     fs_tools.py           ls, stat, rename -- what those words do to a real disk
 tests/
   test_world.py         identity, values, and the intersection of the two
   test_loop.py          order, settling, the budget, a system that raises
-  test_repl.py          autocorrect, and a scripted session
+  test_engine.py        one world, several channels, a broadcast reply
+  test_repl.py          autocorrect, and a scripted session over the engine
+  test_ws.py            the codec, both ends, over real sockets
+  test_serve.py         a real Listener: the token gate, two connections, a drop
+  test_client.py        rendering, and a session against a served engine
   test_save.py          the same world, ids and all, next time
   test_fs.py            the example end to end: words in, real files out
   test_config.py        which domains, in what order
@@ -368,13 +468,20 @@ tests/
 
 ## Scope
 
-**The harness bakes in no domain.** `world.py`, `loop.py`, `repl.py`,
-`__main__.py`, `config.py` and `save.py` ship no systems, no components
-beyond `Said` and `Reply`, no vocabulary and no knowledge of files; the config file names callables, it does not ship any,
-and `config.py` imports nothing it names. `harneskills/examples/` is
-different on purpose: worked demonstrations, each an `install(loop)` the
-config or the command line can name, never imported unless you ask for it
-by name.
+**The harness bakes in no domain.** `world.py`, `loop.py`, `engine.py`,
+`repl.py`, `ws.py`, `serve.py`, `client.py`, `__main__.py`, `config.py`
+and `save.py` ship no systems, no components beyond `Said` and `Reply`,
+no vocabulary and no knowledge of files; the config file names callables,
+it does not ship any, and `config.py` imports nothing it names.
+`harneskills/examples/` is different on purpose: worked demonstrations,
+each an `install(loop)` the config or the command line can name, never
+imported unless you ask for it by name.
+
+**The harness bakes in no transport either.** A domain's systems read and
+write the `World`; whether that world is reached by one terminal, by a
+terminal and three WebSocket clients, or headless with no terminal at
+all, is a decision `harneskills/__main__.py` makes from the command line,
+not something `fs.py` or any other domain has to know about or plan for.
 
 ## Status
 
@@ -427,3 +534,31 @@ found while porting rather than argued for in advance:
   that acts, and approving detaches it.
 - `/show` became worth reading: one line per entity, every component it
   carries, `Big()` and `IsDir()` visible on the files that have them.
+
+**Many doors, 2026-08-26.** `harneskills.engine.Engine` split the loop
+away from the terminal that used to own it -- see **Many doors, one
+world**, above. `repl.py` is now one `Terminal` channel rather than the
+loop's driver; `ws.py`, `serve.py` and `client.py` are new, hand-rolled
+(no dependency) against the subset of RFC 6455 this needs. `fs.approve`
+stopped blocking on `input()`, which the new engine's contract forbids
+outright -- fixed the same way every other suspended goal in this domain
+already was, as a component (`Asked`) rather than a call stack sitting on
+a keypress.
+
+One correctness bug came out of writing `ws.py` against itself, both
+directions, over a real socket rather than a mock of one: `socket.timeout`
+has been a subclass of `OSError` since Python 3.10 (it IS `TimeoutError`),
+so a bare `except (ConnectionError, OSError)` around a frame read
+silently mistook "nothing arrived within a caller's own deadline" for
+"the peer hung up." Neither this module's own channels set a read
+timeout, so nothing here was outwardly broken by it -- it would have bitten
+the first caller that did, silently, and was found only because the test
+suite drives the codec against itself rather than trusting one side's
+idea of the other's behaviour.
+
+`pytest` is 218 checks, 0 failing -- 68 of them new
+(`test_ws.py`, `test_engine.py`, `test_serve.py`, `test_client.py`, and
+the parts of `test_repl.py`/`test_fs.py`/`test_config.py` this touched),
+including an end-to-end one: a `Terminal` and a `harneskills.client`
+connection, attached to the same engine, each seeing the other's
+broadcast reply.

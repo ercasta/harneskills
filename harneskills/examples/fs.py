@@ -2,27 +2,27 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Eleven systems over `model.py`'s components and `fs_tools.py`'s three
+Thirteen systems over `model.py`'s components and `fs_tools.py`'s three
 tools. Read top to bottom, they are the order they run in each tick, and
 that order is the whole of the plan::
 
-    hear            Said              -> a goal entity
-    list_dir        ListWanted        -> the tools, and Listed
-    reply_listing   Listed            -> one line per entry, then a count
-    approve         RenameWish+NeedsApproval  -> asks you, then detaches the tag
-    flag_stale      StaleHunt         -> Stale on every old entry, FoundStale
-    propose_rename  FoundStale        -> RenameWish + NeedsApproval  NEVER a rename
+    hear            Said                       -> a goal entity
+    hear_answer     Said ("y"/"n")              -> resolves the wish being Asked
+    list_dir        ListWanted                  -> the tools, and Listed
+    reply_listing   Listed                      -> one line per entry, then a count
+    approve         RenameWish+NeedsApproval, not yet Asked  -> a question
+    flag_stale      StaleHunt                   -> Stale on every old entry, FoundStale
+    propose_rename  FoundStale                  -> RenameWish + NeedsApproval  NEVER a rename
     do_rename       RenameWish (without NeedsApproval)  -> the tool
-    focus_big       HuntHere          -> BigHunt, aimed at the folder you mean
-    flag_big        BigHunt           -> Big on every large entry, FoundBig
-    reply_big / reply_renamed / reply_failed        -> what you are told
+    focus_big       HuntHere                    -> BigHunt, aimed at the folder you mean
+    flag_big        BigHunt                     -> Big on every large entry, FoundBig
+    reply_big / reply_renamed / reply_failed     -> what you are told
 
 `approve` sits ABOVE the system that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
 one, which is what puts "2 of 5 older than 7 day(s)" on screen before the
-prompt asking what to do about the first of them. System order is the
-schedule, and a tick boundary is the only thing there is to schedule
-against.
+question about the first of them. System order is the schedule, and a
+tick boundary is the only thing there is to schedule against.
 
 ## The compounding step is `propose_rename`, and it is one line
 
@@ -45,6 +45,14 @@ and approving is `w.detach(entity, NeedsApproval)` -- the same wish, no
 longer waiting. Wanting your own renames held too is one more `attach`,
 not a different design.
 
+Asking is a component too. `approve` cannot call a function and wait for
+your answer -- the world may have other channels attached, and nothing
+here is allowed to stop for one of them (see `harneskills.engine`) -- so
+it spawns the question as an ordinary `Reply` and marks the wish `Asked`.
+`hear_answer` is the other half: a bare "y" or "n", on whichever channel
+it arrives, resolves whichever wish is currently `Asked`. The suspension
+IS the state; there is no callback held anywhere waiting to be called.
+
 ## A system loops, so a guard is rarely needed
 
 `flag_big` walks every entry in the folder in a `for`, in one call, and
@@ -60,10 +68,10 @@ import time
 
 from ..world import Reply, Said
 from . import fs_tools
-from .model import (Big, BigHunt, Contents, Entry, Failed, Focus, Folder,
-                    FoundBig, FoundStale, HuntHere, IsDir, ListWanted, Listed,
-                    Modified, NeedsApproval, RenameWish, Renamed, Session,
-                    Size, Stale, StaleHunt)
+from .model import (Asked, Big, BigHunt, Contents, Entry, Failed, Focus,
+                    Folder, FoundBig, FoundStale, HuntHere, IsDir,
+                    ListWanted, Listed, Modified, NeedsApproval, RenameWish,
+                    Renamed, Session, Size, Stale, StaleHunt)
 
 BIG_BYTES = 1000
 STALE_PREFIX = "stale-"
@@ -220,11 +228,51 @@ def _understand(w, line: str) -> bool:
 # -- the systems ----------------------------------------------------------
 
 def hear(w):
-    """What you typed -> a goal, if this domain has a reading of it."""
+    """What you typed -> a goal, if this domain has a reading of it.
+
+    Any channel -- `said.channel` is whichever terminal or socket a person
+    is attached as (`harneskills.engine`'s own concern), and `"user"` is
+    not one of those any more, it is where a reply meant for everyone
+    goes. This domain does not (yet) answer only the one who asked; every
+    reply it makes is `Reply("user", ...)`, heard by whoever is
+    connected, which is the ordinary MUD answer for a world nobody has
+    taught to whisper.
+    """
     for entity, said in w.each(Said):
-        if said.channel == "user" and _understand(w, said.text):
+        if _understand(w, said.text):
             w.destroy(entity)
         # Left standing otherwise: the prompt says nobody understood it.
+
+
+def hear_answer(w):
+    """A bare yes/no -> the wish now waiting on an answer, if there is one.
+
+    Runs before `approve` asks about anything else, so at most one wish is
+    ever waiting -- see `Asked`. A "y" or "n" that arrives with nothing
+    outstanding is not this domain's business and is left for `hear` to
+    try as everything else it might mean (which, being one letter, is
+    nothing -- and it is reported unheard, same as any other line no
+    system claims).
+    """
+    held = w.first(RenameWish, NeedsApproval, Asked)
+    if held is None:
+        return
+    entity, wish, _, _ = held
+    for said_entity, said in w.each(Said):
+        answer = said.text.strip().lower()
+        if answer not in ("y", "yes", "n", "no"):
+            continue
+        w.destroy(said_entity)
+        entry = w.get(wish.entry, Entry)
+        if answer in ("y", "yes"):
+            # The same wish, no longer waiting. `do_rename` asks for
+            # exactly this and will pick it up this same tick.
+            w.detach(entity, NeedsApproval)
+            w.detach(entity, Asked)
+        else:
+            w.destroy(entity)
+            _say(w, "left %s alone" % entry.name)
+        return
 
 
 def list_dir(w):
@@ -343,47 +391,49 @@ def reply_failed(w):
 
 # -- installing -----------------------------------------------------------
 
-def _approver(ask):
-    """`approve(w)`, asking at the terminal. A closure because the question
-    has to be askable some other way in a test -- `install(loop, ask=...)`
-    -- and because nothing else in this module needs to know there is a
-    terminal at all."""
-    def approve(w):
-        """A held wish -> asks you, and the answer is a component.
+def approve(w):
+    """The next unasked wish -> a question, and `Asked`, so it is not asked
+    twice.
 
-        ONE question per tick, however many are waiting: what happened to
-        the last answer is drained before the next question is asked, so a
-        run of prompts reads as a conversation rather than as a stack of
-        questions followed by a stack of outcomes.
-        """
-        held = w.first(RenameWish, NeedsApproval)
-        if held is None:
-            return
-        # `each`/`first` hand back the entity and then EVERY component
-        # asked for, in order -- the tag included, even though asking for
-        # it was the whole of what it had to say.
-        entity, wish, _ = held
-        entry = w.get(wish.entry, Entry)
-        folder = w.get(entry.folder, Folder).path
-        said = ask("approve rename %s -> %s in %s? [y/N] "
-                   % (entry.name, wish.new_name, folder))
-        if said.strip().lower() in ("y", "yes"):
-            # The same wish, no longer waiting. `do_rename` asks for
-            # exactly this and will pick it up in the same tick.
-            w.detach(entity, NeedsApproval)
-        else:
-            w.destroy(entity)
-            _say(w, "left %s alone" % entry.name)
-    return approve
+    Asks at most ONE thing at a time, however many wishes are waiting, and
+    that is TWO checks, not one: not-yet-`Asked` picks which wish is next,
+    and the guard above it -- nothing to do if one is `Asked` already --
+    is what stops a second question going out before the first is
+    answered. Losing the second check does not show up against one stale
+    file; the moment two are proposed in the same tick, the loop simply
+    ticks again after asking the first (asking IS a change), and without
+    the guard it asks about the second right then, before anyone could
+    have answered the first. `hear_answer` reads the answer off whichever
+    channel it arrives on, so a live question has to be the only one, or
+    a bare "y" would not say which it meant.
+
+    ⚠ This used to call `ask(prompt)` and block for the answer -- the
+    right thing for one terminal owning the loop, and wrong the moment
+    more than one channel can be attached (`harneskills.engine`): nothing
+    a system does may stop the world for everyone else. The fix is not a
+    trick, it is the thing this whole domain already does for every other
+    goal -- suspend as a component (`Asked`), and let the answer arrive as
+    an ordinary line whenever it does.
+    """
+    if w.first(RenameWish, NeedsApproval, Asked) is not None:
+        return   # a question is already outstanding; wait for its answer
+    held = w.first(RenameWish, NeedsApproval, without=Asked)
+    if held is None:
+        return
+    entity, wish, _ = held
+    entry = w.get(wish.entry, Entry)
+    folder = w.get(entry.folder, Folder).path
+    w.attach(entity, Asked())
+    _say(w, "approve rename %s -> %s in %s? [y/n]"
+         % (entry.name, wish.new_name, folder))
 
 
-SYSTEMS = (hear, list_dir, reply_listing,
-           None,   # `approve` goes here -- it needs `ask`, built per install
+SYSTEMS = (hear, hear_answer, list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            reply_big, reply_renamed, reply_failed)
 
 
-def install(loop, ask=input, clock=time.time, cwd=os.getcwd) -> None:
+def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     """Every system, in order, plus the one `Session` they read.
 
     `clock` and `cwd` are arguments because a domain that reads the world
@@ -400,9 +450,9 @@ def install(loop, ask=input, clock=time.time, cwd=os.getcwd) -> None:
     carries one is the whole of that -- same entity, new component.
     """
     for system in SYSTEMS:
-        loop.system(_approver(ask) if system is None else system)
+        loop.system(system)
     world = loop.world
-    world.learn(*WORDS)
+    world.learn(*WORDS, "y", "yes", "n", "no")
     was = world.first(Session)
     world.attach(was[0] if was else world.spawn(),
                  Session(cwd(), int(clock()), BIG_BYTES))

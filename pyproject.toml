@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "harneskills"
-version = "0.3.0"
+version = "0.4.0"
 description = "A world model, a game loop of Python rules over it, and a prompt onto both"
 readme = { text = "HarneSkills", content-type = "text/markdown" }
 requires-python = ">=3.9"
@@ -24,6 +24,7 @@ dev = ["pytest>=8.0"]
 
 [project.scripts]
 harneskills = "harneskills.__main__:main"
+harneskills-client = "harneskills.client:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

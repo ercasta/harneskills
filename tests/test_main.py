@@ -10,7 +10,7 @@ from harneskills.loop import Loop
 def test_a_named_domain_is_imported_and_handed_the_loop():
     loop = Loop()
     assert install(loop, ["harneskills.examples.fs:install"]) == []
-    assert [name for name, _ in loop.systems][:2] == ["fs.hear", "fs.list_dir"]
+    assert [name for name, _ in loop.systems][:2] == ["fs.hear", "fs.hear_answer"]
     assert loop.world.the(Session) is not None
 
 

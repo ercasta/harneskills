@@ -13,10 +13,10 @@ change. Being stale is not a property of a file, it is a claim
 `flag_stale` made about it -- and `detach(entity, Stale)` unmakes it.
 
 **What is being asked for, and what just happened.** `ListWanted`,
-`StaleHunt`, `BigHunt`, `HuntHere`, `RenameWish`, `NeedsApproval` are
-goals; `Listed`, `FoundStale`, `FoundBig`, `Renamed`, `Failed` are
-occasions. A system destroys the entity it acted on, so the next tick has
-nothing to match and the loop settles.
+`StaleHunt`, `BigHunt`, `HuntHere`, `RenameWish`, `NeedsApproval`,
+`Asked` are goals; `Listed`, `FoundStale`, `FoundBig`, `Renamed`,
+`Failed` are occasions. A system destroys the entity it acted on, so the
+next tick has nothing to match and the loop settles.
 
 `NeedsApproval` is the one worth pausing on. A rename waiting for a person
 and a rename about to happen are the same entity, and the only difference
@@ -26,7 +26,10 @@ is that tag::
     w.each(RenameWish, without=NeedsApproval)     # do these
 
 Approving detaches it. Nothing moves between queues, nothing is copied,
-and no flag has to be read to tell the two apart.
+and no flag has to be read to tell the two apart. `Asked` is the same
+idea one step earlier: the question has gone out and the wish is
+waiting on an answer that will arrive as an ordinary line on an ordinary
+channel, not as a return value nothing here is allowed to block for.
 """
 
 from __future__ import annotations
@@ -149,6 +152,19 @@ class RenameWish(Component):
 
 class NeedsApproval(Component):
     """A person has not said yes yet. See this module's docstring."""
+
+
+class Asked(Component):
+    """The question has already gone out for this wish -- `approve` put
+    it on `Reply(user, ...)` and is now waiting for an answer on the same
+    channel every other reply goes out on.
+
+    A tag, not a callback: nothing here blocks, because nothing in an
+    engine of several channels is allowed to (see `harneskills.engine`).
+    `approve` asks at most one thing at a time -- a wish carrying this is
+    a wish `approve` will not ask about again, so the next tick's fresh
+    proposal waits its turn instead of talking over the first question.
+    """
 
 
 # -- what just happened --------------------------------------------------

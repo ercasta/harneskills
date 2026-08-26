@@ -12,9 +12,9 @@ import time
 import pytest
 
 from harneskills.examples import fs
-from harneskills.examples.model import (Big, Contents, Entry, Focus, Folder,
-                                        NeedsApproval, RenameWish, Session,
-                                        Size, Stale)
+from harneskills.examples.model import (Asked, Big, Contents, Entry, Focus,
+                                        Folder, NeedsApproval, RenameWish,
+                                        Session, Size, Stale)
 from harneskills.loop import Loop
 from harneskills.world import Reply, Said
 
@@ -33,13 +33,13 @@ def folder(tmp_path):
     return str(tmp_path)
 
 
-def session(folder, answers=()):
+def session(folder):
     """A loop with the fs domain installed, launched "in" `folder`, with a
-    fixed clock and a scripted answer for every approval prompt."""
-    said = list(answers)
+    fixed clock. Approval is answered by `say`ing "y" or "n" once the
+    question comes back as a reply -- see `approve`/`hear_answer` in
+    `fs.py`; nothing here is asked synchronously any more."""
     loop = Loop()
-    fs.install(loop, ask=lambda prompt: said.pop(0) if said else "n",
-               clock=lambda: time.time(), cwd=lambda: folder)
+    fs.install(loop, clock=lambda: time.time(), cwd=lambda: folder)
     return loop
 
 
@@ -161,18 +161,31 @@ def test_a_finding_is_a_component_on_the_file_it_is_about(folder):
 # --- stale, proposed, approved ----------------------------------------
 
 def test_stale_finds_the_old_file_and_asks_before_touching_it(folder):
-    loop = session(folder, answers=["y"])
+    loop = session(folder)
     replies = say(loop, "stale in %s after 7 days" % folder)
     assert replies[0] == "1 of 3 older than 7 day(s) in %s" % folder
-    assert replies[1] == "renamed alpha.txt -> stale-alpha.txt"
+    assert replies[1] == "approve rename alpha.txt -> stale-alpha.txt in %s? [y/n]" % folder
+    assert os.path.exists(os.path.join(folder, "alpha.txt")), "asked, not yet acted"
+    assert say(loop, "y") == ["renamed alpha.txt -> stale-alpha.txt"]
     assert os.path.exists(os.path.join(folder, "stale-alpha.txt"))
     assert not os.path.exists(os.path.join(folder, "alpha.txt"))
 
 
 def test_saying_no_leaves_the_file_alone(folder):
-    loop = session(folder, answers=["n"])
-    assert say(loop, "stale after 7 days")[-1] == "left alpha.txt alone"
+    loop = session(folder)
+    say(loop, "stale after 7 days")
+    assert say(loop, "n") == ["left alpha.txt alone"]
     assert os.path.exists(os.path.join(folder, "alpha.txt"))
+
+
+def test_yes_or_no_answers_whichever_wish_is_currently_asked(folder):
+    # Anyone's "y" resolves it -- this domain has not been taught to
+    # whisper, and neither has this test's assertion about who may answer.
+    loop = session(folder)
+    say(loop, "stale after 7 days")
+    loop.world.spawn(Said("someone-else", "y"))
+    loop.run()
+    assert not os.path.exists(os.path.join(folder, "alpha.txt"))
 
 
 def test_a_rename_keeps_the_entity_and_renames_it(folder):
@@ -190,50 +203,62 @@ def test_a_rename_keeps_the_entity_and_renames_it(folder):
 
 
 def test_renaming_a_stale_file_unmakes_the_claim(folder):
-    loop = session(folder, answers=["y"])
+    loop = session(folder)
     say(loop, "stale after 7 days")
+    say(loop, "y")
     w = loop.world
     here = folder_of(w, folder)
     entity = named(w, here, "stale-alpha.txt")
     assert entity is not None and not w.has(entity, Stale)
 
 
-def test_a_proposal_waits_as_one_component_and_approving_takes_it_off(folder):
-    asked = {}
-
-    def ask(prompt):
-        w = loop.world
-        # Held: the wish exists, and `do_rename` is asking for exactly the
-        # ones without this tag, so nothing has happened to it yet.
-        asked["held"] = [e for e, _, _ in w.each(RenameWish, NeedsApproval)]
-        asked["free"] = w.each(RenameWish, without=NeedsApproval)
-        asked["disk"] = sorted(os.listdir(folder))
-        return "y"
-
-    loop = Loop()
-    fs.install(loop, ask=ask, cwd=lambda: folder)
+def test_a_proposal_waits_as_one_component_until_answered(folder):
+    loop = session(folder)
     say(loop, "stale after 7 days")
-    assert len(asked["held"]) == 1 and asked["free"] == []
-    assert "alpha.txt" in asked["disk"], "asked first, acted after"
+    w = loop.world
+    # Held: the wish exists, and `do_rename` asks for exactly the ones
+    # without this tag, so nothing has happened to it yet.
+    assert len(w.each(RenameWish, NeedsApproval)) == 1
+    assert w.each(RenameWish, without=NeedsApproval) == []
+    assert "alpha.txt" in os.listdir(folder), "asked first, acted after"
+    say(loop, "y")
+    assert "alpha.txt" not in os.listdir(folder)
+
+
+def test_only_one_wish_is_asked_about_at_a_time(tmp_path):
+    # Two stale files, two proposals -- but only one question ever goes
+    # out, so a "y" answers the one that was asked and never the other.
+    old = time.time() - 30 * DAY
+    for name in ("old1.txt", "old2.txt"):
+        (tmp_path / name).write_text("x", encoding="utf-8")
+        os.utime(tmp_path / name, (old, old))
+    loop = session(str(tmp_path))
+    replies = say(loop, "stale after 7 days")
+    assert sum(r.startswith("approve rename") for r in replies) == 1
+    w = loop.world
+    assert len(w.each(RenameWish, Asked)) == 1
+    assert len(w.each(RenameWish, NeedsApproval, without=Asked)) == 1
+    say(loop, "y")
+    # One resolved, and the other's question goes out only now.
+    assert sorted(os.listdir(str(tmp_path))) == ["old2.txt", "stale-old1.txt"]
+    assert len(w.each(RenameWish, Asked)) == 1
 
 
 def test_an_already_marked_file_is_not_marked_again(folder):
-    loop = session(folder, answers=["y", "y"])
+    loop = session(folder)
     say(loop, "stale after 7 days")
+    say(loop, "y")
     replies = say(loop, "stale after 7 days")
     assert replies == ["1 of 3 older than 7 day(s) in %s" % folder]
     assert sorted(os.listdir(folder)) == ["huge.bin", "stale-alpha.txt", "sub"]
 
 
 def test_your_own_rename_is_not_held_for_approval(folder):
-    def refuse(prompt):
-        raise AssertionError("nobody should be asked about a rename I typed")
-
-    loop = Loop()
-    fs.install(loop, ask=refuse, cwd=lambda: folder)
+    loop = session(folder)
     say(loop, "show file")
-    assert say(loop, "rename huge.bin to enormous.bin") == [
-        "renamed huge.bin -> enormous.bin"]
+    replies = say(loop, "rename huge.bin to enormous.bin")
+    assert replies == ["renamed huge.bin -> enormous.bin"], (
+        "a rename typed directly must never be held for approval")
     assert os.path.exists(os.path.join(folder, "enormous.bin"))
 
 
@@ -261,21 +286,23 @@ def test_stale_without_a_number_of_days_is_not_a_guess(folder):
 
 
 def test_the_world_settles_after_every_line(folder):
-    loop = session(folder, answers=["y"])
-    for line in ("show file", "show big", "stale after 7 days", "show file"):
-        loop.world.spawn(Said("user", line))
+    loop = session(folder)
+    # A question left unanswered still settles -- `approve` does not ask
+    # about an already-`Asked` wish twice, so nothing here spins.
+    for line in ("show file", "show big", "stale after 7 days", "show file", "y"):
+        loop.world.spawn(Said("someone", line))
         assert loop.run().hot == [], "%r never settled" % line
 
 
 # --- surviving a restart ----------------------------------------------
 
-def restart(folder, path, ask="n"):
+def restart(folder, path):
     """What `python -m harneskills` does on the way up: an empty world,
     the file read into it, and only then the domain installed."""
     from harneskills import save
     loop = Loop()
     assert save.read(loop.world, path) == []
-    fs.install(loop, ask=lambda prompt: ask, cwd=lambda: folder)
+    fs.install(loop, cwd=lambda: folder)
     return loop
 
 
@@ -298,8 +325,9 @@ def test_the_world_survives_a_restart(folder, tmp_path):
 def test_what_was_concluded_survives_too(folder, tmp_path):
     from harneskills import save
     path = str(tmp_path / "world.json")
-    loop = session(folder, answers=["n"])          # found, proposed, refused
-    say(loop, "stale after 7 days")
+    loop = session(folder)
+    say(loop, "stale after 7 days")     # found, proposed, asked
+    say(loop, "n")                      # refused
     save.write(loop.world, path)
 
     w = restart(folder, path).world

@@ -1,50 +1,43 @@
-"""A prompt: take a line, put it in the world, run the loop, print what
-the world says back.
+"""A terminal: one channel onto a running `harneskills.engine.Engine`.
 
     harneskills> show file
     fs_demo.py (4096 bytes)
     ...
     12 item(s) in /home/you/notes
 
-Everything between the second line and the third is `harneskills.loop`
-calling systems -- Python functions over the entities and components in
-`harneskills.world` -- until nothing changes. This module is the door: it
-does not know what a directory is, what `show` means, or that `fs`
-exists.
+`Terminal` is a CHANNEL, in the sense `harneskills.engine` defines one: it
+reads lines, posts them to the engine, and renders whatever comes back.
+It does not run the loop, does not own the world, and does not know
+whether it is the only channel attached -- a WebSocket client
+(`harneskills.serve`) can be reading the same settle at the same time,
+and neither has to know the other is there. This module used to BE the
+loop ("take a line, run the loop, print what it says"); the engine is
+what that turned into, so several of these -- and several sockets -- can
+say things to one world at once.
 
 ## Typing at this prompt is SAYING something, not authoring
 
-A line becomes one entity carrying one component -- `Said(user, "show
-file")` -- and that is all the REPL does with it. Whether those words
-mean anything is a question for the systems a domain installed, and a
-line nobody destroyed is a line nothing understood: it is still there
-when the world settles, and the prompt says so (`(nothing understood:
-...)`) rather than pretending.
+A line is posted as `say`, which the engine turns into `Said(name, "show
+file")` where `name` is this terminal's own channel name -- never
+literally `"user"`, which the engine reserves for "everyone" (see its own
+docstring, "Channels, and who hears what"). Whether the words mean
+anything is a question for the systems a domain installed; a line no
+system claims comes back as `{"unheard": ...}` and is printed as such,
+not guessed at.
 
 There is no way to author a system at this prompt, and no mode that would
 let you: a system is a Python function, so writing one means editing a
-module and `/reload`ing. What you get back for that is a system that can
-loop, branch, call a library and read a clock.
-
-## The world outlives the process, and this loop is where it is written
-
-Nothing here opens a file. `on_settle(loop)` is called every time the
-world stops moving and everything it had to say has been printed -- the
-one moment there is a consistent world to write down -- and what the
-caller does with that is the caller's business
-(`harneskills.__main__` hands it to `harneskills.save`). Writing on every
-settle rather than on the way out is deliberate: a prompt living in a
-service is killed, not quit, and a save that only ran at `/quit` would be
-a save that never ran.
+module and `/reload`ing.
 
 ## The output is a channel, and a reply is the only thing printed unasked
 
-Nothing about the world's state reaches the terminal on its own. A domain
-that wants to say something spawns `Reply(user, "...")`, and this loop
-prints exactly that text -- one line, no decoration -- and then destroys
-the entity, because a thing said is over and saying it again is a new
-act. A reply to any other channel is prefixed (`[gauge] ...`). `/show` is
-the whole world, on demand, any time.
+A domain that wants to say something spawns `Reply(user, "...")`; the
+engine turns that into `{"reply": {"channel": "user", "text": "..."}}`
+and delivers it to every attached channel, and THIS module is what turns
+that back into one bare printed line. A reply to a channel other than
+`user` -- meant for one asker, not everyone -- is prefixed
+(`[gauge] ...`). `/show` asks the engine for the whole world and prints
+it, on demand, any time.
 
 ## Autocorrect is against the DOMAIN's vocabulary, and stops at a path
 
@@ -57,17 +50,33 @@ word equally near two known words is a word this prompt cannot read.
 
 Correction stops at the first span that looks like a path (a `/`, a `.`,
 a `~`, or a quoted span) and never resumes: `show file in /etc/rc.d` must
-reach the rules with `rc.d` intact, and a folder called `Documnets` is
+reach the systems with `rc.d` intact, and a folder called `Documnets` is
 not a typo this prompt is entitled to have an opinion about.
+
+Reading `engine.loop.world.vocabulary` straight off the engine's own
+object, from this channel's thread, is the one place this module touches
+the world without going through `post` -- deliberately: a domain calls
+`learn` at install and essentially never again, so the set this reads is,
+in practice, never being written while it is being read. Anything that
+IS live -- the world's facts, what a line means -- goes through the queue
+like everyone else's.
+
+## /quit ends the whole session, here and only here
+
+A WebSocket client's own `/quit` (`harneskills.client`) closes ITS
+connection and nothing else -- other channels carry on. THIS terminal is
+the one that started the process (`python -m harneskills`), and typing
+`/quit` at it stops the engine outright, the same way it always ended the
+session before there was a second door in. If a server is meant to
+outlive its terminal, do not attach one.
 """
 
 from __future__ import annotations
 
 import re
 import sys
+import threading
 from typing import Optional, TextIO
-
-from .world import Reply, Said
 
 # A quoted span, taken whole and never corrected, or a run of non-space.
 _SPAN = re.compile(r'"[^"]*"|\S+')
@@ -78,10 +87,10 @@ _PATHISH = re.compile(r'[/\\~"]|\.\w')
 HELP = """\
 /show      every entity in the world right now, and what it carries
 /systems   the systems installed, in the order they run each tick
-/quit      leave
+/quit      leave -- ends the whole session (see this module's docstring)
 
 Type what you want in words -- `show file`, `show file in /tmp`, `show
-big`. A line becomes `Said(user, "...")` and means whatever the installed
+big`. A line becomes `Said("%s", "...")` and means whatever the installed
 domains' systems make of it; a line nobody claims is reported, not
 guessed at. Only a reply is printed unasked. A misspelled word is
 corrected against the vocabulary a domain registered, and echoed (`~ fiel
@@ -127,10 +136,11 @@ def _max_edits(word: str) -> int:
     return 1 if len(word) <= 4 else 2
 
 
-def _autocorrect(line: str, vocab: "set[str]"):
-    """`(corrected_line, [(typed, fixed), ...])` -- see the module
-    docstring. Spacing is preserved exactly: spans are spliced back into
-    the original text rather than rejoined."""
+def autocorrect(line: str, vocab: "set[str]"):
+    """`(corrected_line, [(typed, fixed), ...])`. Spacing is preserved
+    exactly: spans are spliced back into the original text rather than
+    rejoined. See this module's docstring, "Autocorrect is against the
+    DOMAIN's vocabulary"."""
     corrections, out, last, stop = [], [], 0, False
     for match in _SPAN.finditer(line):
         text = match.group()
@@ -158,104 +168,110 @@ def _autocorrect(line: str, vocab: "set[str]"):
     return "".join(out), corrections
 
 
-def _drain(loop, said: bool = True) -> None:
-    """Everything the world has to say since the last time we asked, in the
-    order it was said: replies first, then whatever blew up, then the lines
-    nobody claimed.
+class Terminal:
+    """A channel: stdin in, stdout out, over one attached `Engine`.
 
-    `said=False` between ticks -- a line no system has claimed YET is not a
-    line nobody understood; only a settled world can say that.
+    `name` is left unset until `Engine.attach` names it -- a terminal
+    started before the engine exists (which is every terminal there is)
+    cannot know its own name any sooner than that.
     """
-    w = loop.world
-    for entity, reply in w.each(Reply):
-        w.destroy(entity)
-        print(reply.text if reply.channel == "user"
-              else "[%s] %s" % (reply.channel, reply.text))
-    for name, err in loop.errors:
-        print("  ! %s: %s: %s" % (name, type(err).__name__, err))
-    loop.errors.clear()
-    if said:
-        for entity, heard in w.each(Said):
-            w.destroy(entity)
-            print("  (nothing understood: %s)" % heard.text)
 
+    def __init__(self, prompt: str = "harneskills",
+                 stdin: Optional[TextIO] = None,
+                 stdout: Optional[TextIO] = None,
+                 echo_prompt: bool = True) -> None:
+        self.name = None
+        self.prompt = prompt
+        self.stdin = stdin or sys.stdin
+        self.stdout = stdout or sys.stdout
+        self.echo_prompt = echo_prompt
+        self.engine = None
+        self._stop = threading.Event()
 
-def run(loop, prompt: str = "harneskills", stdin: Optional[TextIO] = None,
-        echo_prompt: bool = True, commands=None, on_settle=None) -> int:
-    """`commands` is `{"/name": fn}`, the one seam this loop has for a
-    caller that knows something it does not. `fn(argument_text)` may return
-    None -- it handled itself -- or a fresh `Loop` to carry on with, which
-    is how `/reload` exists: re-importing an edited domain means building
-    the world again from nothing, and only this loop can swap the one it is
-    holding. Each fn's first docstring line is its help text.
+    # -- the channel contract (see harneskills.engine) -----------------
 
-    `on_settle(loop)` is called every time the world stops moving and
-    everything it had to say has been printed -- the moment there is a
-    consistent world to write down, which is what `harneskills.save` is
-    handed. It is called with the loop rather than closing over one
-    because `/reload` swaps it.
-    """
-    stdin = stdin or sys.stdin
-    extra = "".join(
-        "%-10s %s\n" % (name, ((fn.__doc__ or "").strip().splitlines() or [""])[0])
-        for name, fn in (commands or {}).items())
-    print(HELP.replace("/quit      leave\n", extra + "/quit      leave\n", 1))
+    def start(self, engine) -> None:
+        self.engine = engine
+        self._print(HELP % self.name)
+        threading.Thread(target=self._read_loop, daemon=True).start()
 
-    def settle() -> None:
-        # `_drain` after every tick, not just at the end: a rule that stops
-        # to ask you something (`fs`'s approval prompt) must not do it over
-        # the top of replies the same tick already produced.
-        ticks, hot = loop.run(after_tick=lambda: _drain(loop, said=False))
-        _drain(loop)
-        if hot:
-            # The budget ran out with systems still firing -- almost always
-            # two feeding each other. Name them: that is the whole of what
-            # anyone needs to find the pair.
-            print("  ! gave up after %d ticks, still firing: %s"
-                  % (ticks, ", ".join(sorted(set(hot)))))
-        if on_settle is not None:
-            on_settle(loop)
+    def deliver(self, message: dict) -> None:
+        self._render(message)
 
-    # Whatever a domain seeded at install time may already have something
-    # to say. Ask before the first prompt, not after the first line.
-    settle()
-    while True:
-        if echo_prompt:
-            sys.stdout.write("%s> " % prompt)
-            sys.stdout.flush()
-        line = stdin.readline()
-        if line == "":
-            break
-        line = line.strip()
-        if not line:
-            continue
-        if line in ("/q", "/quit", "/exit"):
-            break
-        if line in ("/?", "/help"):
-            print(HELP)
-            continue
-        if line == "/show":
-            for entity in loop.world.entities():
-                print("  %s" % loop.world.show(entity))
-            continue
-        if line == "/systems":
-            for i, (name, _) in enumerate(loop.systems, 1):
-                print("  %2d. %s" % (i, name))
-            continue
-        if commands and line.startswith("/"):
-            name, _, arg = line.partition(" ")
-            fn = commands.get(name)
-            if fn is not None:
-                fresh = fn(arg.strip())
-                if fresh is not None:
-                    loop = fresh
-                    settle()
+    def close(self) -> None:
+        self._stop.set()
+
+    # -- reading --------------------------------------------------------
+
+    def _read_loop(self) -> None:
+        while not self._stop.is_set():
+            if self.echo_prompt:
+                self.stdout.write("%s> " % self.prompt)
+                self.stdout.flush()
+            line = self.stdin.readline()
+            if line == "":
+                # EOF ends the session the same way `/quit` does -- not
+                # just this channel's own read loop -- because for the
+                # ordinary `python -m harneskills` case this terminal IS
+                # the process, and `< script.txt` running out of lines
+                # must exit rather than leave `engine.run()` blocked
+                # forever on a queue nothing will ever feed again.
+                self.engine.post(self, "stop", None)
+                break
+            line = line.strip()
+            if not line:
                 continue
-            print("  ! no such command: %s" % name)
-            continue
-        line, corrections = _autocorrect(line, loop.world.vocabulary)
-        for typed, fixed in corrections:
-            print("  ~ %s -> %s" % (typed, fixed))
-        loop.world.spawn(Said("user", line))
-        settle()
-    return 0
+            if line in ("/q", "/quit", "/exit"):
+                # Ends the whole session -- see this module's docstring.
+                # Posted, not called directly: a `say` typed just before
+                # it must be acted on first, not stranded in the queue by
+                # a stop that got there first (see `Engine.post`).
+                self.engine.post(self, "stop", None)
+                break
+            if line == "/?" or line == "/help":
+                self._print(HELP % self.name)
+                continue
+            if line.startswith("/"):
+                self.engine.post(self, "command", line)
+                continue
+            vocab = self.engine.loop.world.vocabulary
+            line, corrections = autocorrect(line, vocab)
+            for typed, fixed in corrections:
+                self._print("  ~ %s -> %s" % (typed, fixed))
+            self.engine.post(self, "say", line)
+        self._stop.set()
+
+    # -- rendering --------------------------------------------------------
+
+    def _print(self, text: str) -> None:
+        print(text, file=self.stdout)
+
+    def _render(self, message: dict) -> None:
+        """One message from the engine, as lines for a person. Anything
+        not one of the shapes `harneskills.engine` documents is printed
+        raw -- swallowing an unrecognised message is how a new one goes
+        undebugged."""
+        if "reply" in message:
+            reply = message["reply"]
+            text, channel = reply.get("text", ""), reply.get("channel")
+            self._print(text if channel == "user" else
+                        "[%s] %s" % (channel, text))
+        elif "unheard" in message:
+            self._print("  (nothing understood: %s)"
+                        % message["unheard"].get("text", ""))
+        elif "error" in message:
+            self._print("  ! %s" % message["error"].get("text", ""))
+        elif "lines" in message:
+            for line in message["lines"]:
+                self._print("  %s" % line)
+        elif "settled" in message:
+            pass          # nothing to say; a richer terminal could redraw
+        elif "world" in message:
+            for record in message["world"].get("entities", ()):
+                self._print("  #%-4s %s" % (record["id"], "  ".join(
+                    "%s(%s)" % (c["type"].rpartition(":")[2],
+                                ", ".join("%s=%r" % kv
+                                         for kv in c["fields"].items()))
+                    for c in record["components"])))
+        else:
+            self._print("  ? %r" % (message,))

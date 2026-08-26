@@ -88,6 +88,21 @@ def state_path() -> str:
     return os.path.join(os.path.expanduser(_home_of("state")), APP, "world.json")
 
 
+def server_path() -> str:
+    """Where a serving session writes down how to reach it.
+
+    Beside the world, because it is the same kind of thing: not
+    configuration you would edit, but what this machine knows right now.
+    `$HARNESKILLS_SERVER` overrides. It holds the port actually bound and
+    the token required -- and on a Unix box it is written 0600, which is
+    the whole of how a local client proves it is you.
+    """
+    override = os.environ.get("HARNESKILLS_SERVER")
+    if override:
+        return os.path.abspath(os.path.expanduser(override))
+    return os.path.join(os.path.dirname(state_path()), "server.json")
+
+
 def read_domains(path=None) -> "list[str]":
     """Every `module:callable` named in `path`, in file order.
 
