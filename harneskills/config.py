@@ -4,6 +4,10 @@ the world is kept between runs.
     ~/.config/harneskills/config          the domains
     ~/.local/state/harneskills/world.json the world itself
 
+...on a Unix box. On Windows the same two live under `%APPDATA%` and
+`%LOCALAPPDATA%`, which is where a Windows user goes looking; see
+`_home_of`.
+
 One `module:callable` per line, installed in the order written::
 
     # ~/.config/harneskills/config -- standing domains
@@ -32,36 +36,56 @@ import os
 APP = "harneskills"
 
 
+def _home_of(kind: str) -> str:
+    r"""Where this platform keeps a program's `config` or its `state`.
+
+    XDG on Unix. On Windows, `%APPDATA%` and `%LOCALAPPDATA%` -- roaming
+    for what you would want to follow you to another machine (which
+    domains you install) and local for what you would not (a world full
+    of absolute paths to this machine's disk). Falling back to
+    `~/AppData/...` rather than to the XDG names, because
+    `C:\Users\you\.config\` is a Unix habit in a place no Windows
+    user thinks to look.
+    """
+    if os.name == "nt":
+        roaming = kind == "config"
+        named = os.environ.get("APPDATA" if roaming else "LOCALAPPDATA")
+        return named or os.path.join(os.path.expanduser("~"), "AppData",
+                                     "Roaming" if roaming else "Local")
+    if kind == "config":
+        return os.environ.get("XDG_CONFIG_HOME") or os.path.join(
+            os.path.expanduser("~"), ".config")
+    return os.environ.get("XDG_STATE_HOME") or os.path.join(
+        os.path.expanduser("~"), ".local", "state")
+
+
 def config_path() -> str:
-    """The config file this session would read.
+    r"""The config file this session would read.
 
     `$HARNESKILLS_CONFIG` wins outright (a full path to a file, so a
-    service or a test can point somewhere else). Otherwise the XDG
-    location, which on a stock box is `~/.config/harneskills/config`.
+    service or a test can point somewhere else). Otherwise this
+    platform's own place for configuration -- `~/.config/harneskills/`
+    on a stock Unix box, `%APPDATA%\harneskills\` on Windows.
     """
     override = os.environ.get("HARNESKILLS_CONFIG")
     if override:
         return os.path.abspath(os.path.expanduser(override))
-    base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(
-        os.path.expanduser("~"), ".config")
-    return os.path.join(os.path.expanduser(base), APP, "config")
+    return os.path.join(os.path.expanduser(_home_of("config")), APP, "config")
 
 
 def state_path() -> str:
     """Where the world is kept between runs (see `harneskills.save`).
 
-    `$HARNESKILLS_STATE` wins outright. Otherwise the XDG STATE location
-    -- `~/.local/state/harneskills/world.json` on a stock box -- which is
-    the right one of the four: this is neither configuration you would
-    edit nor a cache you could throw away without losing something, it is
-    what the program knew last time.
+    `$HARNESKILLS_STATE` wins outright. Otherwise the STATE location --
+    `~/.local/state/harneskills/world.json`, or `%LOCALAPPDATA%` on
+    Windows -- which is the right one of the four: this is neither
+    configuration you would edit nor a cache you could throw away without
+    losing something, it is what the program knew last time.
     """
     override = os.environ.get("HARNESKILLS_STATE")
     if override:
         return os.path.abspath(os.path.expanduser(override))
-    base = os.environ.get("XDG_STATE_HOME") or os.path.join(
-        os.path.expanduser("~"), ".local", "state")
-    return os.path.join(os.path.expanduser(base), APP, "world.json")
+    return os.path.join(os.path.expanduser(_home_of("state")), APP, "world.json")
 
 
 def read_domains(path=None) -> "list[str]":

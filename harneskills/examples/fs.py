@@ -79,11 +79,27 @@ WORDS = ("show", "file", "files", "big", "in", "stale", "after", "day",
 # -- getting hold of things ----------------------------------------------
 
 def folder_at(w, path: str):
-    """The entity for this directory -- the one that already exists, or a
+    r"""The entity for this directory -- the one that already exists, or a
     new one. The only place a `Folder` is made, so two systems asking
-    about the same directory are asking about the same entity."""
+    about the same directory are asking about the same entity.
+
+    Matched through `os.path.normcase`, which is what makes `C:\Notes`
+    and `c:\notes` one folder on a filesystem that thinks they are one
+    folder, and leaves them two where it does not (it is the identity
+    function on Unix). What is STORED is the spelling first seen, because
+    that is the one to show a person -- normalising for comparison and
+    normalising for display are different jobs, and only the first one is
+    the world's business.
+
+    Not `realpath`: two paths to one directory through a symlink stay two
+    folders here, deliberately. Asking about `/var/log` is not the same
+    act as asking about wherever it points, and a listing that silently
+    answered about somewhere else would be worse than one that answers
+    about both.
+    """
+    wanted = os.path.normcase(path)
     for entity, folder in w.each(Folder):
-        if folder.path == path:
+        if os.path.normcase(folder.path) == wanted:
             return entity
     return w.spawn(Folder(path), Contents())
 
@@ -140,8 +156,15 @@ def _say(w, text: str) -> None:
 def _path(text: str) -> str:
     """A path as a person types one: quoted if it needs to be, `~` if they
     like, and the rest of the line taken whole so a space is nothing
-    special."""
-    return os.path.expanduser(text.strip().strip('"').strip("'"))
+    special.
+
+    Absolute on the way out, because `folder_at` compares what comes out
+    of here and two spellings of one directory must not become two
+    folders: `notes`, `./notes`, `notes/` and `/home/you/notes` are one
+    place, each with its own `Contents` to fill and its own `Focus` to
+    fight over if they are not.
+    """
+    return os.path.abspath(os.path.expanduser(text.strip().strip('"').strip("'")))
 
 
 def _understand(w, line: str) -> bool:

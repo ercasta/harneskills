@@ -196,3 +196,14 @@ def test_written_and_read_back_is_the_same_world(tmp_path):
     back = World()
     assert save.read(back, path) == []
     assert back.get(index["a.txt"], Entry).folder.id == folder.id
+
+
+def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
+    # Text mode would turn every \n into \r\n on Windows, and a state file
+    # whose bytes depend on which machine wrote it is one you cannot
+    # compare. Only bites on Windows; the guard belongs here anyway.
+    w, _, _ = peopled()
+    path = tmp_path / "world.json"
+    save.write(w, str(path))
+    assert b"\r\n" not in path.read_bytes()
+    assert path.read_bytes().endswith(b"\n")

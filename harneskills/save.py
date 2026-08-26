@@ -126,7 +126,11 @@ def write(world, path: str) -> None:
     if folder:
         os.makedirs(folder, exist_ok=True)
     temporary = path + ".tmp"
-    with open(temporary, "w", encoding="utf-8") as fh:
+    # `newline=""` so text mode does not turn every `\n` into `\r\n` on
+    # Windows. JSON would not mind, but a state file that is different
+    # bytes depending on which machine wrote it is a file you cannot
+    # compare, and this one is meant to be readable.
+    with open(temporary, "w", encoding="utf-8", newline="") as fh:
         json.dump(data, fh, indent=1, sort_keys=False)
         fh.write("\n")
     os.replace(temporary, path)

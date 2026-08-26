@@ -351,3 +351,33 @@ def test_a_restarted_world_does_not_reuse_an_id_something_points_at(folder, tmp_
     fresh = [e.id for e in w.entities() if e.id not in known]
     assert fresh and not (set(fresh) & known)
     assert w.get(here, Contents).by_name["huge.bin"].id in known
+
+
+# --- one directory is one folder --------------------------------------
+
+@pytest.mark.parametrize("spelling", ["%s", "%s/", "%s/./", "%s/sub/.."])
+def test_two_spellings_of_a_directory_are_one_folder(folder, spelling):
+    loop = session(folder)
+    say(loop, "show file")
+    w = loop.world
+    before = len(w.each(Folder))
+    assert say(loop, "show file in %s" % (spelling % folder))[-1].endswith(folder)
+    # A second Folder would bring its own Contents to fill and its own
+    # Focus to fight over.
+    assert len(w.each(Folder)) == before
+
+
+def test_a_relative_path_is_the_folder_it_names(folder, monkeypatch):
+    monkeypatch.chdir(folder)
+    loop = session(folder)
+    say(loop, "show file")
+    assert say(loop, "show file in sub")[-1] == "0 item(s) in %s" % os.path.join(
+        folder, "sub")
+
+
+def test_the_folder_a_person_typed_is_the_one_they_are_shown(folder):
+    # Normalising for comparison and normalising for display are
+    # different jobs: `folder_at` matches through `normcase`, and stores
+    # the spelling first seen.
+    loop = session(folder)
+    assert say(loop, "show file in %s/" % folder)[-1] == "3 item(s) in %s" % folder

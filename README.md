@@ -247,6 +247,10 @@ harneskills.examples.fs:install
 mykitchen:install
 ```
 
+On Windows that file is `%APPDATA%\harneskills\config` — roaming, because
+which domains you install is worth following you to another machine, where
+a world full of absolute paths to this machine's disk is not.
+
 Blank lines and lines starting with `#` are ignored; the same spec twice
 is installed once. Standing domains install first, then anything named on
 the command line — so a domain you name now sees a world the standing ones
@@ -264,8 +268,8 @@ callable, or raises is a `! ...` on stderr and not a dead session.
 ## Persistence
 
 The world is written to `~/.local/state/harneskills/world.json`
-(`$HARNESKILLS_STATE`, or `$XDG_STATE_HOME`) **every time it settles** —
-not on the way out. A prompt living in a service is killed, not quit, and
+(`$HARNESKILLS_STATE`, or `$XDG_STATE_HOME`; `%LOCALAPPDATA%\harneskills\`
+on Windows) **every time it settles** — not on the way out. A prompt living in a service is killed, not quit, and
 a save that only ran at `/quit` would be a save that never ran. A settle
 that changed nothing writes nothing.
 
@@ -301,6 +305,14 @@ Four things worth knowing:
   the entity that already carries one, so the clock and the working
   directory belong to the process now running while every folder and entry
   stays where it was.
+
+The file is the same bytes on every platform, and one directory is one
+`Folder` entity however it was spelled — `notes`, `./notes`, `notes/` and
+`/home/you/notes` are one place, matched through `os.path.normcase` so
+that `C:\Notes` and `c:\notes` are too. What is stored is the spelling
+you typed, because normalising for comparison and normalising for display
+are different jobs. Symlinks are deliberately *not* resolved: asking
+about `/var/log` is not the same act as asking about wherever it points.
 
 A file that isn't there is a first run, not an error. A corrupt one costs
 you the world and not the session (`! state: ...`, and the file is left
@@ -377,7 +389,7 @@ proposing, approving, renaming — reimplemented as eleven systems over
 three tools, and it is now covered by tests (`tests/test_fs.py`) rather
 than by hand. The previous README noted that the suite never reached
 `examples/` and that two bugs had sat there unnoticed as a result; that
-gap is closed. `pytest` is 137 checks, 0 failing, and every transcript
+gap is closed. `pytest` is 149 checks, 0 failing, and every transcript
 above was run.
 
 **Persistence, 2026-08-26.** The world is written down every time it

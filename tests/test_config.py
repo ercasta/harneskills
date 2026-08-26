@@ -2,6 +2,8 @@
 
 import os
 
+import pytest
+
 from harneskills import config as cfg
 from harneskills.__main__ import _split_argv
 
@@ -146,5 +148,52 @@ def test_state_falls_back_under_home(monkeypatch, tmp_path):
 
 def test_the_state_env_override_wins(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "ignored"))
+    monkeypatch.setenv("HARNESKILLS_STATE", str(tmp_path / "elsewhere.json"))
+    assert cfg.state_path() == str(tmp_path / "elsewhere.json")
+
+
+# --- where a Windows box keeps the same two files ---------------------
+
+@pytest.fixture
+def windows(monkeypatch):
+    """Pretend, for the length of one test. `config_path` reads `os.name`
+    when it is called, which is the only reason this works -- and the
+    only reason it is worth testing on a Linux box at all."""
+    monkeypatch.setattr(cfg.os, "name", "nt")
+    monkeypatch.delenv("HARNESKILLS_CONFIG", raising=False)
+    monkeypatch.delenv("HARNESKILLS_STATE", raising=False)
+
+
+def test_windows_puts_the_domains_in_appdata(windows, monkeypatch, tmp_path):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    assert cfg.config_path() == os.path.join(
+        str(tmp_path / "Roaming"), "harneskills", "config")
+
+
+def test_windows_puts_the_world_in_localappdata(windows, monkeypatch, tmp_path):
+    # Local, not roaming: a world full of absolute paths to this machine's
+    # disk is not something you want following you to another machine.
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "Local"))
+    assert cfg.state_path() == os.path.join(
+        str(tmp_path / "Local"), "harneskills", "world.json")
+
+
+def test_windows_falls_back_under_appdata_not_under_dot_config(
+        windows, monkeypatch, tmp_path):
+    monkeypatch.delenv("APPDATA", raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    assert cfg.config_path() == os.path.join(
+        str(tmp_path), "AppData", "Roaming", "harneskills", "config")
+
+
+def test_windows_ignores_the_xdg_variables(windows, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "nope"))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
+    assert "nope" not in cfg.config_path()
+
+
+def test_the_env_override_still_wins_on_windows(windows, monkeypatch, tmp_path):
+    monkeypatch.setenv("APPDATA", str(tmp_path / "Roaming"))
     monkeypatch.setenv("HARNESKILLS_STATE", str(tmp_path / "elsewhere.json"))
     assert cfg.state_path() == str(tmp_path / "elsewhere.json")
