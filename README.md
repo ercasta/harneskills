@@ -106,9 +106,10 @@ w.each(RenameWish, NeedsApproval)             # ask about these
 w.each(RenameWish, without=NeedsApproval)     # do these
 ```
 
-Approving is `w.detach(entity, NeedsApproval)` — the same wish, no longer
-waiting. Nothing is copied from a held queue to a live one. Holding your
-own renames too would be one more `attach`, not a different design.
+Approving is `detach(entity, NeedsApproval)`, one delta a system returns
+— the same wish, no longer waiting. Nothing is copied from a held queue
+to a live one. Holding your own renames too would be one more `attach`,
+not a different design.
 
 ## How a turn works
 
@@ -157,6 +158,9 @@ installed at once will both have one called `hear`.
 
 ## The world
 
+`World`'s own four writing methods -- what `ugm.engine` and a domain's
+own `install()` call directly, outside any system's turn:
+
 ```python
 entry = w.spawn(Entry(folder, "notes.txt"), Size(2048))   # a new entity
 w.attach(entry, Stale())                                  # now it is also stale
@@ -165,9 +169,12 @@ w.each(Entry, Size, without=IsDir)                        # [(entity, entry, siz
 w.destroy(entity)                                         # finished with it
 ```
 
+A SYSTEM never calls these four -- see "Writing a domain", below, for
+what it calls instead.
+
 **A component is a value.** `Size(17) == Size(17)`, so re-attaching one
 that is already there changes nothing and the world still settles. It also
-means a component is *replaced*, not edited: `w.attach(e, Size(4300))`,
+means a component is *replaced*, not edited: `attach(e, Size(4300))`,
 never `size.bytes = 4300` — a component mutated in place is a change
 nothing can see.
 
@@ -192,6 +199,7 @@ entities — a folder, an entry, the session — are not.
 ## Writing a domain
 
 ```python
+from ugm.delta import attach, destroy, detach, spawn
 from ugm.world import Component, Reply, Said
 
 class Kettle(Component):
@@ -203,22 +211,34 @@ class Boiling(Component): pass
 def install(loop):
     loop.system(hear)
     loop.system(boil)
-    loop.world.spawn(Kettle("kettle"))
-    loop.world.learn("kettle", "boil")     # what autocorrect aims at
+    loop.world.spawn(Kettle("kettle"))       # install() itself may touch the
+    loop.world.learn("kettle", "boil")       # world directly -- it runs once,
+                                              # before any system's own turn.
 
 def hear(w):
+    deltas = []
     for entity, said in w.each(Said):
         if said.text == "boil the kettle":
-            w.destroy(entity)
+            deltas.append(destroy(entity))
             for kettle, _ in w.each(Kettle):
-                w.attach(kettle, WantBoiled())
+                deltas.append(attach(kettle, WantBoiled()))
+    return deltas
 
 def boil(w):
+    deltas = []
     for entity, kettle, _ in w.each(Kettle, WantBoiled):
-        w.detach(entity, WantBoiled)
-        w.attach(entity, Boiling())
-        w.spawn(Reply("user", "the %s is boiling" % kettle.name))
+        deltas.append(detach(entity, WantBoiled))
+        deltas.append(attach(entity, Boiling()))
+        deltas.append(spawn(Reply("user", "the %s is boiling" % kettle.name)))
+    return deltas
 ```
+
+A system READS the world (`w.each`, `w.get`, `w.has`, `w.first`, `w.the`)
+and RETURNS what should change, as a list of deltas from `ugm.delta` --
+it never calls `w.spawn`/`w.attach`/`w.detach`/`w.destroy` itself.
+`Loop.tick` applies one system's own deltas right after calling it,
+before the next system runs, so `boil` still sees what `hear` just did,
+in the same tick, exactly as if `hear` had mutated directly.
 
 ```
 $ python -m harneskills --no-config mykitchen:install
@@ -609,3 +629,34 @@ found what running the test suite could not. Renaming the embedding
 directory is the fix that holds regardless of working directory or
 invocation; the package inside, and everywhere it is imported from, did
 not need to change at all.
+
+**Deltas, 2026-08-27.** `ugm`'s own systems stopped touching the world
+and started returning it -- see `engine/README.md`'s own entry on this;
+same day, same reason. `harneskills.examples.fs`'s thirteen systems and
+`fs_tools.py`'s three tools moved to the new contract with it: every
+`w.spawn`/`attach`/`detach`/`destroy` became `ugm.delta.spawn`/`attach`/
+`detach`/`destroy`, appended to a list and returned. `Contents.by_name`
+-- documented as "the one hand-kept structure in the domain, mutated in
+place" -- stopped being that: `fs_tools.ls`/`rename` compute a fresh
+`Contents` and `attach` it, the same as every other component, and
+`world.changed()` lost its only caller in this repository.
+
+The one place order genuinely mattered rather than merely reading as if
+it did: `_understand`'s rename branch used to create-and-immediately-list
+a never-before-seen folder within one call, which a system that only
+returns deltas cannot do (nothing it describes is real until it returns).
+No test exercises "rename as literally the first command of a session,
+before any listing" -- every one lists first -- so the branch now reads
+the folder only if the world ALREADY has one, which answers exactly the
+same as a freshly-created empty folder would: nothing found, "no such
+file here". Every other `_listed`-then-act pattern (`flag_stale`,
+`flag_big`) needed no such change, because a `Pending` a system spawns
+is always resolved to a real entity by the time it finishes its OWN
+turn, before the next system runs -- so nothing LATER, even later in the
+same tick, ever sees an unresolved one.
+
+`pytest` is 237 checks, 0 failing, 35 of them `test_fs.py`'s -- unchanged
+behaviorally, one test helper's one-line signature fixed
+(`fs.folder_at` now returns `(deltas, entity)`) and nothing else, which
+is the whole of what a change to the mutation mechanism should cost the
+domain's own tests.

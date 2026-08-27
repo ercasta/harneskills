@@ -1,17 +1,42 @@
 """The game loop: call every system, over and over, until nothing changes.
 
-A system is a Python function of one argument, the `World`. It queries entities, it spawns and destroys and
-attaches, it returns nothing. That is the entire interface::
+A system is a Python function of one argument, the `World`. It QUERIES
+the world -- `each`, `get`, `has`, `first`, `the` -- and it RETURNS a
+list of deltas describing what should change, from `ugm.delta`. It does
+not spawn, attach, detach or destroy anything itself::
 
     @loop.system
     def list_dir(w):
+        deltas = []
         for entity, want in w.each(ListWanted):
-            w.destroy(entity)
-            fs_tools.ls(w, want.folder)
+            deltas.append(destroy(entity))
+            deltas.extend(fs_tools.ls(w, want.folder))
+        return deltas
 
-`tick()` calls every registered rule once, in registration order. `run()`
-ticks until a whole pass changes nothing -- the world has SETTLED -- and
+`tick()` calls every registered system once, in registration order, and
+applies each one's own deltas to the world immediately after calling it
+-- before the next system runs, so a later system in the SAME tick still
+sees what an earlier one just did, exactly as if it had mutated directly.
+`run()` ticks until a whole pass changes nothing -- the world has
+SETTLED, a full sweep of every system with nothing left to apply -- and
 that is the moment the REPL gets its prompt back.
+
+## Why deltas, and not a system calling `world.spawn` itself
+
+A system that only ever RETURNS what it wants done is a pure function of
+one `World` in the way `w.each(...)` already implies it should be: given
+the same world, it answers the same way, every time, and answering it
+does not require a running loop, a thread, or anything to clean up
+afterward -- call it, read what it handed back. `ugm.delta.spawn(...)`
+and friends are the same four verbs `World` always had, just handed back
+as data instead of acted out immediately, so porting a system that used
+to call `w.spawn(...)` is `spawn(...)`, appended to a list.
+
+`tick()` checks this rather than trusting it: if a system's OWN code
+moved `world.revision` (a stray `w.spawn`/`attach`/`detach`/`destroy`
+call, forgetting the new contract), that is a loud, named error on
+`loop.errors` -- not a silent bypass of the very discipline `Loop` exists
+to hold everyone to.
 
 ## Order is registration order, and that is the whole of arbitration
 
@@ -26,34 +51,39 @@ counted, register the entry rule before the count rule and it is so.
 ## A system fires by CHANGING something
 
 The loop cannot see inside a system and does not try. It reads
-`world.revision` before and after -- a system that spawned an entity,
-destroyed one, or attached a component that was not already there, fired;
-a system that re-attached a component equal to the one already on the
-entity did not. That is what settling is measured in, and it is why
-`World.attach` comparing before it stores is load-bearing rather than a
-convenience.
+`world.revision` before and after applying what a system handed back --
+a system whose deltas spawned an entity, destroyed one, or attached a
+component that was not already there, fired; a system whose deltas
+re-attached a component equal to the one already on the entity did not.
+That is what settling is measured in, and it is why `World.attach`
+comparing before it stores is load-bearing rather than a convenience.
 
 ## The budget is the circuit breaker
 
-Two rules can feed each other forever -- one spawns what the other
+Two systems can feed each other forever -- one spawns what the other
 destroys, which spawns what the first destroys. Nothing detects that in general, so the
-loop counts ticks and stops at `budget`, handing back the rules that were
+loop counts ticks and stops at `budget`, handing back the systems that were
 still firing when it ran out. The REPL prints them. A settled run reports
-no hot rules, and that is how a caller tells the two apart.
+no hot systems, and that is how a caller tells the two apart.
 
 ## A system that raises does not take the session with it
 
 The exception is caught, recorded on `loop.errors` (once per system and
 message, however many ticks it raises on), and the loop goes on to the
-next system. A system that raises makes no change, so the world still settles
-and the person at the prompt gets both their prompt and the traceback's
-message -- which is better than a REPL that dies on a typo in a domain
-nobody is editing right now.
+next system. Nothing it returned is applied -- a system that raises
+building its list of deltas has made none of them yet, and a system that
+raises applying one (an entity a delta names that got destroyed by
+another system first, say) may have applied the ones before it; either
+way the world still settles, and the person at the prompt gets both
+their prompt and the traceback's message, which is better than a REPL
+that dies on a typo in a domain nobody is editing right now.
 """
 
 from __future__ import annotations
 
 import collections
+
+from .delta import Delta
 
 Settled = collections.namedtuple("Settled", "ticks hot")
 
@@ -106,22 +136,46 @@ class Loop:
 
     # -- running ------------------------------------------------------
 
+    def _record(self, name: str, error: BaseException) -> None:
+        # Once per settle, not once per tick: a system that raises (or
+        # keeps failing the same way) raises again on every pass until
+        # the world stops moving, and one typed line should not print the
+        # same traceback message four times.
+        if not any(n == name and str(seen) == str(error)
+                   for n, seen in self.errors):
+            self.errors.append((name, error))
+
     def tick(self) -> "list[str]":
-        """One pass over every system. Returns the names of the ones that
-        changed something."""
+        """One pass over every system: call it, apply what it returned,
+        move on. Returns the names of the ones that changed something."""
         fired = []
         for name, fn in self.systems:
             before = self.world.revision
             try:
-                fn(self.world)
+                deltas = fn(self.world)
             except Exception as e:  # noqa: BLE001 -- see the module docstring
-                # Once per settle, not once per tick: a system that raises
-                # raises again on every pass until the world stops moving,
-                # and one typed line should not print the same traceback
-                # message four times.
-                if not any(n == name and str(seen) == str(e)
-                           for n, seen in self.errors):
-                    self.errors.append((name, e))
+                self._record(name, e)
+                continue
+            if self.world.revision != before:
+                self._record(name, RuntimeError(
+                    "touched the world directly -- a system returns a "
+                    "list of ugm.delta.spawn/attach/detach/destroy, it "
+                    "does not call world.spawn/attach/detach/destroy "
+                    "itself"))
+                continue
+            if not deltas:
+                continue
+            try:
+                resolved: "dict" = {}
+                for d in deltas:
+                    if not isinstance(d, Delta):
+                        raise TypeError(
+                            "%r is not a delta -- see ugm.delta for the "
+                            "four kinds a system may return" % (d,))
+                    d._apply(self.world, resolved)
+            except Exception as e:  # noqa: BLE001 -- see the module docstring
+                self._record(name, e)
+                continue
             if self.world.revision != before:
                 fired.append(name)
         return fired

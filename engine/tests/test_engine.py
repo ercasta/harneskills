@@ -7,6 +7,7 @@ import time
 
 import pytest
 
+from ugm.delta import destroy, detach, spawn
 from ugm.engine import BROADCAST, Engine
 from ugm.loop import Loop
 from ugm.world import Component, Reply, Said
@@ -141,9 +142,11 @@ def test_say_spawns_said_under_the_poster_s_own_channel_name(engine):
 def test_a_reply_addressed_to_user_is_seen_by_the_asker_too(loop):
     @loop.system
     def echo(w):
+        deltas = []
         for entity, said in w.each(Said):
-            w.destroy(entity)
-            w.spawn(Reply("user", "echo: %s" % said.text))
+            deltas.append(destroy(entity))
+            deltas.append(spawn(Reply("user", "echo: %s" % said.text)))
+        return deltas
 
     engine = Engine(loop)
     fake = Fake()
@@ -170,9 +173,11 @@ def test_stop_posted_through_the_queue_does_not_strand_a_say_before_it(loop):
     # race it to the front (see `Engine.post`'s own docstring).
     @loop.system
     def echo(w):
+        deltas = []
         for entity, said in w.each(Said):
-            w.destroy(entity)
-            w.spawn(Reply("user", "got: %s" % said.text))
+            deltas.append(destroy(entity))
+            deltas.append(spawn(Reply("user", "got: %s" % said.text)))
+        return deltas
 
     engine = Engine(loop)
     fake = Fake()
@@ -244,15 +249,13 @@ def test_an_unknown_command_says_so_to_the_one_who_typed_it(engine):
 def test_settle_reports_a_runaway_pair_and_their_names(loop):
     @loop.system
     def ping(w):
-        for entity, _ in w.each(Ping):
-            w.detach(entity, Ping)
+        return [detach(e, Ping) for e, _ in w.each(Ping)]
 
     loop.world.spawn(Ping())
 
     @loop.system
     def pong(w):
-        if not loop.world.each(Ping):
-            loop.world.spawn(Ping())
+        return [] if w.each(Ping) else [spawn(Ping())]
 
     engine = Engine(loop)
     fake = Fake()

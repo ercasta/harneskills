@@ -49,16 +49,19 @@ class Folder(Component):
 
 
 class Contents(Component):
-    """The folder's index: `name -> entity`, mutated in place.
+    """The folder's index: `name -> entity`.
 
-    The one hand-kept structure in the domain, and it earns that: `ls`
-    looks up every name it reads to decide whether the entry is new, and a
-    query per name would make listing a folder quadratic in its size. Only
-    `fs_tools` writes it -- see the ⚠ in that module.
+    Computed fresh by `fs_tools.ls`/`rename` every time -- never mutated
+    in place -- and ATTACHED like any other component. `World.attach`
+    comparing before it stores is what makes re-listing an unchanged
+    folder cost a dict comparison rather than a revision: this used to be
+    the one hand-kept structure in the domain, mutated by hand and
+    reported with `world.changed()`, until a system stopped being the
+    thing allowed to touch a world at all -- see `ugm.delta`.
     """
 
-    def __init__(self) -> None:
-        self.by_name: dict = {}
+    def __init__(self, by_name: dict = None) -> None:
+        self.by_name: dict = dict(by_name) if by_name else {}
 
 
 class Entry(Component):

@@ -9,15 +9,20 @@ that kind of thing by losing one::
     w.attach(entry, Stale())          # now it is also a stale thing
     w.detach(entry, Stale)            # now it is not
 
-A **system** -- what `ugm.loop` calls a rule -- is a function that
-asks for the entities carrying a set of components and walks them::
+A **system** -- what `ugm.loop` calls a rule -- is a function that asks
+for the entities carrying a set of components, walks them, and RETURNS
+what should change -- see `ugm.delta`. It does not call `spawn`,
+`attach`, `detach` or `destroy` on this class itself; `Loop.tick` does,
+from what a system hands back::
 
     def flag_big(w):
+        deltas = []
         for entity, hunt in w.each(BigHunt):
-            w.destroy(entity)
+            deltas.append(destroy(entity))
             for e, entry, size in w.each(Entry, Size):
                 if entry.folder == hunt.folder and size.bytes >= hunt.floor:
-                    w.attach(e, Big())
+                    deltas.append(attach(e, Big()))
+        return deltas
 
 ## Why a component and not an attribute
 
@@ -48,9 +53,17 @@ REPLACED rather than edited::
     w.attach(entity, Size(4300))      # not: size.bytes = 4300
 
 ⚠ A component mutated in place is a change nothing can see -- `revision`
-does not move, and the loop will call the world settled. Attach a new one.
-Where that is genuinely wrong (a big index a domain keeps by hand, like
-`Contents`), mutate it and call `world.changed()`.
+does not move, and the loop will call the world settled. Attach a new
+one instead: `ugm.delta.attach(entity, Contents(by_name={**old, name:
+e}))` for even a big index a domain keeps by hand, computing the next
+value rather than editing the one already there. A system cannot mutate
+one in place regardless -- it never holds the live component, only what
+`each`/`get` handed back, and it returns deltas rather than touching
+anything itself. `changed()` below is the one escape hatch left for code
+that touches a `World` directly rather than through a system's own
+returned deltas -- nothing in this repository is that code any more,
+which is the whole point: attach a fresh value, and there is nothing
+left to say happened by hand.
 
 ## Entities are ids, and a component may hold one
 
