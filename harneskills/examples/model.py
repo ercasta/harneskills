@@ -34,7 +34,7 @@ channel, not as a return value nothing here is allowed to block for.
 
 from __future__ import annotations
 
-from harneskills.world import Component
+from ugm.world import Component
 
 
 # -- what something is ---------------------------------------------------
@@ -160,7 +160,7 @@ class Asked(Component):
     channel every other reply goes out on.
 
     A tag, not a callback: nothing here blocks, because nothing in an
-    engine of several channels is allowed to (see `harneskills.engine`).
+    engine of several channels is allowed to (see `ugm.engine`).
     `approve` asks at most one thing at a time -- a wish carrying this is
     a wish `approve` will not ask about again, so the next tick's fresh
     proposal waits its turn instead of talking over the first question.

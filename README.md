@@ -3,8 +3,9 @@
 **An entity-component world, a loop that runs systems over it, and a
 prompt onto both.**
 
-No dependency underneath it does the deciding. An *entity* is an identity
-with no data — `#7`. A *component* is data with no identity —
+Only one dependency, and it is the engine underneath this: `ugm`, in
+`./ugm`, carved out of this repo as its own package. An *entity* is an
+identity with no data — `#7`. A *component* is data with no identity —
 `Size(bytes=4300)`. A *system* is a Python function that asks for the
 entities carrying a set of components and walks them. The *loop* calls
 every system, in order, over and over, until a whole pass changes nothing
@@ -12,14 +13,15 @@ every system, in order, over and over, until a whole pass changes nothing
 is arranged around that loop, not underneath it:
 
 ```
-harneskills/world.py    entities, components, and the queries systems ask.
-harneskills/loop.py     call every system, in order, until nothing changes.
-harneskills/engine.py   ONE thread that runs the loop; any number of channels
+ugm/ugm/world.py        entities, components, and the queries systems ask.
+ugm/ugm/loop.py         call every system, in order, until nothing changes.
+ugm/ugm/engine.py       ONE thread that runs the loop; any number of channels
                           attached to it -- a terminal, several WebSockets.
+ugm/ugm/save.py         the world on disk, so a restart is not an amnesia.
+
 harneskills/repl.py     a terminal channel -- stdin in, prose out.
 harneskills/serve.py    a WebSocket channel -- JSON in, JSON out.
 harneskills/client.py   a small program that speaks to a served engine.
-harneskills/save.py     the world on disk, so a restart is not an amnesia.
 ```
 
 A **domain** is one callable — `install(loop)` — that registers systems
@@ -33,7 +35,7 @@ because nothing here may stop the world to wait for one person's keypress
 ## Try it
 
 ```bash
-pip install -e .
+pip install -e ./ugm -e .
 python -m harneskills --no-config harneskills.examples.fs:install
 ```
 
@@ -189,7 +191,7 @@ entities — a folder, an entry, the session — are not.
 ## Writing a domain
 
 ```python
-from harneskills.world import Component, Reply, Said
+from ugm.world import Component, Reply, Said
 
 class Kettle(Component):
     def __init__(self, name): self.name = name
@@ -437,51 +439,58 @@ again.
 ## Layout
 
 ```
-harneskills/
-  world.py              entities, components, and the queries systems ask
-  loop.py               every system, in order, until nothing changes
-  engine.py             one thread, the world, and the channels attached to it
-  repl.py               a Terminal channel -- stdin in, prose out
-  ws.py                 the WebSocket handshake and frame codec, both directions
-  serve.py              a Listener channel -- spawns a Connection per socket
-  client.py             a plain WebSocket+JSON speaker; holds no world of its own
-  save.py               the world as JSON: entities are ints, components are values
-  __main__.py           wiring: restore, install, attach channels, engine.run
-  config.py             which domains, and where the world/server files live
+ugm/                     the engine, its own package (see ugm/README.md)
+  pyproject.toml
+  ugm/
+    world.py              entities, components, and the queries systems ask
+    loop.py                every system, in order, until nothing changes
+    engine.py             one thread, the world, and the channels attached to it
+    save.py                 the world as JSON: entities are ints, components are values
+  tests/
+    test_world.py         identity, values, and the intersection of the two
+    test_loop.py           order, settling, the budget, a system that raises
+    test_engine.py        one world, several channels, a broadcast reply
+    test_save.py            the same world, ids and all, next time
+
+harneskills/             doors onto a ugm world, and the domain worked over one
+  repl.py                a Terminal channel -- stdin in, prose out
+  ws.py                  the WebSocket handshake and frame codec, both directions
+  serve.py               a Listener channel -- spawns a Connection per socket
+  client.py              a plain WebSocket+JSON speaker; holds no world of its own
+  __main__.py            wiring: restore, install, attach channels, engine.run
+  config.py              which domains, and where the world/server files live
   examples/
     model.py              the file domain's components: what a thing can BE
     fs.py                 its thirteen systems, and what words reach them
     fs_tools.py           ls, stat, rename -- what those words do to a real disk
 tests/
-  test_world.py         identity, values, and the intersection of the two
-  test_loop.py          order, settling, the budget, a system that raises
-  test_engine.py        one world, several channels, a broadcast reply
-  test_repl.py          autocorrect, and a scripted session over the engine
-  test_ws.py            the codec, both ends, over real sockets
-  test_serve.py         a real Listener: the token gate, two connections, a drop
-  test_client.py        rendering, and a session against a served engine
-  test_save.py          the same world, ids and all, next time
-  test_fs.py            the example end to end: words in, real files out
-  test_config.py        which domains, in what order
-  test_main.py          a domain named is a domain installed
+  test_repl.py           autocorrect, and a scripted session over the engine
+  test_ws.py             the codec, both ends, over real sockets
+  test_serve.py          a real Listener: the token gate, two connections, a drop
+  test_client.py         rendering, and a session against a served engine
+  test_fs.py             the example end to end: words in, real files out
+  test_config.py         which domains, in what order
+  test_main.py           a domain named is a domain installed
 ```
 
 ## Scope
 
-**The harness bakes in no domain.** `world.py`, `loop.py`, `engine.py`,
-`repl.py`, `ws.py`, `serve.py`, `client.py`, `__main__.py`, `config.py`
-and `save.py` ship no systems, no components beyond `Said` and `Reply`,
-no vocabulary and no knowledge of files; the config file names callables,
-it does not ship any, and `config.py` imports nothing it names.
-`harneskills/examples/` is different on purpose: worked demonstrations,
-each an `install(loop)` the config or the command line can name, never
-imported unless you ask for it by name.
+**The engine bakes in no domain.** `ugm/ugm/world.py`, `loop.py`,
+`engine.py` and `save.py` ship no systems, no components beyond `Said`
+and `Reply`, no vocabulary and no knowledge of files -- and no channel,
+no transport, no config-file format either; those are `harneskills`'s to
+define, on top of an engine that has never heard of any of them.
+`config.py` names callables, it does not ship any, and imports nothing it
+names. `harneskills/examples/` is different on purpose: worked
+demonstrations, each an `install(loop)` the config or the command line
+can name, never imported unless you ask for it by name.
 
 **The harness bakes in no transport either.** A domain's systems read and
 write the `World`; whether that world is reached by one terminal, by a
 terminal and three WebSocket clients, or headless with no terminal at
 all, is a decision `harneskills/__main__.py` makes from the command line,
-not something `fs.py` or any other domain has to know about or plan for.
+not something `fs.py`, any other domain, or `ugm` itself has to know
+about or plan for.
 
 ## Status
 
@@ -562,3 +571,18 @@ the parts of `test_repl.py`/`test_fs.py`/`test_config.py` this touched),
 including an end-to-end one: a `Terminal` and a `harneskills.client`
 connection, attached to the same engine, each seeing the other's
 broadcast reply.
+
+**UGM again, 2026-08-27.** `world.py`, `loop.py`, `engine.py` and
+`save.py` moved to `./ugm`, a package of its own, one day after the
+previous entry dropped the OLD `ugm` dependency. Not a reversal -- the
+old `universal-graph-machine` was a graph substrate this repo was a
+terminal onto; this `ugm` is the entity-component engine that replaced
+it, pulled back out now that the split between "the engine" and "the
+doors onto it" (see **Many doors**, above) had already drawn the line:
+every import already ran one way, `examples/fs.py` already depended on
+nothing but `world.py`, and the four moved files already imported
+nothing outside themselves. `harneskills` now depends on `ugm` instead of
+carrying it -- `pip install -e ./ugm -e .` -- and nothing about a
+domain's own code changed beyond where `Component`, `Reply` and `Said`
+are imported from. `pytest` is still 223 checks, 0 failing, now split
+75 in `ugm/tests` and 148 in `tests`.

@@ -3,7 +3,7 @@ and a query is the intersection of the two."""
 
 import pytest
 
-from harneskills.world import Component, Entity, Reply, Said, World
+from ugm.world import Component, Entity, Reply, Said, World
 
 
 class Named(Component):

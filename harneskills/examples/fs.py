@@ -47,7 +47,7 @@ not a different design.
 
 Asking is a component too. `approve` cannot call a function and wait for
 your answer -- the world may have other channels attached, and nothing
-here is allowed to stop for one of them (see `harneskills.engine`) -- so
+here is allowed to stop for one of them (see `ugm.engine`) -- so
 it spawns the question as an ordinary `Reply` and marks the wish `Asked`.
 `hear_answer` is the other half: a bare "y" or "n", on whichever channel
 it arrives, resolves whichever wish is currently `Asked`. The suspension
@@ -66,7 +66,8 @@ from __future__ import annotations
 import os
 import time
 
-from ..world import Reply, Said
+from ugm.world import Reply, Said
+
 from . import fs_tools
 from .model import (Asked, Big, BigHunt, Contents, Entry, Failed, Focus,
                     Folder, FoundBig, FoundStale, HuntHere, IsDir,
@@ -231,7 +232,7 @@ def hear(w):
     """What you typed -> a goal, if this domain has a reading of it.
 
     Any channel -- `said.channel` is whichever terminal or socket a person
-    is attached as (`harneskills.engine`'s own concern), and `"user"` is
+    is attached as (`ugm.engine`'s own concern), and `"user"` is
     not one of those any more, it is where a reply meant for everyone
     goes. This domain does not (yet) answer only the one who asked; every
     reply it makes is `Reply("user", ...)`, heard by whoever is
@@ -409,7 +410,7 @@ def approve(w):
 
     ⚠ This used to call `ask(prompt)` and block for the answer -- the
     right thing for one terminal owning the loop, and wrong the moment
-    more than one channel can be attached (`harneskills.engine`): nothing
+    more than one channel can be attached (`ugm.engine`): nothing
     a system does may stop the world for everyone else. The fix is not a
     trick, it is the thing this whole domain already does for every other
     goal -- suspend as a component (`Asked`), and let the answer arrive as
@@ -441,7 +442,7 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     here -- see `model.Session`.
 
     ⚠ The world handed in may already hold everything this domain knew
-    last time (`harneskills.save`), and reconciling that is this
+    last time (`ugm.save`), and reconciling that is this
     function's job -- nothing in the harness can tell a restored entity
     from a fresh one. The policy here: every folder and entry stays
     exactly as it was, and the `Session` is REPLACED, because the clock

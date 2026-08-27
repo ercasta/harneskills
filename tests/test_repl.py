@@ -7,10 +7,11 @@ import time
 
 import pytest
 
+from ugm.engine import Engine
+from ugm.loop import Loop
+from ugm.world import Component, Reply, Said
+
 from harneskills import repl
-from harneskills.engine import Engine
-from harneskills.loop import Loop
-from harneskills.world import Component, Reply, Said
 
 VOCAB = {"show", "file", "files", "big", "in", "stale", "after", "days"}
 

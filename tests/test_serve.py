@@ -10,11 +10,12 @@ import time
 
 import pytest
 
+from ugm.engine import Engine
+from ugm.loop import Loop
+from ugm.world import Reply, Said
+
 from harneskills import ws
-from harneskills.engine import Engine
-from harneskills.loop import Loop
 from harneskills.serve import Listener
-from harneskills.world import Reply, Said
 
 
 @pytest.fixture

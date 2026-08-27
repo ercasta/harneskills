@@ -4,8 +4,8 @@ import json
 
 import pytest
 
-from harneskills import save
-from harneskills.world import Component, World
+from ugm import save
+from ugm.world import Component, World
 
 
 class Folder(Component):
@@ -147,7 +147,7 @@ def test_loading_wants_an_empty_world():
 def test_a_component_whose_class_is_gone_is_skipped_and_named():
     w, folder, _ = peopled()
     data = save.dump(w)
-    data["entities"][0]["components"][0]["type"] = "harneskills.world:NoSuchThing"
+    data["entities"][0]["components"][0]["type"] = "ugm.world:NoSuchThing"
     back = World()
     problems = save.load(back, data)
     assert len(problems) == 1 and "NoSuchThing" in problems[0]

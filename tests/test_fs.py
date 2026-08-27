@@ -11,12 +11,13 @@ import time
 
 import pytest
 
+from ugm.loop import Loop
+from ugm.world import Reply, Said
+
 from harneskills.examples import fs
 from harneskills.examples.model import (Asked, Big, Contents, Entry, Focus,
                                         Folder, NeedsApproval, RenameWish,
                                         Session, Size, Stale)
-from harneskills.loop import Loop
-from harneskills.world import Reply, Said
 
 DAY = 86400
 
@@ -299,7 +300,7 @@ def test_the_world_settles_after_every_line(folder):
 def restart(folder, path):
     """What `python -m harneskills` does on the way up: an empty world,
     the file read into it, and only then the domain installed."""
-    from harneskills import save
+    from ugm import save
     loop = Loop()
     assert save.read(loop.world, path) == []
     fs.install(loop, cwd=lambda: folder)
@@ -307,7 +308,7 @@ def restart(folder, path):
 
 
 def test_the_world_survives_a_restart(folder, tmp_path):
-    from harneskills import save
+    from ugm import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "show file")
@@ -323,7 +324,7 @@ def test_the_world_survives_a_restart(folder, tmp_path):
 
 
 def test_what_was_concluded_survives_too(folder, tmp_path):
-    from harneskills import save
+    from ugm import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "stale after 7 days")     # found, proposed, asked
@@ -336,7 +337,7 @@ def test_what_was_concluded_survives_too(folder, tmp_path):
 
 
 def test_the_folder_you_were_looking_at_survives(folder, tmp_path):
-    from harneskills import save
+    from ugm import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "show file")
@@ -347,7 +348,7 @@ def test_the_folder_you_were_looking_at_survives(folder, tmp_path):
 
 
 def test_installing_over_a_restored_world_replaces_only_the_session(folder, tmp_path):
-    from harneskills import save
+    from ugm import save
     from harneskills.examples.model import Session as SessionComponent
     path = str(tmp_path / "world.json")
     loop = session(folder)
@@ -365,7 +366,7 @@ def test_installing_over_a_restored_world_replaces_only_the_session(folder, tmp_
 
 
 def test_a_restarted_world_does_not_reuse_an_id_something_points_at(folder, tmp_path):
-    from harneskills import save
+    from ugm import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "show file")

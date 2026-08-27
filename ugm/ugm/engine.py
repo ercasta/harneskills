@@ -49,7 +49,7 @@ prose, a socket serialises them as JSON::
     {"error":   {"text": "fs.flag_big: KeyError: ..."}}
     {"lines":   ["#1  Session(...)", ...]}        a command's own output
     {"settled": {"revision": 412, "entities": 13}}
-    {"world":   {"version": 1, ...}}              `harneskills.save`'s own
+    {"world":   {"version": 1, ...}}              `ugm.save`'s own
 
 ...and four on the way in, which is what `post` takes: `say` (a line),
 `command` (a slash command, run on this thread so it may read the world),

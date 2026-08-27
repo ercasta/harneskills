@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ugm"
+version = "0.1.0"
+description = "An entity-component world, a loop of systems over it, and one thread to run a session on"
+readme = { text = "UGM", content-type = "text/markdown" }
+requires-python = ">=3.9"
+license = { text = "MIT" }
+keywords = ["ecs", "entity-component", "game-loop", "world-model"]
+
+# No dependencies, and that is the whole of it. This is the substrate
+# `harneskills` is built on -- a world, a loop, an engine to run one on --
+# and it ships no domain, no channel and no transport, so nothing above
+# it is baked in here.
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest>=8.0"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+norecursedirs = [".venv", "__pycache__", ".git", "*.egg-info"]
+
+[tool.setuptools]
+py-modules = []
+packages = ["ugm"]

@@ -1,9 +1,9 @@
-"""A WebSocket door onto a running `harneskills.engine.Engine`.
+"""A WebSocket door onto a running `ugm.engine.Engine`.
 
     listener = Listener(host="127.0.0.1", port=0, token="...")
     engine.attach(listener)
 
-`Listener` is a CHANNEL in `harneskills.engine`'s sense -- attach it to a
+`Listener` is a CHANNEL in `ugm.engine`'s sense -- attach it to a
 running engine the same way you would a `harneskills.repl.Terminal` -- but
 one that spawns a NEW channel (`Connection`) for every socket that
 connects, each named by the engine the same way any other channel is
@@ -22,7 +22,7 @@ In, from a connected browser or `harneskills.client`::
     {"get": "world"}          ask for the whole world once
 
 Out, the same shapes any channel renders, as JSON instead of prose -- see
-`harneskills.engine`'s own docstring for the full list::
+`ugm.engine`'s own docstring for the full list::
 
     {"welcome": {"channel": "ch2", "needs_token": false}}
     {"reply": {"channel": "user", "text": "scan.pdf (4300 bytes)"}}
@@ -42,7 +42,7 @@ is not TLS. Do not bind this to an interface anyone else can reach.
 ## One thread accepts, one reads each connection, none of them touch the
 ## world
 
-Exactly the discipline `harneskills.engine` documents for every channel:
+Exactly the discipline `ugm.engine` documents for every channel:
 a `Connection`'s reading thread only ever calls `engine.post`, and the
 engine's own thread is the only one that spawns a `Said`, runs a tick, or
 writes a component. `deliver` sends under the connection's own lock,
@@ -75,7 +75,7 @@ class Connection:
         self.engine = None
         self.token = None
 
-    # -- the channel contract (see harneskills.engine) -----------------
+    # -- the channel contract (see ugm.engine) -----------------
 
     def start(self, engine) -> None:
         self.engine = engine

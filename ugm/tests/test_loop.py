@@ -2,8 +2,8 @@
 
 import pytest
 
-from harneskills.loop import Loop
-from harneskills.world import Component
+from ugm.loop import Loop
+from ugm.world import Component
 
 
 class Step(Component):

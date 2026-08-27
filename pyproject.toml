@@ -11,13 +11,18 @@ requires-python = ">=3.9"
 license = { text = "MIT" }
 keywords = ["repl", "agent", "rules", "game-loop", "world-model"]
 
-# No dependencies, and that is the whole of it. The engine used to be one
-# -- `universal-graph-machine`, a graph substrate this repo was a terminal
-# onto -- and the loop in `harneskills/loop.py` is what replaced it: call
-# every rule, in order, until nothing changes. A rule is a Python function
-# of one `World`, so a domain brings itself and needs nothing installed
-# underneath it.
-dependencies = []
+# One dependency: `ugm`, the world/loop/engine this package used to carry
+# itself -- world.py, loop.py, engine.py, save.py -- carved back out into
+# its own package, in `./ugm`, so a domain can depend on the engine
+# without depending on a terminal, a WebSocket door, or config file
+# conventions it has no use for. Everything under `harneskills/` is a
+# door onto that engine, or config for opening one; see `ugm`'s own
+# pyproject for what it is on its own.
+#
+# Not yet published anywhere -- `pip install -e ./ugm -e .` from the repo
+# root for a real install. `pythonpath` below is what lets `pytest` find
+# it from this checkout without either.
+dependencies = ["ugm"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
@@ -29,6 +34,7 @@ harneskills-client = "harneskills.client:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".venv", "__pycache__", ".git", "*.egg-info"]
+pythonpath = ["ugm"]
 
 [tool.setuptools]
 py-modules = []

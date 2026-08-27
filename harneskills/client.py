@@ -134,7 +134,7 @@ def run(host: str, port: int, token=None, stdin=None,
     `settled` is cleared before every `say`/`get` and set by `_listen`
     when a `{"settled": ...}` message comes back -- the engine's own
     signal that it has finished saying everything this settle had to say
-    (`harneskills.engine`'s own note). Quitting waits for it, up to
+    (`ugm.engine`'s own note). Quitting waits for it, up to
     `_QUIT_GRACE`, rather than assuming a person just typed it and has all
     the time in the world.
     """

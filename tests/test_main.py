@@ -1,10 +1,11 @@
 """What the wiring promises: a domain named is a domain installed, and a
 domain that cannot be is a message rather than a dead session."""
 
+from ugm.loop import Loop
+
 import harneskills.examples.fs as fs
 from harneskills.__main__ import build, install
 from harneskills.examples.model import Session
-from harneskills.loop import Loop
 
 
 def test_a_named_domain_is_imported_and_handed_the_loop():

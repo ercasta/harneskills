@@ -1,24 +1,24 @@
-"""HarneSkills -- an entity-component world, a loop that runs systems over
-it, and any number of channels attached to it.
+"""HarneSkills -- doors onto a `ugm` world: a terminal, any number of
+WebSocket connections, and the domains that give either one something to
+say.
 
     python -m harneskills harneskills.examples.fs:install
     python -m harneskills --serve harneskills.examples.fs:install   # + a WebSocket door
 
-* `harneskills.world` -- entities (identity, no data) and components
-  (data, no identity). Everything anything knows.
-* `harneskills.loop` -- call every system, in order, until a whole pass
-  changes nothing. A system is a function of one `World`.
-* `harneskills.engine` -- ONE thread that runs the loop, and the channels
-  attached to it: a terminal, several WebSocket connections, any mix.
-  `Said(name, "...")` in from whichever channel it arrived on;
-  `Reply(user, "...")` out to every channel there is.
+The engine itself -- the entity-component world, the loop of systems over
+it, the one thread and the channel contract -- is `ugm`, not this
+package; see `ugm`'s own docstring. What lives here is everything that
+was never the engine's to know:
+
 * `harneskills.repl` -- a `Terminal` channel: stdin in, prose out.
 * `harneskills.serve` / `harneskills.ws` -- a `Listener` channel and the
   WebSocket codec under it, for a connection that is not this process's
   own terminal. `harneskills.client` is the other end of that wire, a
   small program with no world of its own.
-* `harneskills.save` -- writes the world down every time it settles, so a
-  restart is not an amnesia.
+* `harneskills.config` -- which domains a session installs, and where the
+  world and server files live on this platform.
+* `harneskills.__main__` -- argv, wiring an `Engine` from `ugm` around
+  whichever channels were asked for.
 
 A DOMAIN is one callable, `install(loop)`, that registers systems and
 spawns what they read -- named on the command line or in
@@ -31,12 +31,10 @@ system does may stop the world for a channel that is not the one asking.
 
 from __future__ import annotations
 
-from . import engine, loop, repl, save, world
-from .engine import Engine
-from .loop import Loop
-from .world import World
+from ugm import Engine, Loop, World
+
+from . import repl
 
 __version__ = "0.4.0"
 
-__all__ = ["Engine", "Loop", "World", "engine", "loop", "repl", "save",
-          "world", "__version__"]
+__all__ = ["Engine", "Loop", "World", "repl", "__version__"]

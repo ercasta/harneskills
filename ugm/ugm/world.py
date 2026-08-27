@@ -9,7 +9,7 @@ that kind of thing by losing one::
     w.attach(entry, Stale())          # now it is also a stale thing
     w.detach(entry, Stale)            # now it is not
 
-A **system** -- what `harneskills.loop` calls a rule -- is a function that
+A **system** -- what `ugm.loop` calls a rule -- is a function that
 asks for the entities carrying a set of components and walks them::
 
     def flag_big(w):
@@ -197,7 +197,7 @@ class World:
     def _adopt(self, entity_id: int) -> Entity:
         """The handle for this id, making the entity if it is not here.
 
-        The one thing that exists for `harneskills.save`, and the only way
+        The one thing that exists for `ugm.save`, and the only way
         an entity ever gets an id it did not just take from the counter. It
         keeps the counter above whatever it has seen, so a restored world
         cannot hand a new entity an id some component still points at --
