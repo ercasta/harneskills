@@ -13,15 +13,24 @@ keywords = ["repl", "agent", "rules", "game-loop", "world-model"]
 
 # One dependency: `ugm`, the world/loop/engine this package used to carry
 # itself -- world.py, loop.py, engine.py, save.py -- carved back out into
-# its own package, in `./ugm`, so a domain can depend on the engine
-# without depending on a terminal, a WebSocket door, or config file
-# conventions it has no use for. Everything under `harneskills/` is a
-# door onto that engine, or config for opening one; see `ugm`'s own
-# pyproject for what it is on its own.
+# its own package, embedded here under `./engine` (its distribution root;
+# the importable package inside is still `ugm`), so a domain can depend
+# on the engine without depending on a terminal, a WebSocket door, or
+# config file conventions it has no use for. Everything under
+# `harneskills/` is a door onto that engine, or config for opening one;
+# see `engine`'s own pyproject for what it is on its own.
 #
-# Not yet published anywhere -- `pip install -e ./ugm -e .` from the repo
-# root for a real install. `pythonpath` below is what lets `pytest` find
-# it from this checkout without either.
+# Not `./ugm` -- a bare directory of that name here would sit on
+# `sys.path` for anyone running `python -m harneskills` from this repo's
+# root (its own `WorkingDirectory`, and what `pip install -e .`'s own
+# instructions below assume) and be found as an EMPTY implicit namespace
+# package before the editable install's own finder ever runs, shadowing
+# the real one. `engine/ugm/` is a different name at the level that is
+# ever on `sys.path`, so nothing collides.
+#
+# Not yet published anywhere -- `pip install -e ./engine -e .` from the
+# repo root for a real install. `pythonpath` below is what lets `pytest`
+# find it from this checkout without either.
 dependencies = ["ugm"]
 
 [project.optional-dependencies]
@@ -34,7 +43,7 @@ harneskills-client = "harneskills.client:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".venv", "__pycache__", ".git", "*.egg-info"]
-pythonpath = ["ugm"]
+pythonpath = ["engine"]
 
 [tool.setuptools]
 py-modules = []

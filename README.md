@@ -3,21 +3,22 @@
 **An entity-component world, a loop that runs systems over it, and a
 prompt onto both.**
 
-Only one dependency, and it is the engine underneath this: `ugm`, in
-`./ugm`, carved out of this repo as its own package. An *entity* is an
-identity with no data — `#7`. A *component* is data with no identity —
-`Size(bytes=4300)`. A *system* is a Python function that asks for the
-entities carrying a set of components and walks them. The *loop* calls
-every system, in order, over and over, until a whole pass changes nothing
-— and that is when the world has something to say. Everything else here
-is arranged around that loop, not underneath it:
+Only one dependency, and it is the engine underneath this: `ugm`, embedded
+here under `./engine` (its distribution root -- `import ugm` either way)
+as its own package. An *entity* is an identity with no data — `#7`. A
+*component* is data with no identity — `Size(bytes=4300)`. A *system* is
+a Python function that asks for the entities carrying a set of components
+and walks them. The *loop* calls every system, in order, over and over,
+until a whole pass changes nothing — and that is when the world has
+something to say. Everything else here is arranged around that loop, not
+underneath it:
 
 ```
-ugm/ugm/world.py        entities, components, and the queries systems ask.
-ugm/ugm/loop.py         call every system, in order, until nothing changes.
-ugm/ugm/engine.py       ONE thread that runs the loop; any number of channels
+engine/ugm/world.py     entities, components, and the queries systems ask.
+engine/ugm/loop.py      call every system, in order, until nothing changes.
+engine/ugm/engine.py    ONE thread that runs the loop; any number of channels
                           attached to it -- a terminal, several WebSockets.
-ugm/ugm/save.py         the world on disk, so a restart is not an amnesia.
+engine/ugm/save.py      the world on disk, so a restart is not an amnesia.
 
 harneskills/repl.py     a terminal channel -- stdin in, prose out.
 harneskills/serve.py    a WebSocket channel -- JSON in, JSON out.
@@ -35,7 +36,7 @@ because nothing here may stop the world to wait for one person's keypress
 ## Try it
 
 ```bash
-pip install -e ./ugm -e .
+pip install -e ./engine -e .
 python -m harneskills --no-config harneskills.examples.fs:install
 ```
 
@@ -439,7 +440,11 @@ again.
 ## Layout
 
 ```
-ugm/                     the engine, its own package (see ugm/README.md)
+engine/                  the ugm engine, its own package (see engine/README.md).
+                          Not "ugm/" -- a bare directory of that name here
+                          would shadow the installed package for anyone
+                          running python -m harneskills from this root; see
+                          the note in this repo's own pyproject.toml.
   pyproject.toml
   ugm/
     world.py              entities, components, and the queries systems ask
@@ -475,7 +480,7 @@ tests/
 
 ## Scope
 
-**The engine bakes in no domain.** `ugm/ugm/world.py`, `loop.py`,
+**The engine bakes in no domain.** `engine/ugm/world.py`, `loop.py`,
 `engine.py` and `save.py` ship no systems, no components beyond `Said`
 and `Reply`, no vocabulary and no knowledge of files -- and no channel,
 no transport, no config-file format either; those are `harneskills`'s to
@@ -573,16 +578,34 @@ connection, attached to the same engine, each seeing the other's
 broadcast reply.
 
 **UGM again, 2026-08-27.** `world.py`, `loop.py`, `engine.py` and
-`save.py` moved to `./ugm`, a package of its own, one day after the
-previous entry dropped the OLD `ugm` dependency. Not a reversal -- the
-old `universal-graph-machine` was a graph substrate this repo was a
-terminal onto; this `ugm` is the entity-component engine that replaced
-it, pulled back out now that the split between "the engine" and "the
-doors onto it" (see **Many doors**, above) had already drawn the line:
-every import already ran one way, `examples/fs.py` already depended on
-nothing but `world.py`, and the four moved files already imported
-nothing outside themselves. `harneskills` now depends on `ugm` instead of
-carrying it -- `pip install -e ./ugm -e .` -- and nothing about a
-domain's own code changed beyond where `Component`, `Reply` and `Said`
-are imported from. `pytest` is still 223 checks, 0 failing, now split
-75 in `ugm/tests` and 148 in `tests`.
+`save.py` moved to `./engine` (package name still `ugm`), a package of
+its own, one day after the previous entry dropped the OLD `ugm`
+dependency. Not a reversal -- the old `universal-graph-machine` was a
+graph substrate this repo was a terminal onto; this `ugm` is the
+entity-component engine that replaced it, pulled back out now that the
+split between "the engine" and "the doors onto it" (see **Many doors**,
+above) had already drawn the line: every import already ran one way,
+`examples/fs.py` already depended on nothing but `world.py`, and the four
+moved files already imported nothing outside themselves. `harneskills`
+now depends on `ugm` instead of carrying it -- `pip install -e ./engine
+-e .` -- and nothing about a domain's own code changed beyond where
+`Component`, `Reply` and `Said` are imported from. `pytest` is 223
+checks, 0 failing, split 75 in `engine/tests` and 148 in `tests`.
+
+The directory was `./ugm` for about an hour, until installing it for
+real turned up the reason it is not: `python -m harneskills` from this
+repo's own root -- its `WorkingDirectory` as a service, and what these
+very instructions assume -- puts this repo's root on `sys.path`, and a
+BARE directory named `ugm` sitting right there is an empty implicit
+namespace package (PEP 420 asks for nothing more than the name matching
+and no `__init__.py`) that Python's ordinary path search finds before
+the editable install's own finder -- appended to `sys.meta_path`, so
+tried LAST -- ever gets asked. `import ugm` resolved, to nothing:
+`ImportError: cannot import name 'Engine' from 'ugm' (unknown
+location)`. `pytest` never hit this -- its own `rootpath`/`pythonpath`
+machinery does not leave a bare cwd entry on `sys.path` the way `-m` and
+`-c` do -- which is exactly why installing for real and smoke-testing it
+found what running the test suite could not. Renaming the embedding
+directory is the fix that holds regardless of working directory or
+invocation; the package inside, and everywhere it is imported from, did
+not need to change at all.
