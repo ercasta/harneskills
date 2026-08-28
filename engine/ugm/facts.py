@@ -211,9 +211,26 @@ def relation(name: str) -> type:
 class Facts:
     """One world, one loop, and the propositions deposited into it."""
 
-    def __init__(self, *domains, budget: int = 400) -> None:
+    def __init__(self, *domains, budget: int = 400, ceiling: int = 4096) -> None:
         self.world = World()
         self.loop = Loop(self.world, budget=budget)
+        #: ⚠⚠ **THE CIRCUIT BREAKER THE TICK BUDGET IS NOT.** `budget` bounds how
+        #: many times the loop asks; it does not bound what one tick COSTS, and a
+        #: rule that mints can spend the machine long before tick 400. Measured, on
+        #: the runaway `pystrider.plan.lower` was: entities grew LINEARLY, ~6 a
+        #: tick, while resident memory went 20 MB → 65 → 236 → 966 across ticks 20
+        #: to 50 — because each clone was NAMED after the entity it copied, so
+        #: every generation roughly doubled a string. At tick 35 the world held 234
+        #: entities and one of their names was 13.6 million characters. Neither a
+        #: tick budget nor an entity count can see that; the process just dies.
+        #:
+        #: ⭐ So the ceiling is on the length of a NAME, because a name here is
+        #: IDENTITY — what `_find` matches, what interning keys, what `save` writes
+        #: — and identity that grows with the derivation is identity being used as
+        #: payload. Refusing it is the same rule `known()` already keeps one door
+        #: over: a system reads the vocabulary, it does not inflate it. The longest
+        #: name any settled `pystrider` suite produces is 147 characters.
+        self.ceiling = ceiling
         #: Interning tables. ⚠ Per-world, because an entity belongs to a world:
         #: `Entity.__eq__` checks `other.world is self.world`, so a word shared
         #: between two worlds would compare unequal to itself. Only ever hold a
@@ -340,6 +357,16 @@ class Facts:
         repair must return the SAME token both times, or the second call
         mints a second, different "ge".
         """
+        if len(text) > self.ceiling:
+            # ⭐ Raised INSIDE the system that minted it, so `Loop.tick` records it
+            # against that system's name and `run` re-raises it already attributed:
+            # "the system 'plan.lower' raised". The culprit names itself.
+            raise RuntimeError(
+                f"a name of {len(text)} characters is over this world's ceiling of "
+                f"{self.ceiling} — a name is identity here, so one that grows with "
+                f"the derivation means a rule is minting from its own output "
+                f"(pass ceiling= to raise it deliberately): {text[:120]!r}…"
+            )
         if self._pending is not None:
             cached = self._minting.get(text)
             if cached is not None:
