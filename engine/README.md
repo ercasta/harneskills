@@ -16,17 +16,21 @@ many channels are attached to it.
 
 ```
 ugm/
-  world.py     entities, components, and the queries systems ask
-  delta.py     what a system RETURNS instead of touching the world
-  loop.py      every system, in order, until nothing changes
-  engine.py    one thread, the world, and the channels attached to it
-  save.py      the world as JSON: entities are ints, components are values
+  world.py        entities, components, and the queries systems ask
+  delta.py        what a system RETURNS instead of touching the world
+  loop.py         every system, in order, until nothing changes
+  engine.py       one thread, the world, and the channels attached to it
+  save.py         the world as JSON: entities are ints, components are values
+  facts.py        the vocabulary systems say things in: relations as components
+  arbitration.py  several systems, one contested decision, one generic reader
 tests/
-  test_world.py    identity, values, and the intersection of the two
-  test_delta.py    a Pending resolves to what its own Spawn became
-  test_loop.py     order, settling, the budget, a system that raises
-  test_engine.py   one world, several channels, a broadcast reply
-  test_save.py     the same world, ids and all, next time
+  test_world.py        identity, values, and the intersection of the two
+  test_delta.py        a Pending resolves to what its own Spawn became
+  test_loop.py         order, settling, the budget, a system that raises
+  test_engine.py       one world, several channels, a broadcast reply
+  test_save.py         the same world, ids and all, next time
+  test_arbitration.py  propose, justify, veto, rank, commit -- and a tie refused
+DECISION_PATTERNS.md   why arbitration.py is shaped the way it is
 ```
 
 ## Try it
@@ -57,10 +61,37 @@ for e, r in loop.world.each(Reply):
 **No domain, no channel, no transport.** `world.py`, `delta.py`,
 `loop.py`, `engine.py` and `save.py` ship no systems, no components
 beyond `Said` and `Reply` (the shapes `Engine.drain` and `Engine._do`
-route by), no vocabulary, and no knowledge of files, sockets, or
-terminals. `Engine` wants anything with `.name`, `.deliver(message)`,
-and optionally `.start(engine)` / `.close()` — no base class, no import
-required to be one.
+route by), and no knowledge of files, sockets, or terminals. `Engine`
+wants anything with `.name`, `.deliver(message)`, and optionally
+`.start(engine)` / `.close()` — no base class, no import required to be
+one.
+
+**But a DISCIPLINE, which is not the same as a domain.** `facts.py` and
+`arbitration.py` ship a way of writing systems, and they are here
+deliberately. Neither knows what a relation MEANS — `facts.py` interns
+`relation("body")` and orders its rows without ever learning what a body
+is, and `arbitration.commit` names a winner without knowing what was
+being decided. What they encode is what a system has to do to COMPOSE
+with the ones it does not know about:
+
+* **Conclude onto the world, not into a local.** `fact`/`state`/`deny`
+  write onto an entity; there is no return value to hide an answer in.
+  A conclusion kept beside the world is invisible to every later system,
+  to `arbitration.commit`, and to `save.py`.
+* **Propose; do not decide.** A rule family that checks whether it should
+  fire is a rule family with an opinion about registration order — on a
+  loop that calls every system every tick, that opinion is the bug. Deposit
+  a `candidate`, and let the one generic `commit` read the whole set.
+* **Refuse rather than guess.** Two candidates tied at the top is
+  `ambiguous`, reported; it is never broken by iteration order.
+
+⚠ **This is why they are here and not in the domain that wrote them.**
+Every line was extracted from `pystrider`, a domain on this world that
+reads and writes Python — and it was extracted because the failure is not
+`pystrider`'s. Any domain on a settle-when-nothing-changes loop either
+finds this pattern or finds the bug underneath it; that domain measured
+the bug first (two repair rules firing on one fault, "correct by luck").
+`DECISION_PATTERNS.md` is the argument in full.
 
 **`harneskills`, in the parent of this directory, is the worked door onto
 it** — a `Terminal` channel, a WebSocket `Listener` and `client`, a
@@ -79,6 +110,13 @@ every one of them in registration order until a pass changes nothing.
 This package is that replacement, carved back out once `harneskills`'s
 own split between "the engine" and "the doors onto it" had already drawn
 the line the old dependency used to sit on.
+
+**A vocabulary, 2026-08-28.** `facts.py` and `arbitration.py` arrived from
+`pystrider`, which had carried them since it was rewritten onto this world.
+`facts.py` lost the one thing that was about living in another checkout —
+`_NEEDS`, a set of `ugm` names asserted on import so that drift failed by
+name rather than three frames into a run. It versions with `world.py` now,
+so there is no gap left to assert across.
 
 **Deltas, 2026-08-27.** A system stopped being allowed to touch a world
 at all. It used to call `world.spawn`/`attach`/`detach`/`destroy`

@@ -9,12 +9,19 @@ description = "An entity-component world, a loop of systems over it, and one thr
 readme = { text = "UGM", content-type = "text/markdown" }
 requires-python = ">=3.9"
 license = { text = "MIT" }
-keywords = ["ecs", "entity-component", "game-loop", "world-model"]
+keywords = ["ecs", "entity-component", "game-loop", "world-model",
+            "forward-chaining", "arbitration"]
 
 # No dependencies, and that is the whole of it. This is the substrate
 # `harneskills` is built on -- a world, a loop, an engine to run one on --
 # and it ships no domain, no channel and no transport, so nothing above
 # it is baked in here.
+#
+# It DOES ship a vocabulary (`facts.py`) and a way to arbitrate between
+# systems that do not know about each other (`arbitration.py`). That is a
+# discipline rather than a domain: neither knows what a relation means, and
+# both are what a system has to do to compose with the ones it has never
+# heard of. See the Scope section of README.md, and DECISION_PATTERNS.md.
 dependencies = []
 
 [project.optional-dependencies]
