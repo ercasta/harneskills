@@ -39,6 +39,36 @@ until something compares them.
 Anything else -- a set, an open file, a domain's own class -- is refused
 by name when saving, rather than written as something it is not.
 
+## A class that was never written down: `module:factory(argument)`
+
+`module:ClassName` finds a class with `getattr`, which is every class a
+domain declared in a file. It cannot find one a domain MADE -- and
+`facts.relation("for_stmt")` makes one per relation name, with `type()`.
+Such a class serialises perfectly well and then resolves to nothing on
+the way back.
+
+So a class may say how it wants to be named, by answering
+`__ugm_save__()` with a string. `Relation` answers
+`"ugm.facts:relation(for_stmt)"`, and the trailing `(...)` is this
+format's spelling for *call what that name resolves to, with this one
+string, to get the class*. `relation` interns, so what comes back IS the
+class the live world is using -- not a copy of it, which would be a twin
+that nothing matches.
+
+⚠ The parentheses are not decoration. `getattr` alone is not just
+incomplete here, it is UNSAFE: a domain is free to call a relation
+`spawn` or `attach`, `ugm.facts` happens to have both at module level,
+and resolving `ugm.facts:spawn` by name gets a function that
+`object.__new__` then dies on -- taking the session down rather than
+costing one component. A name written this way cannot collide with a
+module's own attributes, because no `__qualname__` contains a paren.
+
+⚠ `VERSION` is deliberately NOT bumped. A reader too old for this
+spelling reports the component as a problem and drops it, which is
+exactly what this module already promises for a class it cannot find;
+bumping would make it refuse the whole file, including every
+`module:ClassName` in it that it reads perfectly well.
+
 ## Ids are preserved, and so is the counter
 
 Restoring `#3` as `#3` is the whole point: every reference in every
@@ -48,8 +78,11 @@ still pointing at, and the two would silently become one thing.
 
 ## What is NOT saved
 
-The vocabulary: a domain registers it in `install()`, from code, every
-time. Anything a domain would rather recompute than restore is its own
+The SYSTEMS: a domain registers those in `install()`, from code, every
+time. ⚠ Not to be confused with the words a domain has interned — those
+are components (`facts.Interned`) and they do come back, because an
+identity kept in a dict beside the world is an identity that turns into a
+twin on the next restart. Anything a domain would rather recompute than restore is its own
 business to reconcile -- see `fs.install`, which attaches a fresh
 `Session` over the restored one so that the clock and the working
 directory are this process's, while every folder and entry it had
@@ -96,6 +129,20 @@ def _field(value, where: str):
     raise SaveError("%s: cannot save a %s" % (where, type(value).__name__))
 
 
+def _name_of(kind) -> str:
+    """What to write in `type`. A class that can be found by `getattr` is
+    written `module:ClassName`; one that has to be MADE says so itself,
+    by answering `__ugm_save__()`. Answering `None` means "the ordinary
+    way" -- `Relation` itself does, since only its subclasses are minted.
+    """
+    how = getattr(kind, "__ugm_save__", None)
+    if how is not None:
+        name = how()
+        if name is not None:
+            return name
+    return "%s:%s" % (kind.__module__, kind.__qualname__)
+
+
 def dump(world) -> dict:
     """The whole world, as plain data. Raises `SaveError` naming the
     component and field if anything in it will not go."""
@@ -104,8 +151,7 @@ def dump(world) -> dict:
         components = []
         for component in world.components(entity):
             kind = type(component)
-            name = "%s:%s" % (kind.__module__, kind.__qualname__)
-            components.append({"type": name, "fields": {
+            components.append({"type": _name_of(kind), "fields": {
                 field: _field(value, "%s %s.%s" % (entity, kind.__name__, field))
                 for field, value in vars(component).items()}})
         entities.append({"id": entity.id, "components": components})
@@ -151,14 +197,30 @@ def _rebuild(value, world):
 
 
 def _kind(name: str):
-    """`module:ClassName` -> the class. Imported here and nowhere else --
-    a state file names a domain's classes, and reading one is what makes
-    that domain's module load."""
+    """`module:ClassName` -> the class; `module:factory(argument)` -> what
+    calling it with that one string returns. Imported here and nowhere
+    else -- a state file names a domain's classes, and reading one is what
+    makes that domain's module load.
+
+    ⚠ The result is checked to BE a class. It used to be trusted, and an
+    attribute that resolved to something else (a function of the same name
+    as a relation -- see the module note) reached `object.__new__` and
+    raised `TypeError` out of `load`, which costs the session rather than
+    the component `load` promises to cost.
+    """
     import importlib
     module_name, _, attr = name.partition(":")
+    argument = None
+    if attr.endswith(")") and "(" in attr:
+        attr, _, rest = attr.partition("(")
+        argument = rest[:-1]
     kind = importlib.import_module(module_name)
     for part in attr.split("."):
         kind = getattr(kind, part)
+    if argument is not None:
+        kind = kind(argument)
+    if not isinstance(kind, type):
+        raise ValueError("names a %s, not a class" % type(kind).__name__)
     return kind
 
 
@@ -169,6 +231,11 @@ def load(world, data) -> "list[str]":
     version behind -- is SKIPPED and named, not raised: the entity keeps
     everything else it carried, and a state file outliving one refactor
     should cost you that component, not the session.
+
+    ⚠ That promise now covers a `module:factory(argument)` whose factory
+    raises, or resolves to something that is not a class. It did not
+    before, and the gap was reachable from an ordinary domain -- a
+    relation named after anything `ugm.facts` imports.
     """
     if len(world) or world._next:
         raise ValueError("load() wants an empty world")
@@ -187,7 +254,7 @@ def load(world, data) -> "list[str]":
             if name not in classes:
                 try:
                     classes[name] = _kind(name)
-                except (ImportError, AttributeError, ValueError) as e:
+                except (ImportError, AttributeError, ValueError, TypeError) as e:
                     classes[name] = None
                     problems.append("%s: %s" % (name, e))
             kind = classes[name]

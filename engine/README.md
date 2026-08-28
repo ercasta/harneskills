@@ -118,6 +118,21 @@ the line the old dependency used to sit on.
 name rather than three frames into a run. It versions with `world.py` now,
 so there is no gap left to assert across.
 
+**A world of facts survives a restart, 2026-08-28.** It did not before, and
+it failed quietly, which is the worst way. `save` resolves a component by
+`module:ClassName` with `getattr`; `relation()` MAKES its classes with
+`type()`; so every relation in a saved world came back as one named problem
+and a dropped component, and a relation whose name collided with something
+`ugm.facts` imports (`spawn`, `attach`) raised `TypeError` out of `load` and
+cost the session rather than the component. A class may now say how to name
+itself — `Relation` answers `ugm.facts:relation(for_stmt)`, and the trailing
+call is resolved by calling it. ⭐ The second half was that interning lived
+in `Facts._words`, a dict beside the world: restoring the components alone
+would have given you a fact pointing at one `Printed("loop")` and every new
+rule asking for another. Which entity is THE one for its text is a component
+now (`Interned`), so it comes back too, and `_words` is a cache of the world
+rather than the truth about it.
+
 **Deltas, 2026-08-27.** A system stopped being allowed to touch a world
 at all. It used to call `world.spawn`/`attach`/`detach`/`destroy`
 directly, applied and visible the moment it did; now it RETURNS a list

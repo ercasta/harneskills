@@ -105,6 +105,36 @@ class Printed(Component):
         self.text = text
 
 
+class Interned(Component):
+    """⭐ That this entity is THE one for its text — and which table it is in.
+
+    ⚠⚠ **WITHOUT THIS, A SAVED WORLD COMES BACK AS TWINS.** `word("loop")` and
+    `node("loop")` both spawn a `Printed("loop")`; what makes the first interned
+    and the second a fresh occurrence is `Facts._words`, a Python dict beside the
+    world. A dict beside the world does not survive a restart — so a restored
+    `name(n, #2)` and a freshly asked `word("loop")` were two different entities,
+    nothing matched, and the run reported a contented quiescence having done
+    nothing. That is the twin trap this package's notes say cost four recorded
+    readings, arriving through a door nobody had opened yet, because until
+    `Relation.__ugm_save__` existed a world of facts could not be restored at all.
+
+    ⭐ So the fact that gives an entity its identity lives IN the world, which is
+    exactly the argument `_ELLIPSIS` already makes about a literal's payload: a
+    side map is state the systems cannot see, and this substrate exists so that
+    there is no such map. `_words`/`_values` are a CACHE of this now, not the
+    truth.
+
+    ⚠ An occurrence (`node()`) carries no `Interned`, and that IS the
+    distinction: `f.node("gt") != f.node("gt")` by design.
+    """
+
+    WORD = "word"
+    VALUE = "value"
+
+    def __init__(self, kind: str) -> None:
+        self.kind = kind
+
+
 class Relation(Component):
     """One relation, on one subject: the ordered rows of objects it relates it to.
 
@@ -121,8 +151,32 @@ class Relation(Component):
     stores is what turns that into *the loop settles*. See the module note.
     """
 
+    #: ⚠ The relation's name, set by `relation()` on each subclass it mints.
+    #: `None` on this base class, which is never attached to anything itself.
+    relation: Optional[str] = None
+
     def __init__(self, rows: Tuple[Tuple[Entity, ...], ...] = ()) -> None:
         self.rows = tuple(rows)
+
+    @classmethod
+    def __ugm_save__(cls) -> Optional[str]:
+        """⭐ How `save` should name this class, since it cannot FIND it.
+
+        `save` resolves `module:ClassName` with `getattr`, and a class
+        `relation()` minted with `type()` is not an attribute of anything —
+        so a whole world of facts used to serialise fine and come back
+        empty, one named problem per relation, the world silently thinner.
+        Answering here says *call `ugm.facts:relation` with this name*
+        instead, and since `relation` interns, what comes back IS the class
+        the live world is already using rather than a twin of it.
+
+        ⚠ `None` from the base class means "name me the ordinary way" — it
+        is `Relation` itself, which nothing attaches; only subclasses carry
+        a name to be rebuilt from.
+        """
+        if cls.relation is None:
+            return None
+        return "%s:relation(%s)" % (__name__, cls.relation)
 
 
 #: relation name -> its component class. ⭐ The name table that used to be
@@ -146,6 +200,14 @@ def relation(name: str) -> type:
     return cls
 
 
+#: ⭐ `relation` is also the FACTORY `save.py` calls back into: a component whose
+#: type reads `ugm.facts:relation(for_stmt)` is rebuilt by calling exactly this,
+#: which returns the interned class rather than a new one. See
+#: `Relation.__ugm_save__`, and `save.py`'s note on that spelling. ⚠ Nothing about
+#: this is registered anywhere — the class names its own factory, so a domain that
+#: mints classes some other way does the same thing without telling this module.
+
+
 class Facts:
     """One world, one loop, and the propositions deposited into it."""
 
@@ -158,6 +220,9 @@ class Facts:
         #: REAL `Entity`, never a `Pending` -- see `_mint`.
         self._words: Dict[str, Entity] = {}
         self._values: Dict[str, Entity] = {}
+        #: Whether the world underneath has been scanned for entities a PREVIOUS
+        #: process interned (`save.read` into this world). See `_adopt`.
+        self._adopted = False
         #: THIS TURN's own not-yet-applied writes, or `None` between turns --
         #: see `system()`. `_pending` is the flat list `ugm.loop.Loop.tick`
         #: applies; `_overlay` and `_minting` are what let `fact`/`deny`/`word`
@@ -257,7 +322,7 @@ class Facts:
                 return entity
         return None
 
-    def _mint(self, text: str):
+    def _mint(self, text: str, kind: Optional[str] = None):
         """A fresh `Printed(text)` -- an `Entity` outside a system's turn
         (nothing to describe instead of), a `Pending` inside one, the same
         way `spawn()` itself hands one back. `_find` first, mid-turn: an
@@ -286,8 +351,47 @@ class Facts:
             self._pending.append(made)
             self._minting[text] = made.entity
             self._overlay[(made.entity, Printed)] = Printed(text)
+            if kind is not None:
+                # ⭐ DESCRIBED, not attached -- this turn's own rule, same as every
+                # other write here. `Interned` has to travel with the `Printed` or
+                # a restart cannot tell this entity from an occurrence.
+                self._pending.append(attach(made.entity, Interned(kind)))
+                self._overlay[(made.entity, Interned)] = Interned(kind)
             return made.entity
-        return self.world.spawn(Printed(text))
+        entity = self.world.spawn(Printed(text))
+        if kind is not None:
+            self.world.attach(entity, Interned(kind))
+        return entity
+
+    def _adopt(self, text: str, kind: str) -> Optional[Entity]:
+        """The entity the WORLD already interned for this text, if this `Facts`
+        has not seen it -- a world a previous process saved and this one read.
+
+        ⭐ Scanned ONCE per instance, not once per miss. `save.load` refuses a
+        world that is not empty, so the only way entities appear underneath a
+        `Facts` without going through `word`/`value` is a restore, and a restore
+        can only happen before any of this has run. After that, a miss is a
+        genuinely new word and there is nothing to look for.
+
+        ⚠ This is why no caller has to remember anything after
+        `save.read(f.world, path)`. A rebuild you must remember is a rebuild
+        somebody skips, and skipping it is SILENT: two entities, one text, and a
+        world that settles having matched nothing.
+
+        ⚠ It spawns nothing, ever. That is what lets `known()` use it without
+        reopening the door `known()` exists to keep shut.
+        """
+        if self._adopted:
+            return None
+        self._adopted = True
+        for entity, mark in self.world.each(Interned):
+            printed = self.world.get(entity, Printed)
+            if printed is None:
+                continue
+            table = self._words if mark.kind == Interned.WORD else self._values
+            table.setdefault(printed.text, entity)
+        table = self._words if kind == Interned.WORD else self._values
+        return table.get(text)
 
     def node(self, printed: str) -> Entity:
         """A fresh individual. The name is for printing; identity is the entity."""
@@ -310,7 +414,10 @@ class Facts:
         got = self._words.get(text)
         if got is not None:
             return got
-        made = self._mint(text)
+        got = self._adopt(text, Interned.WORD)
+        if got is not None:
+            return got
+        made = self._mint(text, Interned.WORD)
         if not isinstance(made, Pending):
             self._words[text] = made
         return made
@@ -328,8 +435,17 @@ class Facts:
         having concluded nothing. It is the old no-inert-set hang arriving through a
         different door, so the door is closed rather than documented: a system reads
         the vocabulary, it does not extend it.
+
+        ⭐ It does read a RESTORED vocabulary, though, and that keeps the rule
+        rather than bending it: `_adopt` only moves what the world already holds
+        into the cache and spawns nothing. A matcher asking about a word a
+        previous process interned gets it; a matcher asking about a word nobody
+        has ever interned still gets `None`.
         """
-        return self._words.get(text)
+        got = self._words.get(text)
+        if got is not None:
+            return got
+        return self._adopt(text, Interned.WORD)
 
     def value(self, payload: Any) -> Entity:
         """An entity standing for a literal, named by its `repr` so a reader recovers it.
@@ -344,7 +460,10 @@ class Facts:
         got = self._values.get(text)
         if got is not None:
             return got
-        made = self._mint(text)
+        got = self._adopt(text, Interned.VALUE)
+        if got is not None:
+            return got
+        made = self._mint(text, Interned.VALUE)
         if not isinstance(made, Pending):
             self._values[text] = made
         return made

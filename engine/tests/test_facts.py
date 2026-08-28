@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from ugm.facts import Facts, relation
+from ugm.facts import Facts, Printed, relation
 
 
 # -- what a relation IS ----------------------------------------------------------
@@ -218,3 +218,109 @@ def test_a_system_that_RAISED_is_re_raised_rather_than_settling_quietly():
 
     with pytest.raises(Exception):
         f.run()
+
+
+# -- surviving a restart ---------------------------------------------------------
+#
+# ⚠⚠ The twin trap has a door here that nothing could reach until relations
+# became savable: interning lived in `_words`/`_values`, Python dicts beside
+# the world, and a dict beside the world does not come back from a file.
+
+
+def test_a_restored_WORD_is_the_same_entity_the_restored_facts_POINT_AT():
+    """⚠⚠ Two `Printed("loop")` entities, a fact pointing at one and every later
+    rule asking for the other, is a run that settles having matched nothing."""
+    from ugm import save
+    from ugm.world import World
+
+    f = Facts()
+    n = f.node("n")
+    f.fact("name", n, f.word("loop"))
+
+    g = Facts()
+    assert save.load(g.world, save.dump(f.world)) == []
+    (pointed_at,), = g.of("name", g.world._adopt(n.id))
+    assert g.word("loop") == pointed_at
+    assert len([e for e, _ in g.world.each(Printed) if _.text == "loop"]) == 1
+
+
+def test_a_restored_VALUE_interns_the_same_way():
+    from ugm import save
+
+    f = Facts()
+    n = f.node("n")
+    f.fact("threshold", n, f.value(18))
+
+    g = Facts()
+    assert save.load(g.world, save.dump(f.world)) == []
+    (pointed_at,), = g.of("threshold", g.world._adopt(n.id))
+    assert g.value(18) == pointed_at
+    assert g.payload(pointed_at) == 18
+
+
+def test_an_OCCURRENCE_does_not_start_interning_just_because_it_was_saved():
+    """⭐ The whole distinction: a `node` carries no `Interned`, so two `gt`s in
+    two functions stay two entities across a restart, exactly as they were."""
+    from ugm import save
+
+    f = Facts()
+    first, second = f.node("gt"), f.node("gt")
+    f.fact("occurrence", first)
+    f.fact("occurrence", second)
+
+    g = Facts()
+    assert save.load(g.world, save.dump(f.world)) == []
+    assert len(g.subjects("occurrence")) == 2, "still two"
+    assert g.node("gt") != g.node("gt"), "and a new one is a third"
+
+
+def test_known_SEES_a_restored_word_and_still_mints_nothing():
+    """⚠ `known` is the one read that must not spawn. Adoption only moves what
+    the world already holds, so it can read a restored vocabulary and keep that."""
+    from ugm import save
+
+    f = Facts()
+    f.fact("vocabulary", f.node("v"), f.word("premium"))
+
+    g = Facts()
+    assert save.load(g.world, save.dump(f.world)) == []
+    before = len(g.world)
+    assert g.known("premium") is not None, "a word a previous process interned"
+    assert g.known("never_seen") is None, "and still None for one nobody has"
+    assert len(g.world) == before, "having spawned nothing either way"
+
+
+def test_a_word_MINTED_INSIDE_A_SYSTEM_is_marked_too():
+    """⚠ The mid-turn path describes a `spawn` and returns a `Pending`; the
+    `Interned` mark has to be described alongside it or a word a RULE invented
+    comes back from a file as an anonymous occurrence."""
+    from ugm import save
+
+    f = Facts()
+    f.fact("cmp", f.node("c"))
+
+    @f.system
+    def repair(world):
+        for subject in f.subjects("cmp"):
+            if not f.has("operator", subject):
+                f.fact("operator", subject, f.word("ge"))
+
+    f.run()
+    g = Facts()
+    assert save.load(g.world, save.dump(f.world)) == []
+    (pointed_at,), = g.of("operator", g.subjects("cmp")[0])
+    assert g.word("ge") == pointed_at
+
+
+def test_the_round_trip_is_STABLE_so_a_second_restart_is_not_a_third_entity():
+    from ugm import save
+
+    f = Facts()
+    f.fact("name", f.node("n"), f.word("loop"))
+    once = save.dump(f.world)
+
+    g = Facts()
+    save.load(g.world, once)
+    g.word("loop")                      # adopt, then ask again
+    twice = save.dump(g.world)
+    assert twice == once, "the same world, not one that grew a twin on the way"

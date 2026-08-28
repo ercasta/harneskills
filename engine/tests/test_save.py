@@ -207,3 +207,76 @@ def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
     save.write(w, str(path))
     assert b"\r\n" not in path.read_bytes()
     assert path.read_bytes().endswith(b"\n")
+
+
+# --- a class that was never written down -------------------------------
+#
+# ⚠⚠ `facts.relation("for_stmt")` MAKES its class with `type()`, so `getattr`
+# cannot find it. Every one of these used to be a named problem and a dropped
+# component: a whole world of facts saved perfectly and came back empty.
+
+
+def test_a_MADE_class_round_trips_as_the_same_interned_class():
+    """⭐ Not a copy of it. `relation` interns, so what comes back IS what the
+    live world is using — a copy would be a twin that nothing matches."""
+    from ugm.facts import Facts, relation
+
+    f = Facts()
+    n = f.node("n")
+    f.fact("name", n, f.word("loop"))
+
+    world = World()
+    assert save.load(world, save.dump(f.world)) == []
+    restored = world.get(world._adopt(n.id), relation("name"))
+    assert restored is not None, "the relation came back at all"
+    assert type(restored) is relation("name"), "and it is THE class, not a twin"
+    assert len(restored.rows) == 1
+
+
+def test_a_made_class_is_written_as_a_factory_call_not_a_name():
+    from ugm.facts import Facts
+
+    f = Facts()
+    f.fact("for_stmt", f.node("n"))
+    written = {c["type"] for e in save.dump(f.world)["entities"]
+              for c in e["components"]}
+    assert "ugm.facts:relation(for_stmt)" in written
+    assert "ugm.facts:for_stmt" not in written, "the name getattr cannot resolve"
+
+
+def test_a_relation_named_after_a_MODULE_ATTRIBUTE_is_still_itself():
+    """⚠⚠ This used to raise `TypeError` out of `load` and cost the SESSION.
+
+    `ugm.facts` imports `spawn` and `attach` at module level, a domain is free to
+    call a relation either, and `ugm.facts:spawn` resolved by name got the
+    function — which `object.__new__` then died on. A factory call cannot
+    collide with a module's attributes, because no `__qualname__` has a paren.
+    """
+    from ugm.facts import Facts, relation
+
+    f = Facts()
+    n = f.node("n")
+    for name in ("spawn", "attach", "relation", "Facts"):
+        f.fact(name, n)
+
+    world = World()
+    assert save.load(world, save.dump(f.world)) == []
+    for name in ("spawn", "attach", "relation", "Facts"):
+        assert world.get(world._adopt(n.id), relation(name)) is not None, name
+
+
+def test_a_type_that_names_a_NON_CLASS_is_a_problem_not_a_crash():
+    """The promise is that a bad state file costs you the component, not the
+    session. It did not cover this until the check existed."""
+    world = World()
+    problems = save.load(world, {"version": 1, "next": 2, "entities": [
+        {"id": 1, "components": [{"type": "ugm.save:VERSION", "fields": {}}]}]})
+    assert len(problems) == 1 and "not a class" in problems[0]
+    assert len(world) == 1, "the entity survives, having lost that component"
+
+
+def test_a_factory_that_RAISES_is_a_problem_not_a_crash():
+    world = World()
+    problems = save.load(world, {"version": 1, "next": 2, "entities": [
+        {"id": 1, "components": [{"type": "ugm.save:_kind(nope)", "fields": {}}]}]})
+    assert len(problems) == 1
