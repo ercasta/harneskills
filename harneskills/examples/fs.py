@@ -2,27 +2,50 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Thirteen rules over `model.py`'s components and `fs_tools.py`'s three
+Eighteen rules over `model.py`'s components and `fs_tools.py`'s three
 tools. Read top to bottom, they are the order they run in each tick, and
 that order is the whole of the plan::
 
-    hear            Said                       -> a goal entity
-    hear_answer     Said ("y"/"n")              -> resolves the wish being Asked
-    list_dir        ListWanted                  -> the tools, and Listed
-    reply_listing   Listed                      -> one line per entry, then a count
-    approve         RenameWish+NeedsApproval, not yet Asked  -> a question
-    flag_stale      StaleHunt                   -> Stale on every old entry, FoundStale
-    propose_rename  FoundStale                  -> RenameWish + NeedsApproval  NEVER a rename
-    do_rename       RenameWish (without NeedsApproval)  -> the tool
-    focus_big       HuntHere                    -> BigHunt, aimed at the folder you mean
-    flag_big        BigHunt                     -> Big on every large entry, FoundBig
-    reply_big / reply_renamed / reply_failed     -> what you are told
+    hear                Said                        -> a ParseRequest, once
+    hear_answer         Said ("y"/"n")              -> resolves the wish being Asked
+    propose_*           ParseRequest                -> a candidate: Proposal + a goal
+    arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
+    list_dir            ListWanted                  -> the tools, and Listed
+    reply_listing       Listed                      -> one line per entry, then a count
+    approve             RenameWish+NeedsApproval, not yet Asked  -> a question
+    flag_stale          StaleHunt                   -> Stale on every old entry, FoundStale
+    propose_rename      FoundStale                  -> RenameWish + NeedsApproval  NEVER a rename
+    do_rename           RenameWish (without NeedsApproval)  -> the tool
+    focus_big           HuntHere                    -> BigHunt, aimed at the folder you mean
+    flag_big            BigHunt                     -> Big on every large entry, FoundBig
+    reply_big / reply_renamed / reply_failed         -> what you are told
 
 `approve` sits ABOVE the rule that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
 one, which is what puts "2 of 5 older than 7 day(s)" on screen before the
 question about the first of them. Rule order is the schedule, and a
 tick boundary is the only thing there is to schedule against.
+
+## Understanding a line is the SAME propose/arbitrate/act shape, one level up
+
+What used to be one `_understand` function -- try each reading in turn,
+return on the first match -- is now four small `propose_*` rules and one
+`arbitrate_parse`, the general pattern from `docs/intake processing.md`
+applied to this domain's own input: `hear` turns a `Said` into a
+`ParseRequest` (the occasion); every `propose_*` rule gets a look at it
+and may spawn a CANDIDATE -- an entity tagged `Proposal` carrying
+whichever goal it thinks the line asked for (`ListWanted`, `StaleHunt`,
+`RenameWish`, even a `Failed` for "recognized, but factually wrong");
+`arbitrate_parse` picks one winner and destroys the rest, in the SAME
+tick, because rule order already puts every `propose_*` rule ahead of it
+in the list above.
+
+The arbiter itself is the trivial rule the pattern doc asks for: first
+proposal registered wins. These four `propose_*` rules never actually
+collide -- each recognizes a disjoint shape of line -- so nothing here
+has needed more than that yet. The day two of them legitimately
+compete for the same line, THAT is what grows real judge machinery
+(a priority, a real ranking) -- not before.
 
 Every rule here writes to the world directly -- `w.spawn`, `w.attach`,
 `w.detach`, `w.destroy` -- and `Loop.tick` calls one rule fully before the
@@ -80,8 +103,9 @@ from ugm.world import Reply, Said
 from . import fs_tools
 from .model import (Asked, Big, BigHunt, Contents, Entry, Failed, Focus,
                     Folder, FoundBig, FoundStale, HuntHere, IsDir,
-                    ListWanted, Listed, Modified, NeedsApproval, RenameWish,
-                    Renamed, Session, Size, Stale, StaleHunt)
+                    ListWanted, Listed, Modified, NeedsApproval, Parsing,
+                    ParseRequest, Proposal, RenameWish, Renamed, Session,
+                    Size, Stale, StaleHunt)
 
 BIG_BYTES = 1000
 STALE_PREFIX = "stale-"
@@ -222,61 +246,27 @@ def _path(text: str) -> str:
     return os.path.abspath(os.path.expanduser(text.strip().strip('"').strip("'")))
 
 
-def _understand(w, line: str) -> bool:
-    """Whether this line asks for something this domain has a reading
-    of -- spawning whatever it asks for directly. Plain Python over plain
-    words, no grammar and no parser, and every case here is one a person
-    actually types."""
-    words = line.split()
-    low = [word.lower() for word in words]
+def _split(text: str):
+    """`(words, low)` for one line of a `ParseRequest`, or `None` for a
+    blank one -- shared by every `propose_*` rule below so each says only
+    what ITS shape looks like, never how to tokenize one."""
+    words = text.split()
     if not words:
-        return False
-
-    if low[0] == "show" and len(words) >= 2:
-        rest = words[2:]
-        where = _path(" ".join(rest[1:])) if low[2:3] == ["in"] and rest[1:] else None
-        if low[1] in ("file", "files"):
-            folder = folder_at(w, where or w.the(Session).cwd)
-            w.spawn(ListWanted(folder))
-            return True
-        if low[1] == "big":
-            if where is None:
-                w.spawn(HuntHere())
-            else:
-                w.spawn(BigHunt(folder_at(w, where)))
-            return True
-
-    if low[0] == "stale" and "after" in low:
-        at = low.index("after")
-        days = low[at + 1] if low[at + 1:at + 2] and low[at + 1].isdigit() else None
-        # `stale in DIR after N days` -- everything between `in` and
-        # `after` is the folder; `stale after N days` means where you are.
-        where = _path(" ".join(words[2:at])) if low[1:2] == ["in"] and at > 2 else None
-        if days is not None:
-            folder = folder_at(w, where) if where else here(w)
-            w.spawn(StaleHunt(folder, int(days)))
-            return True
-
-    if low[0] == "rename" and "to" in low:
-        at = low.index("to")
-        old, new = " ".join(words[1:at]), " ".join(words[at + 1:])
-        folder = _known_here(w)
-        by_name = w.get(folder, Contents).by_name if folder is not None else {}
-        if old and new and old in by_name:
-            # No `NeedsApproval`: you are not an automation, and nothing
-            # holds what you asked for yourself.
-            w.spawn(RenameWish(by_name[old], new))
-            return True
-        if old and new:
-            w.spawn(Failed("rename %s" % old, "no such file here"))
-            return True
-    return False
+        return None
+    return words, [word.lower() for word in words]
 
 
 # -- the rules ----------------------------------------------------------
 
 def hear(w):
-    """What you typed -> a goal, if this domain has a reading of it.
+    """What you typed -> a `ParseRequest`, once. What it MEANS is every
+    `propose_*` rule's business below, not this one's -- see this
+    module's docstring, "Understanding a line is the SAME
+    propose/arbitrate/act shape."
+
+    `without=Parsing` is load-bearing: without it this rule would spawn a
+    fresh request for the same unclaimed line every tick it sits there,
+    and the loop would never settle.
 
     Any channel -- `said.channel` is whichever terminal or socket a person
     is attached as (`ugm.engine`'s own concern), and `"user"` is
@@ -286,10 +276,9 @@ def hear(w):
     connected, which is the ordinary MUD answer for a world nobody has
     taught to whisper.
     """
-    for entity, said in w.each(Said):
-        if _understand(w, said.text):
-            w.destroy(entity)
-        # Left standing otherwise: the prompt says nobody understood it.
+    for entity, said in w.each(Said, without=Parsing):
+        w.attach(entity, Parsing())
+        w.spawn(ParseRequest(entity, said.text))
 
 
 def hear_answer(w):
@@ -323,9 +312,120 @@ def hear_answer(w):
         return
 
 
+def propose_list(w):
+    """`show file(s) [in DIR]` -> a candidate carrying `ListWanted`."""
+    for request, req in w.each(ParseRequest):
+        split = _split(req.text)
+        if split is None:
+            continue
+        words, low = split
+        if low[0] != "show" or len(words) < 2 or low[1] not in ("file", "files"):
+            continue
+        rest = words[2:]
+        where = _path(" ".join(rest[1:])) if low[2:3] == ["in"] and rest[1:] else None
+        folder = folder_at(w, where or w.the(Session).cwd)
+        w.spawn(Proposal(request), ListWanted(folder))
+
+
+def propose_big(w):
+    """`show big [in DIR]` -> a candidate carrying `HuntHere` (the folder
+    is decided later, by `focus_big`) or `BigHunt`."""
+    for request, req in w.each(ParseRequest):
+        split = _split(req.text)
+        if split is None:
+            continue
+        words, low = split
+        if low[0] != "show" or len(words) < 2 or low[1] != "big":
+            continue
+        rest = words[2:]
+        where = _path(" ".join(rest[1:])) if low[2:3] == ["in"] and rest[1:] else None
+        if where is None:
+            w.spawn(Proposal(request), HuntHere())
+        else:
+            w.spawn(Proposal(request), BigHunt(folder_at(w, where)))
+
+
+def propose_stale(w):
+    """`stale [in DIR] after N days` -> a candidate carrying `StaleHunt`."""
+    for request, req in w.each(ParseRequest):
+        split = _split(req.text)
+        if split is None:
+            continue
+        words, low = split
+        if low[0] != "stale" or "after" not in low:
+            continue
+        at = low.index("after")
+        days = low[at + 1] if low[at + 1:at + 2] and low[at + 1].isdigit() else None
+        if days is None:
+            continue
+        # `stale in DIR after N days` -- everything between `in` and
+        # `after` is the folder; `stale after N days` means where you are.
+        where = _path(" ".join(words[2:at])) if low[1:2] == ["in"] and at > 2 else None
+        folder = folder_at(w, where) if where else here(w)
+        w.spawn(Proposal(request), StaleHunt(folder, int(days)))
+
+
+def propose_typed_rename(w):
+    """`rename OLD to NEW` -> a candidate carrying `RenameWish` if OLD
+    exists, `Failed` if it doesn't -- recognized either way. Not to be
+    confused with `propose_rename` below, the AUTOMATED one that turns a
+    `FoundStale` into a held wish: that one never competes for a
+    `ParseRequest` and is no part of this arbitration.
+    """
+    for request, req in w.each(ParseRequest):
+        split = _split(req.text)
+        if split is None:
+            continue
+        words, low = split
+        if low[0] != "rename" or "to" not in low:
+            continue
+        at = low.index("to")
+        old, new = " ".join(words[1:at]), " ".join(words[at + 1:])
+        if not old or not new:
+            continue
+        folder = _known_here(w)
+        by_name = w.get(folder, Contents).by_name if folder is not None else {}
+        if old in by_name:
+            # No `NeedsApproval`: you are not an automation, and nothing
+            # holds what you asked for yourself.
+            w.spawn(Proposal(request), RenameWish(by_name[old], new))
+        else:
+            w.spawn(Proposal(request), Failed("rename %s" % old, "no such file here"))
+
+
+def arbitrate_parse(w):
+    """One winner per `ParseRequest` -- first candidate registered wins,
+    every other candidate for the same request is destroyed outright.
+
+    This IS the arbiter from `docs/intake processing.md`, kept exactly as
+    trivial as this domain has ever needed: the four `propose_*` rules
+    above recognize disjoint shapes of line, so real rivalry has never
+    actually happened here. A domain that hits real rivalry grows a
+    real judge (a priority field, `ranked`-style scoring -- see
+    `engine/DECISION_PATTERNS.md`) at THAT rule, not here; "first wins"
+    stays correct for every occasion nobody has taught to compete yet.
+
+    A request with no candidates at all is destroyed too, quietly --
+    nobody proposed a reading, so its `Said` is left exactly as it was,
+    to be reported unheard once the world settles (`ugm.engine.drain`).
+    """
+    for request, req in w.each(ParseRequest):
+        candidates = [entity for entity, proposal in w.each(Proposal)
+                     if proposal.request == request.id]
+        if not candidates:
+            w.destroy(request)
+            continue
+        winner, *losers = candidates
+        for loser in losers:
+            w.destroy(loser)
+        w.detach(winner, Proposal)
+        w.destroy(request)
+        w.destroy(req.said)
+
+
 def list_dir(w):
     """ListWanted -> the `ls` tool, and the folder you are now in."""
-    for entity, want in w.each(ListWanted):
+    for entity, want in w.each(ListWanted, without=Proposal):
         w.destroy(entity)
         _entries, count = fs_tools.ls(w, want.folder)
         if count is None:
@@ -347,7 +447,7 @@ def reply_listing(w):
 
 def flag_stale(w):
     """StaleHunt -> `Stale` on every entry older than it asked about."""
-    for entity, hunt in w.each(StaleHunt):
+    for entity, hunt in w.each(StaleHunt, without=Proposal):
         w.destroy(entity)
         entries = _listed(w, hunt.folder)
         now, found = w.the(Session).now, 0
@@ -378,7 +478,7 @@ def do_rename(w):
     detaching the tag, or straight from a person typing `rename a to b`,
     and this rule cannot tell which -- which is the point: holding is
     the proposer's business, not the act's."""
-    for entity, wish in w.each(RenameWish, without=NeedsApproval):
+    for entity, wish in w.each(RenameWish, without=(NeedsApproval, Proposal)):
         w.destroy(entity)
         if fs_tools.rename(w, wish.entry, wish.new_name):
             w.detach(wish.entry, Stale)   # dealt with: the claim is unmade
@@ -387,7 +487,7 @@ def do_rename(w):
 def focus_big(w):
     """HuntHere -> the same entity, now a BigHunt aimed at the folder you
     last looked at."""
-    for entity, _tag in w.each(HuntHere):
+    for entity, _tag in w.each(HuntHere, without=Proposal):
         w.detach(entity, HuntHere)
         w.attach(entity, BigHunt(here(w)))
 
@@ -395,7 +495,7 @@ def focus_big(w):
 def flag_big(w):
     """BigHunt -> `Big` on every entry over the session's floor. One call,
     one `for`, no per-file bookkeeping."""
-    for entity, hunt in w.each(BigHunt):
+    for entity, hunt in w.each(BigHunt, without=Proposal):
         w.destroy(entity)
         entries = _listed(w, hunt.folder)
         floor, found = w.the(Session).big_floor, 0
@@ -428,7 +528,7 @@ def reply_renamed(w):
 
 
 def reply_failed(w):
-    for entity, failed in w.each(Failed):
+    for entity, failed in w.each(Failed, without=Proposal):
         w.destroy(entity)
         _say(w, "! could not %s: %s" % (failed.what, failed.why))
 
@@ -471,7 +571,10 @@ def approve(w):
     _say(w, "approve rename %s -> %s in %s? [y/n]" % (entry.name, wish.new_name, folder))
 
 
-RULES = (hear, hear_answer, list_dir, reply_listing, approve,
+RULES = (hear, hear_answer,
+           propose_list, propose_big, propose_stale, propose_typed_rename,
+           arbitrate_parse,
+           list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            reply_big, reply_renamed, reply_failed)
 

@@ -18,6 +18,15 @@ change. Being stale is not a property of a file, it is a claim
 `Failed` are occasions. A rule destroys the entity it acted on, so the
 next tick has nothing to match and the loop settles.
 
+**What a typed line might mean.** `ParseRequest` is the occasion; several
+responder rules in `fs.py` each read it and may spawn a *candidate* --
+an entity tagged `Proposal` and carrying whichever of the above goals
+that responder thinks the line asked for. `arbitrate_parse` is the one
+generic step: pick a winner, discard the rest, detach `Proposal` so
+whatever consumes that goal (`list_dir`, `flag_stale`, `do_rename`, ...)
+finally sees it. See `docs/intake processing.md` for the pattern this is
+one instance of, and `fs.py`'s own rules for the worked example.
+
 `NeedsApproval` is the one worth pausing on. A rename waiting for a person
 and a rename about to happen are the same entity, and the only difference
 is that tag::
@@ -169,6 +178,35 @@ class RenameWish:
 @dataclass(frozen=True)
 class NeedsApproval:
     """A person has not said yes yet. See this module's docstring."""
+
+
+@dataclass(frozen=True)
+class Parsing:
+    """A `Said` this domain has already turned into a `ParseRequest` --
+    without this, `fs.hear` would spawn a fresh request for it every
+    tick the line sits unclaimed, and never settle."""
+
+
+@dataclass(frozen=True)
+class ParseRequest:
+    """One typed line, waiting for a reading -- the occasion several
+    responder rules propose against, in the SAME tick `fs.hear` spawns
+    it. `said` is the original `Said` entity, kept so the winner can
+    destroy it (a loser never gets the chance to)."""
+
+    said: int
+    text: str
+
+
+@dataclass(frozen=True)
+class Proposal:
+    """Tags a candidate entity: 'one reading of that `ParseRequest`, not
+    yet real.' A candidate carries this PLUS whichever goal component
+    would make it real (`ListWanted`, `RenameWish`, ...) -- the same
+    trick `NeedsApproval` already plays on a `RenameWish`, one level up:
+    nothing that consumes a goal acts on one still carrying this."""
+
+    request: int
 
 
 @dataclass(frozen=True)

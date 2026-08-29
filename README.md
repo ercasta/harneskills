@@ -118,8 +118,10 @@ You type `show file`. The REPL spawns one entity carrying one component —
 
 | tick | rule | what changed |
 |------|--------|--------------|
-| 1 | `hear` | destroys the `Said` entity, spawns one carrying `ListWanted(#4)` |
-| 1 | `list_dir` | destroys the goal, calls `ls` — an entity per entry, each with `Entry`/`Size`/`Modified` — moves `Focus`, spawns `Listed(#4, 5)` |
+| 1 | `hear` | spawns `ParseRequest(#2, "show file")` — the occasion; `Said` stays, for now |
+| 1 | `propose_list` | recognizes the line, spawns a candidate: `Proposal(#4)` + `ListWanted(#5)` on one entity |
+| 1 | `arbitrate_parse` | one candidate, no rival — detaches `Proposal`, destroys the `ParseRequest` AND the `Said` |
+| 1 | `list_dir` | destroys the (now real) goal, calls `ls` — an entity per entry, each with `Entry`/`Size`/`Modified` — moves `Focus`, spawns `Listed(#5, 5)` |
 | 1 | `reply_listing` | destroys the `Listed`, spawns six `Reply` entities |
 | 2 | *(everything)* | nothing changes — settled |
 
@@ -128,11 +130,28 @@ an entity spawned by one rule and destroyed by another; nothing is a
 call from one rule into the next, so inserting a rule between any two
 of them is just registering it in between.
 
-**Rule order is the whole of arbitration.** No attention, no scoring, no
-ranking of who most deserves a turn. Rules run in the order they were
-installed, every tick, and the same input produces the same output in the
-same order every time. If a listing should report entries and *then* count
-them, register the entry rule first.
+**Understanding a line is propose/arbitrate/act, one level up.**
+`propose_list` is one of four responder rules that may each recognize a
+typed line and propose a reading of it — a candidate entity, tagged
+`Proposal`, carrying whichever goal it thinks the line asked for.
+`arbitrate_parse` is the arbiter: it picks one, in the SAME tick, before
+anything downstream (`list_dir`, `flag_stale`, `do_rename`, ...) ever sees
+it, because every one of those rules was written to skip anything still
+tagged `Proposal`. It is the general pattern documented in full in
+`docs/intake processing.md`, worked here for the first time: several rival
+readings of one occasion, judged down to one winner by an arbiter that
+starts as trivial as "first proposal wins" and grows only the day a domain
+actually needs more than that.
+
+**Rule order is the whole of arbitration** for which Python function runs
+when — no attention, no scoring, no ranking of who most deserves a turn.
+Rules run in the order they were installed, every tick, and the same input
+produces the same output in the same order every time. If a listing should
+report entries and *then* count them, register the entry rule first. That
+is a different question from *which candidate a business decision resolves
+to*, above — the two happen to share the word "arbitration," not the
+mechanism: one is registration order, fixed for the life of the process;
+the other is a rule a domain writes and can grow.
 
 **A rule fires by changing something.** The loop reads `world.revision`
 before and after; a rule that re-attached a component equal to the one
@@ -688,3 +707,31 @@ a FRESHLY spawned folder's `Contents` is still empty until something
 actually lists it -- that was never the delta model's own doing, and
 restoring the eager list-on-first-mention behavior the entry above
 describes is a separate change this one does not make.
+
+**Propose/arbitrate, 2026-08-29.** `docs/intake processing.md` names a
+general pattern -- several rival readings of one occasion, judged down to
+one winner by an arbiter that starts as trivial as "first proposal wins"
+and grows only when a domain actually needs more -- and `fs.py`'s own
+`_understand` is its first worked instance: one function trying every
+reading in a fixed `if`/`elif` chain became four independently addable
+`propose_*` rules (`propose_list`, `propose_big`, `propose_stale`,
+`propose_typed_rename`) and one five-line `arbitrate_parse`, over two new
+components (`ParseRequest`, the occasion; `Proposal`, tagging a candidate
+entity not yet real). `hear` no longer decides anything -- it turns a
+`Said` into a `ParseRequest`, once (`Parsing` guards against doing it
+again every tick the line sits unclaimed), and every rule that used to
+consume a goal straight off `_understand` (`list_dir`, `flag_stale`,
+`do_rename`, `focus_big`, `flag_big`, `reply_failed`) now reads
+`without=Proposal`, the same trick `NeedsApproval` already played on a
+`RenameWish` one level up. Behaviorally unchanged -- the suite is untouched
+by the rewrite, because the four responders still recognize disjoint
+shapes of line, so there was never any real rivalry for the arbiter to
+resolve; what changed is that adding a fifth reading is now one more rule
+to register, not one more branch in the middle of a function that already
+had four. `../pystrider` is named as the next domain expected to use this
+shape, for the reason `engine/DECISION_PATTERNS.md` already argued: any
+rule family that decides for itself whether to fire has an opinion about
+registration order, whether its author meant it to or not.
+
+`pytest` is unchanged in count and still green; nothing above touched a
+test.
