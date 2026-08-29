@@ -1,20 +1,23 @@
 """What a delta promises: data describing a change, applied by `Loop`
 alone -- and what a `Pending` resolves to once its own `Spawn` is real."""
 
+import dataclasses
+
 import pytest
 
-from ugm.delta import Attach, Destroy, Detach, Pending, Spawn, attach, destroy, detach, spawn
-from ugm.world import Component, World
+from ugm.delta import (Attach, Destroy, Detach, Pending, Remove, Replace,
+                       Spawn, attach, destroy, detach, remove, replace, spawn)
+from ugm.world import World
 
 
-class Size(Component):
-    def __init__(self, bytes):
-        self.bytes = bytes
+@dataclasses.dataclass(frozen=True)
+class Size:
+    bytes: int
 
 
-class Ref(Component):
-    def __init__(self, other):
-        self.other = other
+@dataclasses.dataclass(frozen=True)
+class Ref:
+    other: object
 
 
 @pytest.fixture
@@ -22,10 +25,12 @@ def world():
     return World()
 
 
-def test_the_four_free_functions_build_the_matching_delta_type():
+def test_the_free_functions_build_the_matching_delta_type():
     assert isinstance(spawn(Size(1)), Spawn)
     assert isinstance(attach(object(), Size(1)), Attach)
     assert isinstance(detach(object(), Size), Detach)
+    assert isinstance(replace(object(), Size(1)), Replace)
+    assert isinstance(remove(object(), Size(1)), Remove)
     assert isinstance(destroy(object()), Destroy)
 
 
@@ -52,26 +57,31 @@ def test_a_pending_used_by_a_later_delta_in_the_same_batch_resolves(world):
     assert world.get(entity, Ref).other == "later"
 
 
-def test_a_pending_nested_inside_a_component_field_resolves():
-    class Holder(Component):
-        def __init__(self, ref):
-            self.ref = ref
+def test_a_pending_nested_inside_a_component_field_resolves_to_a_plain_id():
+    @dataclasses.dataclass(frozen=True)
+    class Holder:
+        ref: object
 
-    class Index(Component):
-        def __init__(self, by_name):
-            self.by_name = by_name
+    @dataclasses.dataclass(frozen=True)
+    class Index:
+        by_name: dict
 
     world = World()
     made = spawn(Size(1))
-    deltas = [made, spawn(Holder(made.entity)), spawn(Index({"a": made.entity, "b": (made.entity,)}))]
+    deltas = [made, spawn(Holder(made.entity)),
+             spawn(Index({"a": made.entity, "b": (made.entity,)}))]
     resolved = {}
     for d in deltas:
         d._apply(world, resolved)
     target = resolved[made.entity]
     holder = world.each(Holder)[0][1]
     index = world.each(Index)[0][1]
-    assert holder.ref == target
-    assert index.by_name == {"a": target, "b": (target,)}
+    # A `Pending` resolves to the real ENTITY at apply time (delta.py's own
+    # job); `World.attach`'s normalization, downstream of that, is what
+    # lowers it the rest of the way to a plain id before it is stored --
+    # a component field never ends up holding a live handle.
+    assert holder.ref == target.id and isinstance(holder.ref, int)
+    assert index.by_name == {"a": target.id, "b": (target.id,)}
 
 
 def test_a_pending_referenced_before_its_own_spawn_is_a_clear_error(world):
@@ -81,7 +91,7 @@ def test_a_pending_referenced_before_its_own_spawn_is_a_clear_error(world):
         attach(made.entity, Ref("too early"))._apply(world, resolved)
 
 
-def test_attach_detach_destroy_resolve_a_pending_the_same_way(world):
+def test_attach_detach_replace_remove_destroy_resolve_a_pending_the_same_way(world):
     made = spawn(Size(1))
     resolved = {}
     made._apply(world, resolved)
@@ -92,6 +102,12 @@ def test_attach_detach_destroy_resolve_a_pending_the_same_way(world):
 
     attach(made.entity, Ref("back"))._apply(world, resolved)
     assert world.get(entity, Ref).other == "back"
+
+    replace(made.entity, Ref("replaced"))._apply(world, resolved)
+    assert world.get(entity, Ref).other == "replaced"
+
+    remove(made.entity, Ref("replaced"))._apply(world, resolved)
+    assert world.get(entity, Ref) is None
 
     destroy(made.entity)._apply(world, resolved)
     assert not world.alive(entity)

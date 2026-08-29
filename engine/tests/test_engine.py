@@ -2,6 +2,7 @@
 and any number of channels attached to it -- see `ugm.engine`'s own
 docstring for the contract a channel has to keep."""
 
+import dataclasses
 import threading
 import time
 
@@ -10,10 +11,11 @@ import pytest
 from ugm.delta import destroy, detach, spawn
 from ugm.engine import BROADCAST, Engine
 from ugm.loop import Loop
-from ugm.world import Component, Reply, Said
+from ugm.world import Reply, Said
 
 
-class Ping(Component):
+@dataclasses.dataclass(frozen=True)
+class Ping:
     pass
 
 

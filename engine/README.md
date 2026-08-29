@@ -1,5 +1,15 @@
 # UGM
 
+⚠⚠ **`facts.py`/`arbitration.py`/`request.py` are ON HOLD, 2026-08-29.**
+The core (`world.py`/`delta.py`/`loop.py`/`engine.py`/`save.py`) was
+rewritten to plain dataclass components, several per entity, and
+primitives-only fields — see `docs/TODO.md`. The three files below do not
+currently import against that core, are not imported by `ugm/__init__.py`,
+and their tests are skipped (`pytest.importorskip`) rather than fixed,
+pending a decision on whether a `fact`/`state`/`deny` vocabulary belongs in
+this package at all, or only as a separate, optional pattern library. Read
+what follows as history until that decision lands.
+
 **An entity-component world, a loop that runs systems over it, and one
 thread to run a session on.**
 
@@ -23,6 +33,7 @@ ugm/
   save.py         the world as JSON: entities are ints, components are values
   facts.py        the vocabulary systems say things in: relations as components
   arbitration.py  several systems, one contested decision, one generic reader
+  request.py      one request, any number of oblivious responders, a watchdog
 tests/
   test_world.py        identity, values, and the intersection of the two
   test_delta.py        a Pending resolves to what its own Spawn became
@@ -30,6 +41,7 @@ tests/
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
   test_arbitration.py  propose, justify, veto, rank, commit -- and a tie refused
+  test_request.py      request, respond, complete -- fulfilled or timed out
 DECISION_PATTERNS.md   why arbitration.py is shaped the way it is
 ```
 
@@ -100,6 +112,19 @@ domain built on `World` and `Loop` alone. None of that is imported here;
 this package does not know `harneskills` exists.
 
 ## History
+
+**A request/response protocol, 2026-08-29.** `request.py` extracted the
+other pattern `docs/TODO.md` had been asking for since before this package's
+own split: a rule deposits a request (a `details` entity, characterized by
+ordinary facts and listed in one row of `request(hub, details)`), any number
+of responders `respond`/`complete` on it without knowing about each other or
+the asker, and one generic `watch()` retires it -- `fulfilled` once every
+responder that started has finished, `timed_out` if a tick budget (widened by
+a responder's own `extend()`) runs out first. It is `arbitration.commit`'s
+counterpart for a different shape of question ("did everyone answer" rather
+than "who won"), and the one place either module fires on a clock rather
+than a change: ageing the counter *is* the observable a silent, hung, or
+simply absent responder needs someone to notice.
 
 This is `ugm` a second time. The first `universal-graph-machine` was a
 graph substrate `harneskills` was a terminal onto — a corpus format, a

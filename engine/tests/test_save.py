@@ -1,79 +1,88 @@
-"""What the state file promises: the same world, ids and all, next time."""
+"""What the state file promises: the same world, ids and all, next time.
 
+⚠ The `__ugm_save__`/`module:factory(arg)` mechanism this file used to test
+(a class minted by `ugm.facts.relation()` naming its own factory so `save`
+could find it) is gone along with `facts.py`'s quarantine -- see
+`docs/TODO.md`. `_kind()` only ever resolves `module:ClassName` now.
+"""
+
+import dataclasses
 import json
+from typing import Any
 
 import pytest
 
 from ugm import save
-from ugm.world import Component, World
+from ugm.world import World
 
 
-class Folder(Component):
-    def __init__(self, path):
-        self.path = path
+@dataclasses.dataclass(frozen=True)
+class Folder:
+    path: str
 
 
-class Contents(Component):
-    def __init__(self):
-        self.by_name = {}
+@dataclasses.dataclass(frozen=True)
+class Contents:
+    by_name: dict = dataclasses.field(default_factory=dict)
 
 
-class Entry(Component):
-    def __init__(self, folder, name):
-        self.folder = folder
-        self.name = name
+@dataclasses.dataclass(frozen=True)
+class Entry:
+    folder: int
+    name: str
 
 
-class Stale(Component):
+@dataclasses.dataclass(frozen=True)
+class Stale:
     pass
 
 
-class Odd(Component):
-    def __init__(self, value):
-        self.value = value
+@dataclasses.dataclass(frozen=True)
+class Odd:
+    value: Any
 
 
 def peopled():
     """A world shaped like the fs domain's: a folder holding entries, each
     pointing back at it, and an index keyed by name."""
     w = World()
-    folder = w.spawn(Folder("/tmp/notes"), Contents())
-    index = w.get(folder, Contents).by_name
+    folder = w.spawn(Folder("/tmp/notes"))
+    by_name = {}
     for name in ("a.txt", "b.bin"):
-        index[name] = w.spawn(Entry(folder, name))
-    w.attach(index["a.txt"], Stale())
-    return w, folder, index
+        by_name[name] = w.spawn(Entry(folder, name)).id
+    w.attach(folder, Contents(by_name))
+    w.attach(w.entity(by_name["a.txt"]), Stale())
+    return w, folder, by_name
 
 
 def roundtrip(w):
     fresh = World()
-    assert save.load(fresh, json.loads(json.dumps(save.dump(w)))) == []
+    records = [json.loads(json.dumps(r)) for r in save.dump(w)]
+    assert save.load(fresh, records) == []
     return fresh
 
 
 # --- the round trip ---------------------------------------------------
 
-def test_everything_comes_back_with_the_same_ids(monkeypatch):
-    w, folder, index = peopled()
+def test_everything_comes_back_with_the_same_ids():
+    w, folder, by_name = peopled()
     back = roundtrip(w)
     assert [e.id for e in back.entities()] == [e.id for e in w.entities()]
     assert back.get(folder, Folder) == Folder("/tmp/notes")
-    assert back.has(index["a.txt"], Stale) and not back.has(index["b.bin"], Stale)
+    assert (back.has(back.entity(by_name["a.txt"]), Stale)
+           and not back.has(back.entity(by_name["b.bin"]), Stale))
 
 
 def test_a_reference_still_points_at_the_same_entity():
-    w, folder, index = peopled()
+    w, folder, by_name = peopled()
     back = roundtrip(w)
     # The relationship, and the hand-kept index that holds entities as
-    # values, are the two ways this can go wrong. Both are the point.
-    #
-    # By id, not by handle: a handle carries which world it belongs to,
-    # and one from the old world is deliberately not equal to one from
-    # the new -- that is what stops two worlds' entities colliding.
-    assert back.get(index["b.bin"], Entry).folder.id == folder.id
-    assert back.get(index["b.bin"], Entry).folder.world is back
-    assert ({n: e.id for n, e in back.get(folder, Contents).by_name.items()}
-            == {n: e.id for n, e in index.items()})
+    # values, are the two ways this can go wrong. Both are the point --
+    # and both are now plain ints, not handles, so there is no `.world`
+    # left to check: the whole reason a stored reference cannot silently
+    # point into the wrong world is that it never held one.
+    assert back.get(back.entity(by_name["b.bin"]), Entry).folder == folder.id
+    assert back.get(folder, Contents).by_name == by_name
 
 
 def test_the_counter_resumes_above_every_restored_id():
@@ -85,23 +94,22 @@ def test_the_counter_resumes_above_every_restored_id():
 
 
 def test_a_destroyed_highest_entity_does_not_free_its_id():
-    w, _, index = peopled()
-    w.destroy(index["b.bin"])
+    w, _, by_name = peopled()
+    w.destroy(w.entity(by_name["b.bin"]))
     assert roundtrip(w).spawn().id == 4
 
 
 def test_a_component_is_rebuilt_without_calling_its_init():
-    # `Entry(folder, name)` takes positional arguments that are not its
-    # field names, and nothing could call it; the fields are what comes
-    # back.
-    w, _, index = peopled()
-    entry = roundtrip(w).get(index["a.txt"], Entry)
-    assert (entry.name, entry.folder.id) == ("a.txt", 1)
+    # A dataclass's constructor takes its fields in declaration order, but
+    # rebuilding never calls it -- the fields are what comes back.
+    w, _, by_name = peopled()
+    entry = roundtrip(w).get(w.entity(by_name["a.txt"]), Entry)
+    assert (entry.name, entry.folder) == ("a.txt", 1)
 
 
 @pytest.mark.parametrize("value", [
     None, True, 17, 1.5, "text", [], [1, "two", None], {"k": [1, 2]},
-    (1, 2), {"nested": {"deep": (1, [2, {"$notallowed": 0}.get("x", 3)])}}])
+    (1, 2), {"nested": {"deep": (1, [2, 3])}}])
 def test_the_field_types_a_component_may_hold(value):
     w = World()
     entity = w.spawn(Odd(value))
@@ -119,20 +127,20 @@ def test_an_empty_world_round_trips_to_an_empty_world():
 
 
 # --- what it refuses to pretend ---------------------------------------
+#
+# ⚠ A set, an arbitrary object, or a dict with a non-string key are
+# already refused by `World.attach` itself now -- see `test_world.py` --
+# so `save.dump` never even sees them. The one thing left that is
+# genuinely THIS format's own business is `$tuple`, its own reserved
+# marker for a value `World` already accepted.
 
-@pytest.mark.parametrize("value, complaint", [
-    ({1, 2}, "cannot save a set"),
-    (object(), "cannot save an object"),
-    ({1: "int key"}, "must be a string"),
-    ({"$entity": 3}, "may not start with '$'"),
-])
-def test_a_field_it_cannot_write_is_named_not_mangled(value, complaint):
+
+def test_a_reserved_KEY_is_named_not_mangled():
     w = World()
-    w.spawn(Odd(value))
+    w.spawn(Odd({"$tuple": 3}))
     with pytest.raises(save.SaveError) as raised:
         save.dump(w)
-    assert complaint.replace("an object", "a object") in str(
-        raised.value).replace("an object", "a object")
+    assert "may not start with '$'" in str(raised.value)
     assert "Odd.value" in str(raised.value)
 
 
@@ -146,10 +154,13 @@ def test_loading_wants_an_empty_world():
 
 def test_a_component_whose_class_is_gone_is_skipped_and_named():
     w, folder, _ = peopled()
-    data = save.dump(w)
-    data["entities"][0]["components"][0]["type"] = "ugm.world:NoSuchThing"
+    records = save.dump(w)
+    folder_record = next(r for r in records
+                         if r.get("entity") == folder.id
+                         and r.get("type", "").endswith(":Folder"))
+    folder_record["type"] = "ugm.world:NoSuchThing"
     back = World()
-    problems = save.load(back, data)
+    problems = save.load(back, records)
     assert len(problems) == 1 and "NoSuchThing" in problems[0]
     # The entity keeps everything else it carried.
     assert back.get(folder, Contents) is not None
@@ -157,10 +168,10 @@ def test_a_component_whose_class_is_gone_is_skipped_and_named():
 
 
 def test_a_state_file_from_another_version_is_not_guessed_at():
-    data = save.dump(World())
-    data["version"] = 99
+    records = save.dump(World())
+    records[0]["version"] = 99
     back = World()
-    assert "version" in save.load(back, data)[0]
+    assert "version" in save.load(back, records)[0]
     assert len(back) == 0
 
 
@@ -185,17 +196,18 @@ def test_writing_makes_the_directory_and_replaces_atomically(tmp_path):
     path = tmp_path / "deep" / "down" / "world.json"
     save.write(w, str(path))
     save.write(w, str(path))                      # again, over the top
-    assert json.loads(path.read_text(encoding="utf-8"))["next"] == 3
+    header = json.loads(path.read_text(encoding="utf-8").splitlines()[0])
+    assert header["next"] == 3
     assert not (tmp_path / "deep" / "down" / "world.json.tmp").exists()
 
 
 def test_written_and_read_back_is_the_same_world(tmp_path):
-    w, folder, index = peopled()
+    w, folder, by_name = peopled()
     path = str(tmp_path / "world.json")
     save.write(w, path)
     back = World()
     assert save.read(back, path) == []
-    assert back.get(index["a.txt"], Entry).folder.id == folder.id
+    assert back.get(back.entity(by_name["a.txt"]), Entry).folder == folder.id
 
 
 def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
@@ -209,74 +221,22 @@ def test_the_file_is_the_same_bytes_on_every_platform(tmp_path):
     assert path.read_bytes().endswith(b"\n")
 
 
-# --- a class that was never written down -------------------------------
-#
-# ⚠⚠ `facts.relation("for_stmt")` MAKES its class with `type()`, so `getattr`
-# cannot find it. Every one of these used to be a named problem and a dropped
-# component: a whole world of facts saved perfectly and came back empty.
-
-
-def test_a_MADE_class_round_trips_as_the_same_interned_class():
-    """⭐ Not a copy of it. `relation` interns, so what comes back IS what the
-    live world is using — a copy would be a twin that nothing matches."""
-    from ugm.facts import Facts, relation
-
-    f = Facts()
-    n = f.node("n")
-    f.fact("name", n, f.word("loop"))
-
-    world = World()
-    assert save.load(world, save.dump(f.world)) == []
-    restored = world.get(world._adopt(n.id), relation("name"))
-    assert restored is not None, "the relation came back at all"
-    assert type(restored) is relation("name"), "and it is THE class, not a twin"
-    assert len(restored.rows) == 1
-
-
-def test_a_made_class_is_written_as_a_factory_call_not_a_name():
-    from ugm.facts import Facts
-
-    f = Facts()
-    f.fact("for_stmt", f.node("n"))
-    written = {c["type"] for e in save.dump(f.world)["entities"]
-              for c in e["components"]}
-    assert "ugm.facts:relation(for_stmt)" in written
-    assert "ugm.facts:for_stmt" not in written, "the name getattr cannot resolve"
-
-
-def test_a_relation_named_after_a_MODULE_ATTRIBUTE_is_still_itself():
-    """⚠⚠ This used to raise `TypeError` out of `load` and cost the SESSION.
-
-    `ugm.facts` imports `spawn` and `attach` at module level, a domain is free to
-    call a relation either, and `ugm.facts:spawn` resolved by name got the
-    function — which `object.__new__` then died on. A factory call cannot
-    collide with a module's attributes, because no `__qualname__` has a paren.
-    """
-    from ugm.facts import Facts, relation
-
-    f = Facts()
-    n = f.node("n")
-    for name in ("spawn", "attach", "relation", "Facts"):
-        f.fact(name, n)
-
-    world = World()
-    assert save.load(world, save.dump(f.world)) == []
-    for name in ("spawn", "attach", "relation", "Facts"):
-        assert world.get(world._adopt(n.id), relation(name)) is not None, name
+def test_one_line_per_record_is_what_makes_it_JSONL():
+    w, folder, by_name = peopled()
+    records = save.dump(w)
+    # Header, plus one line per component instance -- Folder, Contents,
+    # two Entry, one Stale -- nothing nested inside another.
+    assert records[0] == {"version": save.VERSION, "next": w._next}
+    assert len(records) == 1 + 5
 
 
 def test_a_type_that_names_a_NON_CLASS_is_a_problem_not_a_crash():
-    """The promise is that a bad state file costs you the component, not the
-    session. It did not cover this until the check existed."""
+    """The promise is that a bad state file costs you the component, not
+    the session."""
     world = World()
-    problems = save.load(world, {"version": 1, "next": 2, "entities": [
-        {"id": 1, "components": [{"type": "ugm.save:VERSION", "fields": {}}]}]})
+    problems = save.load(world, [
+        {"version": save.VERSION, "next": 2},
+        {"entity": 1, "type": "ugm.save:VERSION", "fields": {}},
+    ])
     assert len(problems) == 1 and "not a class" in problems[0]
     assert len(world) == 1, "the entity survives, having lost that component"
-
-
-def test_a_factory_that_RAISES_is_a_problem_not_a_crash():
-    world = World()
-    problems = save.load(world, {"version": 1, "next": 2, "entities": [
-        {"id": 1, "components": [{"type": "ugm.save:_kind(nope)", "fields": {}}]}]})
-    assert len(problems) == 1

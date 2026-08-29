@@ -62,14 +62,10 @@ def realizes_closure(f: Facts):
     """
 
     def system(world) -> None:
-        for option, held in list(world.each(Realizes)):
-            for (property_,) in [r for r in held.rows if len(r) == 1]:
-                for row in f.of("realizes", property_):
-                    if len(row) != 1:
-                        continue
-                    further = row[0]
-                    if not f.holds("realizes", option, further):
-                        f.fact("realizes", option, further)
+        for option, property_ in f.each("realizes", arity=1):
+            for further in f.objects("realizes", property_):
+                if not f.holds("realizes", option, further):
+                    f.fact("realizes", option, further)
 
     return system
 
@@ -88,8 +84,8 @@ def commit(f: Facts):
     """
 
     def system(world) -> None:
-        for occasion, held in world.each(Candidate):
-            options = [row[0] for row in held.rows if len(row) == 1]
+        for occasion in f.subjects("candidate"):
+            options = f.objects("candidate", occasion)
             if not options:
                 continue
             ruled_out = {row[0] for row in f.of("ruled_out", occasion) if len(row) == 2}
@@ -126,9 +122,18 @@ def commit(f: Facts):
 #: in isolation from arbitration, or vice versa.
 DESCRIPTIONS = {"realizes_closure": realizes_closure, "commit": commit}
 
+#: ⭐ What each piece could possibly have anything to do with -- see
+#: `Loop`'s note on `watches`. Neither reader has a reason to run before
+#: anyone has proposed anything: `realizes_closure` only ever reads
+#: `realizes` rows, `commit` only ever reads `candidate` ones. A session
+#: that never calls this domain at all now costs these two systems nothing
+#: but the one `world.populated()` check per tick, not a walk of an empty
+#: query every time.
+WATCHES = {"realizes_closure": "realizes", "commit": "candidate"}
+
 
 def install(loop, f: Facts, only=None) -> None:
     """Register the pieces. `only` names a subset, for a control."""
     for name, make in DESCRIPTIONS.items():
         if only is None or name in only:
-            f.system(make(f), name=f"arbitration.{name}")
+            f.system(make(f), name=f"arbitration.{name}", watches=WATCHES[name])

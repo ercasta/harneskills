@@ -1,6 +1,7 @@
 """What the terminal promises: a line in, a reply out, and nothing else
 printed unasked -- now as one channel over a running `Engine`."""
 
+import dataclasses
 import io
 import threading
 import time
@@ -10,7 +11,7 @@ import pytest
 from ugm.delta import spawn
 from ugm.engine import Engine
 from ugm.loop import Loop
-from ugm.world import Component, Reply, Said
+from ugm.world import Reply, Said
 
 from harneskills import repl
 
@@ -100,7 +101,8 @@ def drive(loop, typed, timeout=2.0, **engine_kwargs):
     return out.getvalue().splitlines()
 
 
-class Secret(Component):
+@dataclasses.dataclass(frozen=True)
+class Secret:
     pass
 
 

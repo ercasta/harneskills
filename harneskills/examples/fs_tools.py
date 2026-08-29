@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import os
 
-from ugm.delta import attach, destroy, detach, spawn
+from ugm.delta import attach, destroy, detach, replace, spawn
 
 from . import model as fs
 
@@ -78,7 +78,10 @@ def _observe(path: str, entity, name: str):
         # system that needs a `Size` simply does not match it.
         return [], None, None, False
     is_dir = os.path.isdir(full)
-    deltas = [attach(entity, fs.Size(st.st_size), fs.Modified(int(st.st_mtime)))]
+    # `replace`, not `attach`: an entity is re-`_observe`d every listing,
+    # and `Size`/`Modified` are meant to stay singular -- `attach` would
+    # leave the old value standing alongside the new one.
+    deltas = [replace(entity, fs.Size(st.st_size), fs.Modified(int(st.st_mtime)))]
     deltas.append(attach(entity, fs.IsDir()) if is_dir else detach(entity, fs.IsDir))
     return deltas, st.st_size, int(st.st_mtime), is_dir
 
@@ -112,7 +115,12 @@ def ls(w, folder):
         entries.append((entity, name, size, modified, is_dir))
     for gone in sorted(set(by_name) - set(names)):
         deltas.append(destroy(by_name.pop(gone)))
-    deltas.append(attach(folder, fs.Contents(by_name)))
+    # `replace`: the folder's index is meant to stay singular, and this is
+    # THE place `Contents` module note calls out -- computed fresh every
+    # time, never edited in place, and comparing before it stores (which
+    # `replace` still does) is what makes re-listing an unchanged folder
+    # cost a dict comparison rather than a revision.
+    deltas.append(replace(folder, fs.Contents(by_name)))
     return deltas, entries, len(names)
 
 
@@ -151,8 +159,11 @@ def rename(w, entity, new_name: str):
     by_name.pop(entry.name, None)
     by_name[new_name] = entity
     was = entry.name
-    deltas = [attach(entry.folder, fs.Contents(by_name)),
-             attach(entity, fs.Entry(entry.folder, new_name))]
+    # Both `replace`: the entity already carries an `Entry` (the one being
+    # renamed) and `entry.folder` already carries a `Contents` -- `attach`
+    # would leave the pre-rename value standing alongside the new one.
+    deltas = [replace(entry.folder, fs.Contents(by_name)),
+             replace(entity, fs.Entry(entry.folder, new_name))]
     observed, _size, _modified, _is_dir = _observe(path, entity, new_name)
     deltas.extend(observed)
     deltas.append(spawn(fs.Renamed(entity, was)))
