@@ -145,3 +145,20 @@ or not its author meant it to" (`loopingrules`'s own
 match rule and a generation rule that can both apply to the same span
 become two responders proposing against one occasion, judged by one small,
 domain-owned arbiter — not a bug about which one happened to run first.
+This one is still open — `pystrider`'s own recognizer/generator rivalry
+has not been rebuilt on this shape yet.
+
+**It also happened a second, different way, sooner.** `pystrider` and
+`fs` did not just each apply this pattern to their OWN occasions
+independently -- they ended up needing to propose against the SAME
+one (`help`, `help files`, `help python`: see `harneskills.help`). That
+is a harder case than the one predicted above: an occasion and its
+proposers all live in ONE domain's `install()` here, so "every
+responder already had its turn" is free (list position). Once a
+SECOND, independently-installed domain can also propose, nothing
+guarantees that any more -- see `harneskills.help`'s own docstring,
+"The chokepoint," and `loopingrules.world.arbitrate`, which is what
+makes "has everyone proposed yet" answerable without a registry of
+who might. `fs.arbitrate_parse`, below, still doesn't need it, and the
+distinction between the two is the thing worth reading both docstrings
+for.

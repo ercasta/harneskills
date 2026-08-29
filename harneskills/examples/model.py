@@ -229,7 +229,16 @@ class ParseRequest:
     """One typed line, waiting for a reading -- the occasion several
     responder rules propose against, in the SAME tick `fs.hear` spawns
     it. `said` is the original `Said` entity, kept so the winner can
-    destroy it (a loser never gets the chance to)."""
+    destroy it (a loser never gets the chance to).
+
+    ⚠ Private to this module, on purpose -- `fs.arbitrate_parse` resolves
+    an occasion the SAME tick a candidate is spawned, which is only
+    correct because every possible proposer is `fs`'s own, registered
+    in `fs.RULES`, ahead of the arbiter, in one file this module's
+    author controls. Importing this into a second domain reintroduces
+    the exact race `harneskills.help`/`loopingrules.world.arbitrate`
+    exist to close -- see `arbitrate_parse`'s own docstring before
+    doing that."""
 
     said: int
     text: str

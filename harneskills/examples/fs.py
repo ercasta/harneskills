@@ -2,7 +2,7 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Twenty rules over `model.py`'s components and `fs_tools.py`'s three
+Twenty-one rules over `model.py`'s components and `fs_tools.py`'s three
 tools. Read top to bottom, they are the order they run in each tick, and
 that order is the whole of the plan::
 
@@ -10,6 +10,7 @@ that order is the whole of the plan::
     hear_answer         Said ("y"/"n")              -> resolves the wish being Asked
     propose_*           ParseRequest                -> a candidate: Proposal + a goal
     arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
+    propose_help_files   HelpTopic                   -> a candidate, on a DIFFERENT occasion
     list_dir            ListWanted                  -> the tools, and Listed
     reply_listing       Listed                      -> one line per entry, then a count
     approve             RenameWish+NeedsApproval, not yet Asked  -> a question
@@ -23,7 +24,12 @@ that order is the whole of the plan::
 
 `propose_*` is five rules, not one: `propose_list`, `propose_big`,
 `propose_stale`, `propose_typed_rename`, `propose_set_big_floor` -- one
-per shape of line this domain currently understands.
+per shape of line this domain currently understands. `propose_help_files`
+is a sixth, but not one of them: it proposes against
+`harneskills.help.HelpTopic`, not this module's own `ParseRequest` -- see
+that module's own docstring for why `help` needed a shared occasion
+`pystrider` could also propose against, where "show"/"stale"/"rename"/
+"big" never have.
 
 `approve` sits ABOVE the rule that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
@@ -121,6 +127,7 @@ import time
 
 from loopingrules.world import Proposal, Reply, Said
 
+from ..help import HelpAnswer, HelpTopic
 from . import fs_tools
 from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
                     Focus, Folder, FoundBig, FoundStale, HuntHere, IsDir,
@@ -454,6 +461,20 @@ def arbitrate_parse(w):
     nobody proposed a reading, so its `Said` is left exactly as it was,
     to be reported unheard once the world settles
     (`loopingrules.engine.drain`).
+
+    ⚠⚠ Resolves on FIRST sight, same tick a candidate is spawned -- safe
+    ONLY because every rule that could ever propose against a
+    `ParseRequest` is `hear` or a `propose_*` above, all registered
+    together in THIS module's own `RULES`, in this file, before this
+    rule. That invariant is verified, not assumed -- see this repo's
+    README, "Proposal moves to the engine," for how. If `ParseRequest`
+    is EVER imported into a second, separately-installed domain, this
+    rule stops being correct: a proposer registered by an `install()`
+    this one has no ordering relationship with could run AFTER this
+    already resolved (or destroyed) the occasion it needed to answer.
+    `harneskills.help.arbitrate_help` is what that looks like once it is
+    true, and `loopingrules.world.arbitrate` is the fix -- switch to it
+    rather than re-deriving the same chokepoint by hand.
     """
     for request, req in w.each(ParseRequest):
         candidates = [entity for entity, proposal in w.each(Proposal)
@@ -467,6 +488,26 @@ def arbitrate_parse(w):
         w.detach(winner, Proposal)
         w.destroy(request)
         w.destroy(req.said)
+
+
+# -- answering `help files` ------------------------------------------------
+# A SECOND occasion this domain proposes against -- `harneskills.help`'s,
+# not this module's own `ParseRequest` -- because `pystrider` needed to
+# compete for the SAME `help` line and neither domain is the other's to
+# import from. See `harneskills.help`'s own docstring for the shape and
+# why `arbitrate_help` needs `loopingrules.world.arbitrate` where
+# `arbitrate_parse`, just above, does not.
+
+def propose_help_files(w):
+    """`help files` -> a candidate carrying this domain's own summary.
+    Never touches `ParseRequest` -- `help` is claimed by
+    `harneskills.help.hear_help` before `fs.hear` ever sees the line."""
+    for occasion, topic in w.each(HelpTopic):
+        if topic.topic == "files":
+            w.spawn(Proposal(occasion.id), HelpAnswer(
+                "show file(s) [in DIR], show big [in DIR], "
+                "stale [in DIR] after N days, rename OLD to NEW, "
+                "big over N bytes"))
 
 
 def list_dir(w):
@@ -634,6 +675,7 @@ RULES = (hear, hear_answer,
            propose_list, propose_big, propose_stale, propose_typed_rename,
            propose_set_big_floor,
            arbitrate_parse,
+           propose_help_files,
            list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            apply_big_floor,

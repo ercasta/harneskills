@@ -821,3 +821,52 @@ broken here (`pystrider.domain:install`, a standing domain in this
 machine's own `~/.config/harneskills/config`, fails to import with `./engine`
 gone). `pystrider` migrating its own dependency to `../loopingrules` the
 same way this package just did is a separate, un-started piece of work.
+
+**`harneskills.help`, 2026-08-29.** `../pystrider` migrated its own
+dependency to `../loopingrules` separately (its own `pyproject.toml`
+records it), which is what made this possible: `help`, `help files`,
+`help python` are one occasion, answered by whichever of `fs` (`help
+files`), `pystrider` (`help python`), or neither (`help`, bare) actually
+recognizes the topic -- `docs/intake processing.md`'s propose/arbitrate/
+act shape, worked for the first time across TWO independently-installed
+domains rather than inside one.
+
+`fs`'s own `ParseRequest`/`arbitrate_parse` could not be reused --
+deliberately fs's own, and `pystrider` has no more reason to import it
+than `fs` has to import one of `pystrider`'s goals. What is shared is a
+new module, `harneskills.help` (`HelpTopic` the occasion, `HelpAnswer`
+the goal), and a new function, `loopingrules.world.arbitrate` -- see
+that module's own docstring, "The chokepoint," for the real problem it
+solves: `fs.arbitrate_parse` can resolve an occasion the instant a
+candidate is spawned because every possible proposer is `fs`'s own,
+listed ahead of it in one ordered tuple; `harneskills.help.arbitrate_help`
+cannot make that assumption, because `pystrider.propose_help_python` is
+registered by a wholly separate `install()` with no ordering
+relationship to it at all. `arbitrate` closes that gap structurally --
+an occasion is never resolved on the tick it is (re)noticed, only on a
+second sighting, by which point every rule watching for it, at any
+priority, from any domain, has already had one turn that tick -- rather
+than by priority numbers two domains would have to agree on and nobody
+would ever check.
+
+⚠ This is a NEW dependency, the reverse direction from every other one
+in this project: `pystrider` now imports `harneskills.help`. Both
+`ParseRequest`'s and `arbitrate_parse`'s own docstrings gained an
+explicit warning for it -- importing `ParseRequest` into a second domain
+would reintroduce exactly the race `arbitrate` exists to close, and nothing
+stops that except the docstring saying so.
+
+Tests: `tests/test_help.py` (harneskills, 7 cases: the default answer,
+an unanswered topic, settling leaves nothing behind, `fs` answering
+regardless of which `install()` ran first, and confirmation that `help
+files` never costs `fs` a spawned-and-discarded `ParseRequest`) and
+`loopingrules/tests/test_world.py` (4 cases pinning `arbitrate` itself:
+no resolution on first sighting, first-registered-wins on the second,
+an unanswered occasion reported only once ripe, and two different
+occasion types never interfering). `pystrider`'s own
+`tests/test_domain_help.py` (3 cases) needs `harneskills` on
+`PYTHONPATH` now, alongside `loopingrules` -- both sibling checkouts,
+neither pinned in `pyproject.toml`, for the reason already given for
+`loopingrules` alone. Verified against the real, running
+`harneskills.service` too: `help`, `help files`, `help python`, and
+`help nonsense` typed at the live tmux session, not just the suites.
