@@ -26,7 +26,7 @@ that order is the whole of the plan::
 `propose_stale`, `propose_typed_rename`, `propose_set_big_floor` -- one
 per shape of line this domain currently understands. `propose_help_files`
 is a sixth, but not one of them: it proposes against
-`harneskills.help.HelpTopic`, not this module's own `ParseRequest` -- see
+`loopingrules.help.HelpTopic`, not this module's own `ParseRequest` -- see
 that module's own docstring for why `help` needed a shared occasion
 `pystrider` could also propose against, where "show"/"stale"/"rename"/
 "big" never have.
@@ -125,9 +125,9 @@ from __future__ import annotations
 import os
 import time
 
+from loopingrules.help import HelpAnswer, HelpTopic
 from loopingrules.world import Proposal, Reply, Said
 
-from ..help import HelpAnswer, HelpTopic
 from . import fs_tools
 from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
                     Focus, Folder, FoundBig, FoundStale, HuntHere, IsDir,
@@ -472,7 +472,7 @@ def arbitrate_parse(w):
     rule stops being correct: a proposer registered by an `install()`
     this one has no ordering relationship with could run AFTER this
     already resolved (or destroyed) the occasion it needed to answer.
-    `harneskills.help.arbitrate_help` is what that looks like once it is
+    `loopingrules.help.arbitrate_help` is what that looks like once it is
     true, and `loopingrules.world.arbitrate` is the fix -- switch to it
     rather than re-deriving the same chokepoint by hand.
     """
@@ -491,17 +491,17 @@ def arbitrate_parse(w):
 
 
 # -- answering `help files` ------------------------------------------------
-# A SECOND occasion this domain proposes against -- `harneskills.help`'s,
+# A SECOND occasion this domain proposes against -- `loopingrules.help`'s,
 # not this module's own `ParseRequest` -- because `pystrider` needed to
 # compete for the SAME `help` line and neither domain is the other's to
-# import from. See `harneskills.help`'s own docstring for the shape and
+# import from. See `loopingrules.help`'s own docstring for the shape and
 # why `arbitrate_help` needs `loopingrules.world.arbitrate` where
 # `arbitrate_parse`, just above, does not.
 
 def propose_help_files(w):
     """`help files` -> a candidate carrying this domain's own summary.
     Never touches `ParseRequest` -- `help` is claimed by
-    `harneskills.help.hear_help` before `fs.hear` ever sees the line."""
+    `loopingrules.help.hear_help` before `fs.hear` ever sees the line."""
     for occasion, topic in w.each(HelpTopic):
         if topic.topic == "files":
             w.spawn(Proposal(occasion.id), HelpAnswer(

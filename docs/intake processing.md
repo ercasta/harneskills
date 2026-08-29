@@ -151,14 +151,20 @@ has not been rebuilt on this shape yet.
 **It also happened a second, different way, sooner.** `pystrider` and
 `fs` did not just each apply this pattern to their OWN occasions
 independently -- they ended up needing to propose against the SAME
-one (`help`, `help files`, `help python`: see `harneskills.help`). That
-is a harder case than the one predicted above: an occasion and its
-proposers all live in ONE domain's `install()` here, so "every
+one (`help`, `help files`, `help python`: see `loopingrules.help`).
+That is a harder case than the one predicted above: an occasion and
+its proposers all live in ONE domain's `install()` here, so "every
 responder already had its turn" is free (list position). Once a
 SECOND, independently-installed domain can also propose, nothing
-guarantees that any more -- see `harneskills.help`'s own docstring,
+guarantees that any more -- see `loopingrules.help`'s own docstring,
 "The chokepoint," and `loopingrules.world.arbitrate`, which is what
 makes "has everyone proposed yet" answerable without a registry of
 who might. `fs.arbitrate_parse`, below, still doesn't need it, and the
 distinction between the two is the thing worth reading both docstrings
 for.
+
+`help` itself lives in `loopingrules`, not `harneskills`, even though
+it ships rules and this repo's own engine deliberately does not --
+`pystrider` importing it from `harneskills` first, and that being the
+wrong call, is this repo's own README history now ("`harneskills.help`"
+and the entry right after it).

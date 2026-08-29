@@ -236,7 +236,7 @@ class ParseRequest:
     correct because every possible proposer is `fs`'s own, registered
     in `fs.RULES`, ahead of the arbiter, in one file this module's
     author controls. Importing this into a second domain reintroduces
-    the exact race `harneskills.help`/`loopingrules.world.arbitrate`
+    the exact race `loopingrules.help`/`loopingrules.world.arbitrate`
     exist to close -- see `arbitrate_parse`'s own docstring before
     doing that."""
 

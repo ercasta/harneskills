@@ -870,3 +870,30 @@ neither pinned in `pyproject.toml`, for the reason already given for
 `loopingrules` alone. Verified against the real, running
 `harneskills.service` too: `help`, `help files`, `help python`, and
 `help nonsense` typed at the live tmux session, not just the suites.
+
+**`harneskills.help` moves to `loopingrules.help`, 2026-08-29 (later
+that night).** The entry above shipped `pystrider` depending on
+`harneskills` -- caught the same night, and wrong: `pystrider` is
+meant to be host-agnostic, installable under any harness that runs a
+`loopingrules.Loop`, and depending on THIS one specifically (rather
+than on `loopingrules`, which it already depends on unconditionally)
+tied it to a host it should not need to know exists. `HelpTopic`,
+`HelpAnswer`, and all four rules moved to `loopingrules.help` whole --
+same names, same behavior -- and `fs.py`, `model.py`,
+`~/.config/harneskills/config`, and this repo's own tests were updated
+to import from there instead. `pystrider.domain` no longer imports
+anything from `harneskills`, confirmed by running its full suite with
+`harneskills` entirely absent from `PYTHONPATH`.
+
+What this repo's own `docs/intake processing.md` predicted survives
+the correction -- `ParseRequest`/`arbitrate_parse` are still fs's own,
+`help` is still answered by three responders across two domains, the
+chokepoint still holds -- only WHERE the shared occasion lives changed.
+`tests/test_help.py` here is down to 4 cases now (the ones that
+actually exercise `fs`); the 3 that did not moved to `loopingrules`'s
+own suite, which is the only repo that should have had them in the
+first place. 160 -> 157 passing here, 100 -> 103 in `loopingrules`,
+131 unchanged in `pystrider` (same count, `harneskills.help` and
+`loopingrules.help` swapped one for one). Restarted the live service
+and re-typed all four `help` variants against the corrected code, not
+just the suites.

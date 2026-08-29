@@ -1,12 +1,14 @@
-"""`help`, end to end: the shared occasion, the third (default) responder,
-an unanswered topic, and a real domain (`fs`) answering alongside it --
-the propose/arbitrate/act shape working across two `install()`s that
-know nothing about each other or this module's own order."""
+"""`help files`, answered by `fs` alongside `loopingrules.help`'s own
+occasion -- the propose/arbitrate/act shape working across two
+`install()`s that know nothing about each other or this module's own
+order. `help`/`help python` on their own (no `fs` involved) are
+`loopingrules`'s own `tests/test_help.py`, since the occasion lives
+there now."""
 
+from loopingrules import help as help_
 from loopingrules.loop import Loop
-from loopingrules.world import Proposal, Reply, Said
+from loopingrules.world import Reply, Said
 
-from harneskills import help as help_
 from harneskills.examples import fs
 
 
@@ -19,32 +21,9 @@ def say(loop, line):
             if w.destroy(entity) or True]
 
 
-def test_a_bare_help_gets_the_default_answer():
-    loop = Loop()
-    help_.install(loop)
-    assert say(loop, "help") == ["try: help files, help python"]
-
-
-def test_a_topic_nobody_answers_is_said_not_swallowed():
-    loop = Loop()
-    help_.install(loop)
-    assert say(loop, "help therealm") == ["no help for 'therealm'"]
-
-
-def test_settling_leaves_nothing_behind():
-    loop = Loop()
-    help_.install(loop)
-    say(loop, "help")
-    w = loop.world
-    assert w.each(help_.HelpTopic) == []
-    assert w.each(Proposal) == []
-    assert w.each(help_.HelpAnswer) == []
-    assert w.each(Said) == []
-
-
 def test_help_files_is_answered_by_fs_not_the_default(tmp_path):
     # Two `install()`s, in this order, neither aware of the other --
-    # `harneskills.help`'s own high-priority `hear_help` still claims
+    # `loopingrules.help`'s own high-priority `hear_help` still claims
     # the line before `fs.hear` ever sees it, regardless of which
     # domain installed first.
     loop = Loop()
