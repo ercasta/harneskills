@@ -159,6 +159,51 @@ def test_a_finding_is_a_component_on_the_file_it_is_about(folder):
     assert [e.id for e, _ in w.each(Big)] == [named(w, here, "huge.bin")]
 
 
+# --- a typed preference, changing a knob -------------------------------
+
+def test_a_typed_preference_moves_the_floor(folder):
+    loop = session(folder)
+    assert say(loop, "big over 6000 bytes") == ["big now means over 6000 bytes"]
+    assert loop.world.the(fs.BigFloor).bytes == 6000
+    assert say(loop, "show big in %s" % folder) == [
+        "nothing over 6000 bytes in %s" % folder]
+
+
+def test_the_env_var_seeds_a_brand_new_world_only(folder, monkeypatch):
+    monkeypatch.setenv("HARNESKILLS_FS_BIG_FLOOR", "42")
+    loop = session(folder)
+    assert loop.world.the(fs.BigFloor).bytes == 42
+
+
+def test_the_floor_is_replaced_not_duplicated(folder):
+    loop = session(folder)
+    w = loop.world
+    before = len(w.each(fs.BigFloor))
+    say(loop, "big over 500 bytes")
+    assert len(w.each(fs.BigFloor)) == before == 1
+    say(loop, "show big in %s" % folder)
+    # Still the OLD floor's finding cleared and the new one applied --
+    # not two floors disagreeing.
+    assert w.the(fs.BigFloor).bytes == 500
+
+
+def test_a_moved_floor_survives_a_restart_env_does_not_override_it(
+        folder, tmp_path, monkeypatch):
+    from ugm import save
+    monkeypatch.setenv("HARNESKILLS_FS_BIG_FLOOR", "1")
+    path = str(tmp_path / "world.json")
+    loop = session(folder)
+    say(loop, "big over 6000 bytes")
+    save.write(loop.world, path)
+
+    w = restart(folder, path).world
+    # The knob is a CONCLUSION now -- the env var only ever seeds a world
+    # that had nothing yet, so it does not silently override a rule's own
+    # write on every restart.
+    assert w.the(fs.BigFloor).bytes == 6000
+    assert len(w.each(fs.BigFloor)) == 1
+
+
 # --- stale, proposed, approved ----------------------------------------
 
 def test_stale_finds_the_old_file_and_asks_before_touching_it(folder):

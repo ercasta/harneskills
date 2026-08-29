@@ -760,3 +760,19 @@ just another writer of the same component -- `w.replace`, the same call
 now attaches a `BigFloor` instead of a three-field `Session` -- 35 tests,
 still green, `Session` down to the two fields (`cwd`, `now`) it always
 should have had.
+
+**A typed preference, 2026-08-29.** `docs/tunable knobs.md`'s "a rule can
+change a knob costs nothing new" claim is now a worked rule, not just an
+argument: `big over N bytes` moves `BigFloor` end to end.
+`propose_set_big_floor` is a fifth `propose_*` responder, spawning a
+candidate carrying the WISH (`SetBigFloor`, a new goal component -- the
+same split `RenameWish`/`Entry` already makes, so `apply_big_floor` stays
+the one place allowed to `w.replace` `BigFloor` itself); arbitration treats
+it exactly like any other typed line, no special case. Confirmed by four
+new tests in `test_fs.py` (39 now, still green): the floor actually moves
+and is reflected in the very next `show big`; it is `w.replace`d on the
+SAME entity `install()` seeded, never duplicated; a moved floor survives a
+restart un-clobbered by `$HARNESKILLS_FS_BIG_FLOOR` (the seed-only-if-absent
+policy holding up under an env var that actively disagrees with it); and
+the env var still does seed a genuinely first-run world. Nothing surprised
+on the way -- which was the point of building it.

@@ -56,18 +56,28 @@ accumulate across restarts the same way `Stale`/`Big`/`Focus` already do.
 Because `BigFloor` is ordinary state, "the user expressed a preference that
 changes a knob" is not a new mechanism — it is one more rule writing one
 more component, mechanically identical to `_focus` moving `Focus` or
-`do_rename` detaching `Stale`:
+`do_rename` detaching `Stale`. Built and confirmed end to end: `big over N
+bytes` is one more `propose_*` responder (`propose_set_big_floor`, spawning
+a candidate carrying `SetBigFloor`, arbitrated the same as every other
+typed line) and one small `apply_*` rule that does the actual write:
 
 ```python
-w.replace(floor_entity, BigFloor(2000))
+def apply_big_floor(w):
+    for entity, wish in w.each(SetBigFloor, without=Proposal):
+        w.destroy(entity)
+        floor, _tag = w.first(BigFloor)
+        w.replace(floor, BigFloor(wish.bytes))
+        _say(w, "big now means over %d bytes" % wish.bytes)
 ```
 
-Whether that rule is reached directly (a typed command, no different from
-`rename a to b` needing no approval) or through the propose/arbitrate
-pattern (`docs/intake processing.md`) — if recognizing the preference could
-ever collide with another responder in the same tick — is the same
-decision as any other typed command; nothing about `BigFloor` forces either
-choice.
+`SetBigFloor` is the wish, not the knob itself — the same split
+`RenameWish`/`Entry` already makes, and for the same reason: `apply_*` is
+the ONE place allowed to touch `BigFloor`, so `w.the(BigFloor)` never has
+to wonder whether it means one thing or several. No surprises turned up
+wiring this end to end: the candidate carries the wish, arbitration treats
+it exactly like any other goal, and `w.replace` on the SAME entity
+`install()` seeded is the whole of "change the knob" -- one entity, one
+value, replaced, never a second `BigFloor` competing with the first.
 
 ## Where this goes: learned, not just told
 

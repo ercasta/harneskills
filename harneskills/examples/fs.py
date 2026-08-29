@@ -2,7 +2,7 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Eighteen rules over `model.py`'s components and `fs_tools.py`'s three
+Twenty rules over `model.py`'s components and `fs_tools.py`'s three
 tools. Read top to bottom, they are the order they run in each tick, and
 that order is the whole of the plan::
 
@@ -18,7 +18,12 @@ that order is the whole of the plan::
     do_rename           RenameWish (without NeedsApproval)  -> the tool
     focus_big           HuntHere                    -> BigHunt, aimed at the folder you mean
     flag_big            BigHunt                     -> Big on every large entry, FoundBig
+    apply_big_floor      SetBigFloor                -> BigFloor REPLACED -- a knob, not a goal
     reply_big / reply_renamed / reply_failed         -> what you are told
+
+`propose_*` is five rules, not one: `propose_list`, `propose_big`,
+`propose_stale`, `propose_typed_rename`, `propose_set_big_floor` -- one
+per shape of line this domain currently understands.
 
 `approve` sits ABOVE the rule that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
@@ -117,7 +122,7 @@ from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
                     Focus, Folder, FoundBig, FoundStale, HuntHere, IsDir,
                     ListWanted, Listed, Modified, NeedsApproval, Parsing,
                     ParseRequest, Proposal, RenameWish, Renamed, Session,
-                    Size, Stale, StaleHunt)
+                    SetBigFloor, Size, Stale, StaleHunt)
 
 BIG_BYTES = 1000
 STALE_PREFIX = "stale-"
@@ -127,7 +132,7 @@ DAY = 86400
 # autocorrect will pull a typo towards. Both spellings of `file` are here
 # because both are understood; nothing has to be corrected into the other.
 WORDS = ("show", "file", "files", "big", "in", "stale", "after", "day",
-         "days", "rename", "to")
+         "days", "rename", "to", "over", "bytes")
 
 
 # -- getting hold of things ----------------------------------------------
@@ -405,6 +410,29 @@ def propose_typed_rename(w):
             w.spawn(Proposal(request), Failed("rename %s" % old, "no such file here"))
 
 
+def propose_set_big_floor(w):
+    """`big over N bytes` -> a candidate carrying `SetBigFloor`. A typed
+    preference is not an automation's guess -- no `NeedsApproval`, same as
+    `propose_typed_rename` above: nothing holds what a person asked for
+    outright.
+
+    Worked example for `docs/tunable knobs.md`: this is the FIRST rule
+    that changes a knob rather than just reading one, and it costs
+    exactly what that note said it would -- one more `propose_*`
+    responder, one more small `apply_*` rule, and `BigFloor` itself does
+    not change shape at all.
+    """
+    for request, req in w.each(ParseRequest):
+        split = _split(req.text)
+        if split is None:
+            continue
+        words, low = split
+        if (len(words) != 4 or low[0] != "big" or low[1] != "over"
+                or low[3] != "bytes" or not low[2].isdigit()):
+            continue
+        w.spawn(Proposal(request), SetBigFloor(int(low[2])))
+
+
 def arbitrate_parse(w):
     """One winner per `ParseRequest` -- first candidate registered wins,
     every other candidate for the same request is destroyed outright.
@@ -522,6 +550,19 @@ def flag_big(w):
                 % (floor, w.get(hunt.folder, Folder).path))
 
 
+def apply_big_floor(w):
+    """SetBigFloor -> `BigFloor` REPLACED, not spawned -- the one place
+    allowed to touch it once `install` has seeded it, so `w.the(BigFloor)`
+    keeps meaning exactly one thing. Nothing that already carries `Big`
+    is revisited: this changes what counts as big from now on, not what
+    already got called that."""
+    for entity, wish in w.each(SetBigFloor, without=Proposal):
+        w.destroy(entity)
+        floor, _tag = w.first(BigFloor)
+        w.replace(floor, BigFloor(wish.bytes))
+        _say(w, "big now means over %d bytes" % wish.bytes)
+
+
 # -- what you are told ----------------------------------------------------
 # Every rule above decides what HAPPENED. These decide what a person
 # reading the prompt hears about it, and they are the ones to edit for a
@@ -585,9 +626,11 @@ def approve(w):
 
 RULES = (hear, hear_answer,
            propose_list, propose_big, propose_stale, propose_typed_rename,
+           propose_set_big_floor,
            arbitrate_parse,
            list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
+           apply_big_floor,
            reply_big, reply_renamed, reply_failed)
 
 

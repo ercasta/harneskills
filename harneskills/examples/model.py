@@ -170,6 +170,16 @@ class Big:
 # -- what is being asked for ---------------------------------------------
 
 @dataclass(frozen=True)
+class SetBigFloor:
+    """A wish, not the knob itself -- the same split `RenameWish`/`Entry`
+    already makes. `fs.apply_big_floor` is the one place that reads this
+    AND writes `BigFloor`; nothing else may `w.spawn(BigFloor(...))` a
+    second one, or `w.the(BigFloor)` stops meaning anything."""
+
+    bytes: int
+
+
+@dataclass(frozen=True)
 class ListWanted:
     folder: int
 
