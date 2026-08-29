@@ -83,20 +83,19 @@ this package does not know `harneskills` exists.
 
 ## History
 
-**Facts/arbitration/request removed, 2026-08-30.** `facts.py`,
-`arbitration.py` and `request.py` -- ON HOLD since the previous entry,
-below -- are deleted outright, along with their tests. Nothing in this
-repository ever imported any of the three (`harneskills.examples.fs`
-writes its own components throughout), they had not imported themselves
-since the core rewrite two entries down, and there was no third path
-between "port them" and "delete them" left worth keeping open: the
-standing argument for a generic arbitration reader
+**Facts/arbitration/request removed, 2026-08-29 (afternoon).** `facts.py`,
+`arbitration.py` and `request.py` -- ON HOLD since the core rewrite below
+left them unable to import -- are deleted outright, along with their
+tests. Nothing in this repository ever imported any of the three
+(`harneskills.examples.fs` writes its own components throughout), and
+there was no third path between "port them" and "delete them" left worth
+keeping open: the standing argument for a generic arbitration reader
 (`DECISION_PATTERNS.md`, kept) does not need the CODE to survive, only
 a domain that wants it to reach for the pattern by hand.
 
-**Deltas removed, 2026-08-30.** A rule calls `world.spawn`/`attach`/
-`replace`/`detach`/`remove`/`destroy` directly again, the same as
-`install()` always did — see "Deltas, 2026-08-27" below for what this
+**Deltas removed, 2026-08-29 (midday).** A rule calls `world.spawn`/
+`attach`/`replace`/`detach`/`remove`/`destroy` directly again, the same
+as `install()` always did — see "Deltas, 2026-08-27" below for what this
 undoes. The guarantee deltas bought (a rule that forgot the contract and
 touched the world anyway got caught, named, on `loop.errors`) had already
 stopped holding in practice: three rules in `harneskills`'s own test suite
@@ -113,35 +112,51 @@ functions — is deleted outright, not deprecated; `Loop.tick` is
 correspondingly a few lines shorter, with nothing left to apply after
 calling a rule and nothing left to check for a rule having "cheated."
 
-**Priority ordering, 2026-08-29.** `Loop.rule(fn, priority=N)` -- higher
-runs first, ties (the default, `0`, included) keep registration order.
-The one deliberate override of "registration order is the whole of
-arbitration": two rules `watches`-ing the same component type, installed
-by two domains that do not know about each other and so cannot agree on
-which one to register first. A rule is still one entry in `self.rules`
-regardless of how many types it watches, so declaring `priority` changes
-WHEN it runs, never how many times.
+**Rules, not systems, 2026-08-29 (late morning).** `Loop.system`/
+`Facts.system` → `Loop.rule`/`Facts.rule`, `self.systems` → `self.rules`,
+the `/systems` REPL command → `/rules`, `fs.py`'s `SYSTEMS` tuple →
+`RULES`, and every docstring, comment, and README that said "a system is
+a function that..." now says "a rule." "Filesystem," `SystemExit`,
+`systemd`, and TOML's own `[build-system]` table name are the same words
+for something else entirely and stayed put.
 
-**Rules, not systems, 2026-08-29.** `Loop.system`/`Facts.system` →
-`Loop.rule`/`Facts.rule`, `self.systems` → `self.rules`, the `/systems`
-REPL command → `/rules`, `fs.py`'s `SYSTEMS` tuple → `RULES`, and every
-docstring, comment, and README that said "a system is a function that..."
-now says "a rule." "Filesystem," `SystemExit`, `systemd`, and TOML's own
-`[build-system]` table name are the same words for something else
-entirely and stayed put.
+**Priority ordering, 2026-08-29 (mid-morning).** `Loop.rule(fn,
+priority=N)` -- higher runs first, ties (the default, `0`, included) keep
+registration order. The one deliberate override of "registration order
+is the whole of arbitration": two rules `watches`-ing the same component
+type, installed by two domains that do not know about each other and so
+cannot agree on which one to register first. A rule is still one entry
+in `self.rules` regardless of how many types it watches, so declaring
+`priority` changes WHEN it runs, never how many times.
 
-**A request/response protocol, 2026-08-29.** `request.py` extracted the
-other pattern `docs/overview.md` had been asking for since before this package's
-own split: a rule deposits a request (a `details` entity, characterized by
-ordinary facts and listed in one row of `request(hub, details)`), any number
-of responders `respond`/`complete` on it without knowing about each other or
-the asker, and one generic `watch()` retires it -- `fulfilled` once every
-responder that started has finished, `timed_out` if a tick budget (widened by
-a responder's own `extend()`) runs out first. It is `arbitration.commit`'s
-counterpart for a different shape of question ("did everyone answer" rather
-than "who won"), and the one place either module fires on a clock rather
-than a change: ageing the counter *is* the observable a silent, hung, or
-simply absent responder needs someone to notice.
+**A core rewrite and a request/response protocol, 2026-08-29 (morning).**
+Two changes landed in one commit, because the second turned out to
+depend on the first: `world.py`'s storage moved to plain
+`@dataclasses.dataclass` components (no more `Component` base class),
+several per entity (`attach` appends and dedupes, `replace`/`remove`
+join `detach` for the singular and one-value cases, `get_all`/`all` read
+the plural one), and primitives-only fields (a reference to another
+entity is its plain id, never a live handle -- `World.attach` enforces
+this on the way in). `ugm.save` became JSONL, version 2, dropping the
+`{"$entity": ...}` wrapper a plain int no longer needs.
+
+Built the same day on top of it: `request.py` extracted the other
+pattern `docs/overview.md` had been asking for since before this
+package's own split -- a rule deposits a request (a `details` entity,
+characterized by ordinary facts and listed in one row of `request(hub,
+details)`), any number of responders `respond`/`complete` on it without
+knowing about each other or the asker, and one generic `watch()` retires
+it -- `fulfilled` once every responder that started has finished,
+`timed_out` if a tick budget (widened by a responder's own `extend()`)
+runs out first. It was `arbitration.commit`'s counterpart for a
+different shape of question ("did everyone answer" rather than "who
+won"), and the one place either module fired on a clock rather than a
+change: ageing the counter *is* the observable a silent, hung, or simply
+absent responder needs someone to notice. `Loop.rule`'s `watches=` --
+skip calling a rule's body entirely on a tick where none of its declared
+component types exist yet -- landed alongside it, for the same reason:
+a request nobody is answering still has to be checked on, every tick,
+without every OTHER rule in a large ruleset paying for that.
 
 This is `ugm` a second time. The first `universal-graph-machine` was a
 graph substrate `harneskills` was a terminal onto — a corpus format, a

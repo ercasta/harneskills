@@ -669,7 +669,7 @@ behaviorally, one test helper's one-line signature fixed
 is the whole of what a change to the mutation mechanism should cost the
 domain's own tests.
 
-**Deltas removed, 2026-08-30.** The entry above is history now, not the
+**Deltas removed, 2026-08-29.** The entry above is history now, not the
 rule: `world.spawn`/`attach`/`replace`/`detach`/`remove`/`destroy` (the
 last two joined the four above it in a separate rewrite of `ugm.world`
 itself -- see `engine/README.md`'s own History for that one) are called

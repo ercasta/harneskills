@@ -1,6 +1,6 @@
 # Decision patterns — agency without a backward-chaining engine
 
-⚠⚠ **`ugm/arbitration.py` was DELETED, 2026-08-30** — see this repo's own
+⚠⚠ **`ugm/arbitration.py` was DELETED, 2026-08-29** — see this repo's own
 `README.md` History, "Facts/arbitration/request removed." Nothing here
 was ever exclusive to that module: this note is the reasoning for a
 generic arbitration reader, and it stands regardless of whether one is
