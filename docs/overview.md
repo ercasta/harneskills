@@ -16,7 +16,7 @@
   handle passed in and refuses anything else, naming the field, so this
   is enforced once, not documented and hoped for. `world.entity(id)`
   turns an id back into a handle.
-- **`ugm.save` is JSONL**, one record per line (a header, then one per
+- **`loopingrules.save` is JSONL**, one record per line (a header, then one per
   component instance, or a bare `{"entity": id}`) — version 2, and a
   version-1 file is refused by name rather than mis-parsed. The
   `__ugm_save__`/`module:factory(arg)` mechanism (for a class minted at
@@ -29,9 +29,9 @@
   rule because there is nothing left to apply. A "proposed" action is a
   component in the world (`fs.py`'s `RenameWish` + `NeedsApproval`), not
   a lower-level notion of "not yet real" underneath every write — see
-  `engine/README.md`'s "Deltas removed" History entry for the argument in
-  full, including a live example of the old contract silently not
-  holding in this repo's own test suite.
+  `loopingrules`'s own README.md's "Deltas removed" History entry for the
+  argument in full, including a live example of the old contract silently
+  not holding in this repo's own test suite.
 - **"Systems" are "rules," everywhere** — `Loop.system`/`Facts.system` →
   `Loop.rule`/`Facts.rule`, `loop.systems` → `loop.rules`, the `/systems`
   REPL command → `/rules`. Not a rename for its own sake: "system" doubled
@@ -53,9 +53,9 @@ hold**: nothing in this repository ever imported any of the three
 (`harneskills.examples.fs` writes its own components and its own
 queries throughout), and once `world.py`'s rewrite left them unable to
 import at all, there was no reason left to keep the code around waiting
-on a decision the code itself couldn't inform. `engine/DECISION_PATTERNS.md`
-keeps the argument for a generic arbitration reader; it is a design note
-now, not a description of shipped code.
+on a decision the code itself couldn't inform. `loopingrules`'s own
+`DECISION_PATTERNS.md` keeps the argument for a generic arbitration
+reader; it is a design note now, not a description of shipped code.
 
 ## Open
 
@@ -63,6 +63,12 @@ now, not a description of shipped code.
   keeps repeating by hand (`for entity, x in w.each(Kind): ...`) might
   want its own sugar; open whether that's a `World`/`Loop` method or a
   recipe left to a domain.
-- Moreover: i want the ugm engine in this repo to replace the ../ugm
+- ~~Moreover: i want the ugm engine in this repo to replace the ../ugm
   engine (but i thought we already migrated it to ../ugm) — unresolved;
-  needs a look at what `../ugm` currently is before this is actionable.
+  needs a look at what `../ugm` currently is before this is
+  actionable.~~ Resolved, 2026-08-29: `../ugm` is `../loopingrules` now
+  (carved out, renamed, published as its own repo). `./engine` (this
+  repo's own embedded, pre-rename copy, importable as `ugm`) is deleted
+  outright, not kept as a fallback — `dependencies = ["loopingrules"]`
+  in `pyproject.toml`, `../loopingrules` a sibling checkout. See
+  `README.md`'s Status, "The private `ugm` is gone."

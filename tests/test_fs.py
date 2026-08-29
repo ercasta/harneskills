@@ -11,8 +11,8 @@ import time
 
 import pytest
 
-from ugm.loop import Loop
-from ugm.world import Reply, Said
+from loopingrules.loop import Loop
+from loopingrules.world import Reply, Said
 
 from harneskills.examples import fs
 from harneskills.examples.model import (Asked, Big, Contents, Entry, Focus,
@@ -189,7 +189,7 @@ def test_the_floor_is_replaced_not_duplicated(folder):
 
 def test_a_moved_floor_survives_a_restart_env_does_not_override_it(
         folder, tmp_path, monkeypatch):
-    from ugm import save
+    from loopingrules import save
     monkeypatch.setenv("HARNESKILLS_FS_BIG_FLOOR", "1")
     path = str(tmp_path / "world.json")
     loop = session(folder)
@@ -345,7 +345,7 @@ def test_the_world_settles_after_every_line(folder):
 def restart(folder, path):
     """What `python -m harneskills` does on the way up: an empty world,
     the file read into it, and only then the domain installed."""
-    from ugm import save
+    from loopingrules import save
     loop = Loop()
     assert save.read(loop.world, path) == []
     fs.install(loop, cwd=lambda: folder)
@@ -353,7 +353,7 @@ def restart(folder, path):
 
 
 def test_the_world_survives_a_restart(folder, tmp_path):
-    from ugm import save
+    from loopingrules import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "show file")
@@ -369,7 +369,7 @@ def test_the_world_survives_a_restart(folder, tmp_path):
 
 
 def test_what_was_concluded_survives_too(folder, tmp_path):
-    from ugm import save
+    from loopingrules import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "stale after 7 days")     # found, proposed, asked
@@ -382,7 +382,7 @@ def test_what_was_concluded_survives_too(folder, tmp_path):
 
 
 def test_the_folder_you_were_looking_at_survives(folder, tmp_path):
-    from ugm import save
+    from loopingrules import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "show file")
@@ -393,7 +393,7 @@ def test_the_folder_you_were_looking_at_survives(folder, tmp_path):
 
 
 def test_installing_over_a_restored_world_replaces_only_the_session(folder, tmp_path):
-    from ugm import save
+    from loopingrules import save
     from harneskills.examples.model import Session as SessionComponent
     path = str(tmp_path / "world.json")
     loop = session(folder)
@@ -411,7 +411,7 @@ def test_installing_over_a_restored_world_replaces_only_the_session(folder, tmp_
 
 
 def test_a_restarted_world_does_not_reuse_an_id_something_points_at(folder, tmp_path):
-    from ugm import save
+    from loopingrules import save
     path = str(tmp_path / "world.json")
     loop = session(folder)
     say(loop, "show file")

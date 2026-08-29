@@ -20,15 +20,16 @@ winning candidate's own component is now real, and every rule that consumes
 it can finally see it, because it was written all along to skip anything
 still tagged `Proposal`.
 
-`Proposal` is `ugm.world.Proposal` — a shared tag, not a domain's own
-component, and not something `fs.py` (or any domain) defines any more.
-Two domains cannot recognize or correctly skip each other's unresolved
-candidates without agreeing what the tag means, the same reason `Said`
-and `Reply` live there rather than in whichever domain happened to need
-a channel first. Nothing else here moved: the OCCASION type (`fs.py`'s
-`ParseRequest`) and the ARBITER (`arbitrate_parse`) stay in the domain
-that owns the conflict they resolve — see engine/README.md's History,
-"Proposal, a shared tag."
+`Proposal` is `loopingrules.world.Proposal` — a shared tag, not a
+domain's own component, and not something `fs.py` (or any domain)
+defines any more. Two domains cannot recognize or correctly skip each
+other's unresolved candidates without agreeing what the tag means, the
+same reason `Said` and `Reply` live there rather than in whichever
+domain happened to need a channel first. Nothing else here moved: the
+OCCASION type (`fs.py`'s `ParseRequest`) and the ARBITER
+(`arbitrate_parse`) stay in the domain that owns the conflict they
+resolve — see `loopingrules`'s own README.md's History, "Proposal, a
+shared tag."
 
 ```
 ParseRequest              -- the occasion (fs.py's own type; call it
@@ -67,10 +68,11 @@ imagined one. Concretely:
   Nothing about the pattern requires deciding this in advance for every
   future occasion a domain might ever have.
 - **A generic, reusable "judge" module is not the goal**, and this repo has
-  already tried and reversed that call once — `engine/DECISION_PATTERNS.md`
-  is the design note for a fuller `candidate`/`ruled_out`/`ranked`/`winner`
-  vocabulary, built as `ugm/arbitration.py`, and then deleted because nothing
-  in this repository ever ended up needing it as *generic* infrastructure
+  already tried and reversed that call once — `loopingrules`'s own
+  `DECISION_PATTERNS.md` is the design note for a fuller
+  `candidate`/`ruled_out`/`ranked`/`winner` vocabulary, built as
+  `ugm/arbitration.py`, and then deleted because nothing in this
+  repository ever ended up needing it as *generic* infrastructure
   (`README.md`'s "Facts/arbitration/request removed" History entry). Reuse
   that vocabulary's NAMES when a domain's own arbiter grows past "first
   wins" — a `ruled_out`/`ranked` split is a good idea worth stealing — but
@@ -138,7 +140,8 @@ candidate, held until something outside the tick resolves it).
 `../pystrider` is the second domain expected to use this shape, for the
 place its own note already named the failure: "ANY rule family that decides
 for itself whether to fire has an opinion about registration order, whether
-or not its author meant it to" (`engine/DECISION_PATTERNS.md`). A pattern
+or not its author meant it to" (`loopingrules`'s own
+`DECISION_PATTERNS.md`). A pattern
 match rule and a generation rule that can both apply to the same span
 become two responders proposing against one occasion, judged by one small,
 domain-owned arbiter — not a bug about which one happened to run first.

@@ -43,7 +43,7 @@ whichever goal it thinks the line asked for (`ListWanted`, `StaleHunt`,
 `RenameWish`, even a `Failed` for "recognized, but factually wrong");
 `arbitrate_parse` picks one winner and destroys the rest, in the SAME
 tick, because rule order already puts every `propose_*` rule ahead of it
-in the list above. `Proposal` itself is `ugm.world.Proposal` now, not
+in the list above. `Proposal` itself is `loopingrules.world.Proposal` now, not
 this module's -- shared vocabulary any domain proposing against an
 occasion tags with, the same as `Said`/`Reply`; `ParseRequest` (the
 occasion) and `arbitrate_parse` (the arbiter) stay here, because they
@@ -88,7 +88,7 @@ lower-level notion the engine has to know about.
 
 Asking is a component too. `approve` cannot call a function and wait for
 your answer -- the world may have other channels attached, and nothing
-here is allowed to stop for one of them (see `ugm.engine`) -- so
+here is allowed to stop for one of them (see `loopingrules.engine`) -- so
 it spawns the question as an ordinary `Reply` and marks the wish `Asked`.
 `hear_answer` is the other half: a bare "y" or "n", on whichever channel
 it arrives, resolves whichever wish is currently `Asked`. The suspension
@@ -119,7 +119,7 @@ from __future__ import annotations
 import os
 import time
 
-from ugm.world import Proposal, Reply, Said
+from loopingrules.world import Proposal, Reply, Said
 
 from . import fs_tools
 from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
@@ -290,7 +290,7 @@ def hear(w):
     and the loop would never settle.
 
     Any channel -- `said.channel` is whichever terminal or socket a person
-    is attached as (`ugm.engine`'s own concern), and `"user"` is
+    is attached as (`loopingrules.engine`'s own concern), and `"user"` is
     not one of those any more, it is where a reply meant for everyone
     goes. This domain does not (yet) answer only the one who asked; every
     reply it makes is `Reply("user", ...)`, heard by whoever is
@@ -446,12 +446,14 @@ def arbitrate_parse(w):
     above recognize disjoint shapes of line, so real rivalry has never
     actually happened here. A domain that hits real rivalry grows a
     real judge (a priority field, `ranked`-style scoring -- see
-    `engine/DECISION_PATTERNS.md`) at THAT rule, not here; "first wins"
-    stays correct for every occasion nobody has taught to compete yet.
+    `loopingrules`'s own `DECISION_PATTERNS.md`) at THAT rule, not here;
+    "first wins" stays correct for every occasion nobody has taught to
+    compete yet.
 
     A request with no candidates at all is destroyed too, quietly --
     nobody proposed a reading, so its `Said` is left exactly as it was,
-    to be reported unheard once the world settles (`ugm.engine.drain`).
+    to be reported unheard once the world settles
+    (`loopingrules.engine.drain`).
     """
     for request, req in w.each(ParseRequest):
         candidates = [entity for entity, proposal in w.each(Proposal)
@@ -610,7 +612,7 @@ def approve(w):
 
     ⚠ This used to call `ask(prompt)` and block for the answer -- the
     right thing for one terminal owning the loop, and wrong the moment
-    more than one channel can be attached (`ugm.engine`): nothing
+    more than one channel can be attached (`loopingrules.engine`): nothing
     a rule does may stop the world for everyone else. The fix is not a
     trick, it is the thing this whole domain already does for every other
     goal -- suspend as a component (`Asked`), and let the answer arrive as
@@ -647,7 +649,7 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     here -- see `model.Session`.
 
     ⚠ The world handed in may already hold everything this domain knew
-    last time (`ugm.save`), and reconciling that is this
+    last time (`loopingrules.save`), and reconciling that is this
     function's job -- nothing in the harness can tell a restored entity
     from a fresh one. Two different policies apply, for two different
     kinds of thing:

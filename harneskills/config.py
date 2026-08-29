@@ -74,7 +74,7 @@ def config_path() -> str:
 
 
 def state_path() -> str:
-    """Where the world is kept between runs (see `ugm.save`).
+    """Where the world is kept between runs (see `loopingrules.save`).
 
     `$HARNESKILLS_STATE` wins outright. Otherwise the STATE location --
     `~/.local/state/harneskills/world.json`, or `%LOCALAPPDATA%` on

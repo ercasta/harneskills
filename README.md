@@ -3,9 +3,9 @@
 **An entity-component world, a loop that runs rules over it, and a
 prompt onto both.**
 
-Only one dependency, and it is the engine underneath this: `ugm`, embedded
-here under `./engine` (its distribution root -- `import ugm` either way)
-as its own package. An *entity* is an identity with no data — `#7`. A
+Only one dependency, and it is the engine underneath this: `loopingrules`,
+a sibling repo (`../loopingrules`), not a subdirectory of this one --
+`import loopingrules`. An *entity* is an identity with no data — `#7`. A
 *component* is data with no identity — `Size(bytes=4300)`. A *rule* is
 a Python function that asks for the entities carrying a set of components
 and walks them. The *loop* calls every rule, in order, over and over,
@@ -14,11 +14,15 @@ something to say. Everything else here is arranged around that loop, not
 underneath it:
 
 ```
-engine/ugm/world.py     entities, components, and the queries rules ask.
-engine/ugm/loop.py      call every rule, in order, until nothing changes.
-engine/ugm/engine.py    ONE thread that runs the loop; any number of channels
-                          attached to it -- a terminal, several WebSockets.
-engine/ugm/save.py      the world on disk, so a restart is not an amnesia.
+../loopingrules/    world.py    entities, components, and the queries
+                                  rules ask.
+                     loop.py     call every rule, in order, until
+                                  nothing changes.
+                     engine.py   ONE thread that runs the loop; any
+                                  number of channels attached to it --
+                                  a terminal, several WebSockets.
+                     save.py     the world on disk, so a restart is
+                                  not an amnesia.
 
 harneskills/repl.py     a terminal channel -- stdin in, prose out.
 harneskills/serve.py    a WebSocket channel -- JSON in, JSON out.
@@ -178,8 +182,8 @@ installed at once will both have one called `hear`.
 ## The world
 
 `World`'s own writing methods -- what a rule calls directly, the same as
-`ugm.engine` and a domain's own `install()` already do outside any rule's
-turn:
+`loopingrules.engine` and a domain's own `install()` already do outside
+any rule's turn:
 
 ```python
 entry = w.spawn(Entry(folder, "notes.txt"), Size(2048))   # a new entity
@@ -219,7 +223,7 @@ entities — a folder, an entry, the session — are not.
 
 ```python
 import dataclasses
-from ugm.world import Reply, Said
+from loopingrules.world import Reply, Said
 
 @dataclasses.dataclass(frozen=True)
 class Kettle:
@@ -486,25 +490,15 @@ again.
 
 ## Layout
 
-```
-engine/                  the ugm engine, its own package (see engine/README.md).
-                          Not "ugm/" -- a bare directory of that name here
-                          would shadow the installed package for anyone
-                          running python -m harneskills from this root; see
-                          the note in this repo's own pyproject.toml.
-  pyproject.toml
-  ugm/
-    world.py              entities, components, and the queries rules ask
-    loop.py                every rule, in order, until nothing changes
-    engine.py             one thread, the world, and the channels attached to it
-    save.py                 the world as JSONL: entities are ints, components are values
-  tests/
-    test_world.py         identity, values, and the intersection of the two
-    test_loop.py           order, settling, the budget, a rule that raises
-    test_engine.py        one world, several channels, a broadcast reply
-    test_save.py            the same world, ids and all, next time
+The engine -- `world.py`, `loop.py`, `engine.py`, `save.py` -- is not
+under this directory any more. It is `../loopingrules`, a sibling repo
+(see its own README for its layout and DECISION_PATTERNS.md); this repo
+depends on it (`pyproject.toml`) the same as it would depend on anything
+published, with `pythonpath = ["../loopingrules"]` letting `pytest` find
+it from a checkout without an install:
 
-harneskills/             doors onto a ugm world, and the domain worked over one
+```
+harneskills/             doors onto a loopingrules world, and the domain worked over one
   repl.py                a Terminal channel -- stdin in, prose out
   ws.py                  the WebSocket handshake and frame codec, both directions
   serve.py               a Listener channel -- spawns a Connection per socket
@@ -527,22 +521,22 @@ tests/
 
 ## Scope
 
-**The engine bakes in no domain.** `engine/ugm/world.py`, `loop.py`,
-`engine.py` and `save.py` ship no rules, no components beyond `Said`
-and `Reply`, no vocabulary and no knowledge of files -- and no channel,
-no transport, no config-file format either; those are `harneskills`'s to
-define, on top of an engine that has never heard of any of them.
-`config.py` names callables, it does not ship any, and imports nothing it
-names. `harneskills/examples/` is different on purpose: worked
-demonstrations, each an `install(loop)` the config or the command line
-can name, never imported unless you ask for it by name.
+**The engine bakes in no domain.** `loopingrules/world.py`, `loop.py`,
+`engine.py` and `save.py` ship no rules, no components beyond `Said`,
+`Reply`, and `Proposal`, no vocabulary and no knowledge of files -- and
+no channel, no transport, no config-file format either; those are
+`harneskills`'s to define, on top of an engine that has never heard of
+any of them. `config.py` names callables, it does not ship any, and
+imports nothing it names. `harneskills/examples/` is different on
+purpose: worked demonstrations, each an `install(loop)` the config or
+the command line can name, never imported unless you ask for it by name.
 
 **The harness bakes in no transport either.** A domain's rules read and
 write the `World`; whether that world is reached by one terminal, by a
 terminal and three WebSocket clients, or headless with no terminal at
 all, is a decision `harneskills/__main__.py` makes from the command line,
-not something `fs.py`, any other domain, or `ugm` itself has to know
-about or plan for.
+not something `fs.py`, any other domain, or `loopingrules` itself has to
+know about or plan for.
 
 ## Status
 
@@ -789,3 +783,41 @@ and `arbitrate_parse` (fs's own arbiter) did NOT move -- see
 distinction this rests on: vocabulary two domains must share is core,
 behavior they never share is not. `pytest` is unchanged at 152 checks in
 this package, 96 (was 95) in `engine`'s own suite.
+
+**The private `ugm` is gone, 2026-08-29 (night).** `./engine` -- this
+package's own pre-extraction, embedded copy of the engine, entry above
+included -- is deleted outright, not kept beside `../loopingrules` as a
+fallback. This package now depends on `loopingrules` (`pyproject.toml`),
+a sibling checkout at `../loopingrules`, the same repo the entry above
+already had to reach for by hand because the two were never wired
+together. Every `ugm.*` import in `harneskills/` and `tests/` is
+`loopingrules.*` now; `docs/overview.md`'s own "Open" item asking
+exactly this question -- replace the embedded engine with the sibling
+one, or keep both -- is resolved, not left standing.
+
+What did NOT change: `harneskills`'s own code. `fs.py`'s rules, `Proposal`'s
+field name, every test -- none of it touched a line, because the two
+copies were already identical (this repo carried `loopingrules`'s
+`Proposal` addition into its own `engine/ugm/world.py` by hand, the same
+day, before this entry). This is a dependency swap, not a rewrite: `pip
+uninstall ugm`, `pip install -e ../loopingrules -e .`, and `pytest` is
+still 152 checks, still green -- confirmed both with `loopingrules`
+installed editable and, separately, with only `pythonpath =
+["../loopingrules"]` finding it, to verify the fallback the comment in
+`pyproject.toml` claims actually holds.
+
+⚠⚠ Cross-references inside OLDER entries above (`engine/README.md`,
+`engine/DECISION_PATTERNS.md`) point at a path that no longer exists in
+this repo -- left as they were, on purpose, the same policy "Deltas
+removed" already set: a past entry describes what was true when it was
+written, and gets a new entry pointing forward rather than a silent
+edit. That content is `../loopingrules`'s own README.md and
+DECISION_PATTERNS.md now.
+
+⚠ Not this repo's problem to fix, but worth naming: `../pystrider`'s own
+`pyproject.toml` documents depending on `ugm` via `PYTHONPATH` pointing
+at `../harneskills/engine` -- a path this commit removes. Confirmed
+broken here (`pystrider.domain:install`, a standing domain in this
+machine's own `~/.config/harneskills/config`, fails to import with `./engine`
+gone). `pystrider` migrating its own dependency to `../loopingrules` the
+same way this package just did is a separate, un-started piece of work.

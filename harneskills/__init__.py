@@ -1,14 +1,14 @@
-"""HarneSkills -- doors onto a `ugm` world: a terminal, any number of
-WebSocket connections, and the domains that give either one something to
-say.
+"""HarneSkills -- doors onto a `loopingrules` world: a terminal, any
+number of WebSocket connections, and the domains that give either one
+something to say.
 
     python -m harneskills harneskills.examples.fs:install
     python -m harneskills --serve harneskills.examples.fs:install   # + a WebSocket door
 
 The engine itself -- the entity-component world, the loop of rules over
-it, the one thread and the channel contract -- is `ugm`, not this
-package; see `ugm`'s own docstring. What lives here is everything that
-was never the engine's to know:
+it, the one thread and the channel contract -- is `loopingrules`, not
+this package; see `loopingrules`'s own docstring. What lives here is
+everything that was never the engine's to know:
 
 * `harneskills.repl` -- a `Terminal` channel: stdin in, prose out.
 * `harneskills.serve` / `harneskills.ws` -- a `Listener` channel and the
@@ -17,8 +17,8 @@ was never the engine's to know:
   small program with no world of its own.
 * `harneskills.config` -- which domains a session installs, and where the
   world and server files live on this platform.
-* `harneskills.__main__` -- argv, wiring an `Engine` from `ugm` around
-  whichever channels were asked for.
+* `harneskills.__main__` -- argv, wiring an `Engine` from `loopingrules`
+  around whichever channels were asked for.
 
 A DOMAIN is one callable, `install(loop)`, that registers rules and
 spawns what they read -- named on the command line or in
@@ -31,7 +31,7 @@ rule does may stop the world for a channel that is not the one asking.
 
 from __future__ import annotations
 
-from ugm import Engine, Loop, World
+from loopingrules import Engine, Loop, World
 
 from . import repl
 

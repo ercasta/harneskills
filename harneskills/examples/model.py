@@ -21,9 +21,10 @@ next tick has nothing to match and the loop settles.
 **What a typed line might mean.** `ParseRequest` is the occasion, defined
 here because it is fs's own -- no other domain has a reason to know what
 a typed line is. Several responder rules in `fs.py` each read it and may
-spawn a *candidate*: an entity tagged `ugm.world.Proposal` (a shared tag,
-not this module's -- see that module's own docstring) and carrying
-whichever of the above goals that responder thinks the line asked for.
+spawn a *candidate*: an entity tagged `loopingrules.world.Proposal` (a
+shared tag, not this module's -- see that module's own docstring) and
+carrying whichever of the above goals that responder thinks the line
+asked for.
 `arbitrate_parse` is the one generic step: pick a winner, discard the
 rest, detach `Proposal` so whatever consumes that goal (`list_dir`,
 `flag_stale`, `do_rename`, ...) finally sees it. See `docs/intake
@@ -45,12 +46,12 @@ channel, not as a return value nothing here is allowed to block for.
 
 ## Every class here is a plain, frozen dataclass
 
-`ugm.world` ships no `Component` base class to inherit -- a component is
-whatever `dataclasses.is_dataclass` says yes to. `folder`/`entry`/every
-other field that names another entity holds its plain integer id, never a
-live handle: `World.attach` lowers a handle passed in (the ergonomic thing
-to write, straight from a query) to its `.id` on the way in, so nothing
-below has to spell `.id` itself.
+`loopingrules.world` ships no `Component` base class to inherit -- a
+component is whatever `dataclasses.is_dataclass` says yes to.
+`folder`/`entry`/every other field that names another entity holds its
+plain integer id, never a live handle: `World.attach` lowers a handle
+passed in (the ergonomic thing to write, straight from a query) to its
+`.id` on the way in, so nothing below has to spell `.id` itself.
 """
 
 from __future__ import annotations
@@ -241,7 +242,7 @@ class Asked:
     channel every other reply goes out on.
 
     A tag, not a callback: nothing here blocks, because nothing in an
-    engine of several channels is allowed to (see `ugm.engine`).
+    engine of several channels is allowed to (see `loopingrules.engine`).
     `approve` asks at most one thing at a time -- a wish carrying this is
     a wish `approve` will not ask about again, so the next tick's fresh
     proposal waits its turn instead of talking over the first question.

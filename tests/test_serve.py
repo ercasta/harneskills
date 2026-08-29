@@ -10,9 +10,9 @@ import time
 
 import pytest
 
-from ugm.engine import Engine
-from ugm.loop import Loop
-from ugm.world import Reply, Said
+from loopingrules.engine import Engine
+from loopingrules.loop import Loop
+from loopingrules.world import Reply, Said
 
 from harneskills import ws
 from harneskills.serve import Listener
@@ -145,7 +145,8 @@ def test_say_gets_a_reply_and_get_gets_the_world(echoing_loop):
     client.recv()
     client.send({"get": "world"})
     world = client.recv()
-    # `ugm.save.dump`'s own shape: a list, header only for an empty world.
+    # `loopingrules.save.dump`'s own shape: a list, header only for an
+    # empty world.
     assert "world" in world and len(world["world"]) == 1
     client.close()
     stop(engine, thread)

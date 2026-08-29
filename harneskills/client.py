@@ -70,8 +70,8 @@ def _render(message: dict) -> None:
     elif "welcome" in message:
         print("  connected as %s" % message["welcome"].get("channel"))
     elif "world" in message:
-        # `ugm.save.dump`'s own shape: a header (no "entity" key) then one
-        # record per component or bare entity, already grouped
+        # `loopingrules.save.dump`'s own shape: a header (no "entity" key)
+        # then one record per component or bare entity, already grouped
         # contiguously by entity -- see that module's own docstring.
         entity_id, shown = None, []
         for record in message["world"]:
@@ -145,7 +145,7 @@ def run(host: str, port: int, token=None, stdin=None,
     `settled` is cleared before every `say`/`get` and set by `_listen`
     when a `{"settled": ...}` message comes back -- the engine's own
     signal that it has finished saying everything this settle had to say
-    (`ugm.engine`'s own note). Quitting waits for it, up to
+    (`loopingrules.engine`'s own note). Quitting waits for it, up to
     `_QUIT_GRACE`, rather than assuming a person just typed it and has all
     the time in the world.
     """

@@ -9,9 +9,9 @@ import time
 
 import pytest
 
-from ugm.engine import Engine
-from ugm.loop import Loop
-from ugm.world import Reply, Said
+from loopingrules.engine import Engine
+from loopingrules.loop import Loop
+from loopingrules.world import Reply, Said
 
 from harneskills import client
 from harneskills.serve import Listener
@@ -77,8 +77,8 @@ def test_a_client_can_talk_to_a_served_engine(served, monkeypatch):
 
 
 def test_the_wrong_token_is_reported_not_silently_ignored(monkeypatch):
-    from ugm.engine import Engine as _Engine
-    from ugm.loop import Loop as _Loop
+    from loopingrules.engine import Engine as _Engine
+    from loopingrules.loop import Loop as _Loop
 
     from harneskills.serve import Listener as _Listener
     engine = _Engine(_Loop())

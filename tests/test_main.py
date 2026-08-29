@@ -1,7 +1,7 @@
 """What the wiring promises: a domain named is a domain installed, and a
 domain that cannot be is a message rather than a dead session."""
 
-from ugm.loop import Loop
+from loopingrules.loop import Loop
 
 import harneskills.examples.fs as fs
 from harneskills.__main__ import build, install

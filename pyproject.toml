@@ -11,27 +11,20 @@ requires-python = ">=3.9"
 license = { text = "MIT" }
 keywords = ["repl", "agent", "rules", "game-loop", "world-model"]
 
-# One dependency: `ugm`, the world/loop/engine this package used to carry
-# itself -- world.py, loop.py, engine.py, save.py -- carved back out into
-# its own package, embedded here under `./engine` (its distribution root;
-# the importable package inside is still `ugm`), so a domain can depend
-# on the engine without depending on a terminal, a WebSocket door, or
-# config file conventions it has no use for. Everything under
-# `harneskills/` is a door onto that engine, or config for opening one;
-# see `engine`'s own pyproject for what it is on its own.
+# One dependency: `loopingrules` -- the world/loop/engine this package
+# used to carry itself, then embedded here under `./engine` (importable
+# as `ugm`), now its own repo (`../loopingrules`, a sibling checkout, not
+# a subdirectory of this one) so a domain can depend on the engine
+# without depending on a terminal, a WebSocket door, or config file
+# conventions it has no use for. Everything under `harneskills/` is a
+# door onto that engine, or config for opening one; see
+# `../loopingrules`'s own README for what it is on its own.
 #
-# Not `./ugm` -- a bare directory of that name here would sit on
-# `sys.path` for anyone running `python -m harneskills` from this repo's
-# root (its own `WorkingDirectory`, and what `pip install -e .`'s own
-# instructions below assume) and be found as an EMPTY implicit namespace
-# package before the editable install's own finder ever runs, shadowing
-# the real one. `engine/ugm/` is a different name at the level that is
-# ever on `sys.path`, so nothing collides.
-#
-# Not yet published anywhere -- `pip install -e ./engine -e .` from the
-# repo root for a real install. `pythonpath` below is what lets `pytest`
-# find it from this checkout without either.
-dependencies = ["ugm"]
+# Not yet published anywhere -- `pip install -e ../loopingrules -e .`
+# from the repo root, with `../loopingrules` checked out beside this
+# repo, for a real install. `pythonpath` below is what lets `pytest`
+# find it from this checkout without either, on that same assumption.
+dependencies = ["loopingrules"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0"]
@@ -43,7 +36,7 @@ harneskills-client = "harneskills.client:main"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 norecursedirs = [".venv", "__pycache__", ".git", "*.egg-info"]
-pythonpath = ["engine"]
+pythonpath = ["../loopingrules"]
 
 [tool.setuptools]
 py-modules = []

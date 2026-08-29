@@ -1,11 +1,11 @@
-"""A terminal: one channel onto a running `ugm.engine.Engine`.
+"""A terminal: one channel onto a running `loopingrules.engine.Engine`.
 
     harneskills> show file
     fs_demo.py (4096 bytes)
     ...
     12 item(s) in /home/you/notes
 
-`Terminal` is a CHANNEL, in the sense `ugm.engine` defines one: it
+`Terminal` is a CHANNEL, in the sense `loopingrules.engine` defines one: it
 reads lines, posts them to the engine, and renders whatever comes back.
 It does not run the loop, does not own the world, and does not know
 whether it is the only channel attached -- a WebSocket client
@@ -188,7 +188,7 @@ class Terminal:
         self.engine = None
         self._stop = threading.Event()
 
-    # -- the channel contract (see ugm.engine) -----------------
+    # -- the channel contract (see loopingrules.engine) -----------------
 
     def start(self, engine) -> None:
         self.engine = engine
@@ -248,7 +248,7 @@ class Terminal:
 
     def _render(self, message: dict) -> None:
         """One message from the engine, as lines for a person. Anything
-        not one of the shapes `ugm.engine` documents is printed
+        not one of the shapes `loopingrules.engine` documents is printed
         raw -- swallowing an unrecognised message is how a new one goes
         undebugged."""
         if "reply" in message:
@@ -267,9 +267,10 @@ class Terminal:
         elif "settled" in message:
             pass          # nothing to say; a richer terminal could redraw
         elif "world" in message:
-            # `ugm.save.dump`'s own shape: a header (no "entity" key) then
-            # one record per component or bare entity, already grouped
-            # contiguously by entity -- see that module's own docstring.
+            # `loopingrules.save.dump`'s own shape: a header (no "entity"
+            # key) then one record per component or bare entity, already
+            # grouped contiguously by entity -- see that module's own
+            # docstring.
             entity_id, shown = None, []
             for record in message["world"]:
                 if "entity" not in record:

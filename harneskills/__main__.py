@@ -5,7 +5,7 @@
                           [--serve[=HOST:PORT]] [--token TOKEN] [--headless]
                           [module:callable ...]
 
-A thin door onto `ugm.engine`. This file contributes nothing
+A thin door onto `loopingrules.engine`. This file contributes nothing
 beyond wiring: a fresh `Engine` around a `Loop` (which brings its own
 world), the domains to install, a `harneskills.repl.Terminal` attached to
 it -- and, if asked, a `harneskills.serve.Listener` attached alongside it,
@@ -43,7 +43,7 @@ AND starting the world over -- rules already registered cannot be
 un-registered, and every component in the world was put there by the old
 ones. `/reload` restores the state file into the fresh world; `/reset` is
 the same act with that skipped, so the world start EMPTY -- see
-`ugm.engine`'s own `_command` for where those two land.
+`loopingrules.engine`'s own `_command` for where those two land.
 """
 
 from __future__ import annotations
@@ -53,9 +53,9 @@ import json
 import os
 import sys
 
-from ugm import save
-from ugm.engine import Engine
-from ugm.loop import Loop
+from loopingrules import save
+from loopingrules.engine import Engine
+from loopingrules.loop import Loop
 
 from . import config as cfg
 from . import repl
@@ -194,7 +194,7 @@ def build(where, specs, state=None) -> Loop:
     `state` is a path to restore from, or None to start empty -- which is
     what `/reset` passes, and what `--no-state` means for the whole
     session. The order here is load-then-install and it matters -- see
-    `ugm.engine`'s own note on it.
+    `loopingrules.engine`'s own note on it.
     """
     standing = cfg.read_domains(where) if where is not None else []
     loop = Loop()

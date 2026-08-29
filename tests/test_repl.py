@@ -7,9 +7,9 @@ import threading
 
 import pytest
 
-from ugm.engine import Engine
-from ugm.loop import Loop
-from ugm.world import Reply, Said
+from loopingrules.engine import Engine
+from loopingrules.loop import Loop
+from loopingrules.world import Reply, Said
 
 from harneskills import repl
 
