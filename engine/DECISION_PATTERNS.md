@@ -1,15 +1,15 @@
 # Decision patterns — agency without a backward-chaining engine
 
-⚠⚠ **ON HOLD, 2026-08-29** — `ugm/arbitration.py` does not currently import
-(it sits on `ugm/facts.py`, which sits on a `Component` base class the core
-rewrite removed). See `docs/overview.md` and this repo's `README.md`. The
-argument below stands regardless of what happens to the module; read it as
-the reasoning to preserve even if the code it describes is rewritten.
+⚠⚠ **`ugm/arbitration.py` was DELETED, 2026-08-30** — see this repo's own
+`README.md` History, "Facts/arbitration/request removed." Nothing here
+was ever exclusive to that module: this note is the reasoning for a
+generic arbitration reader, and it stands regardless of whether one is
+built again, in this package or in whatever domain needs it next.
 
 *Written 2026-08-27 as a design note inside `pystrider` (a domain that reads and writes Python on this
-world), and moved here 2026-08-28 along with the code it argued for. **`ugm/arbitration.py` is this
-note, built** — the vocabulary below is that module's, one for one. Read this for the argument; read
-the module for the contract.*
+world), and moved here 2026-08-28 along with the code it argued for. **`ugm/arbitration.py` WAS this
+note, built** — the vocabulary below was that module's, one for one, until it was removed. Read this
+for the argument; a domain that wants the contract again writes it.*
 
 *⭐ It lives in `ugm` rather than in the domain that produced it because the failure it describes is
 not `pystrider`'s. On a loop that calls every rule every tick, ANY rule family that decides for

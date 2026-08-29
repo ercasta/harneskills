@@ -20,8 +20,8 @@
   component instance, or a bare `{"entity": id}`) — version 2, and a
   version-1 file is refused by name rather than mis-parsed. The
   `__ugm_save__`/`module:factory(arg)` mechanism (for a class minted at
-  runtime, like `facts.relation()`'s) was dropped along with `facts.py`'s
-  quarantine below; nothing else needed it.
+  runtime, like `facts.relation()`'s) was dropped along with `facts.py`
+  itself, below; nothing else needed it.
 - **A rule writes to the world directly** — `spawn`/`attach`/`replace`/
   `detach`/`remove`/`destroy` — same as `install()` always did.
   `ugm.delta` (`Pending`, the six delta classes) is deleted, not
@@ -48,25 +48,17 @@
   rules from domains that don't know about each other, both watching the
   same component type.
 
-`facts.py` / `arbitration.py` / `request.py` are **on hold, not deleted**:
-they do not currently import (`Relation` subclassed the removed
-`Component`, and `ugm.delta` itself is gone now too), `ugm/__init__.py`
-no longer imports them, and their tests are `pytest.importorskip`'d
-rather than fixed. `harneskills.examples.fs` — the one real domain on
-this engine — was ported to both rewrites and its own suite is green,
-which is the case for "the core files are enough" that both were making.
+`facts.py` / `arbitration.py` / `request.py` are **deleted, not on
+hold**: nothing in this repository ever imported any of the three
+(`harneskills.examples.fs` writes its own components and its own
+queries throughout), and once `world.py`'s rewrite left them unable to
+import at all, there was no reason left to keep the code around waiting
+on a decision the code itself couldn't inform. `engine/DECISION_PATTERNS.md`
+keeps the argument for a generic arbitration reader; it is a design note
+now, not a description of shipped code.
 
 ## Open
 
-- **The facts/relations question, deferred by design.** Does a
-  `fact`/`state`/`deny` vocabulary belong in `ugm` at all — as a thin,
-  clearly-optional helper library for a documented pattern — or does
-  every domain on this engine write its own components and its own
-  `each()` queries, the way `harneskills.examples.fs` already does with
-  no such layer? `arbitration.py`'s `DECISION_PATTERNS.md` argument (why
-  a generic reader beats agency in the base rule) stands regardless of
-  the answer; what's undecided is whether it ships as code in this
-  package. `request.py` is the same question, one layer up.
 - Helper functions for one-liner rules (lambdas) — the shape a rule
   keeps repeating by hand (`for entity, x in w.each(Kind): ...`) might
   want its own sugar; open whether that's a `World`/`Loop` method or a

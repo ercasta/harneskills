@@ -2,7 +2,7 @@
 
 ⚠ The `__ugm_save__`/`module:factory(arg)` mechanism this file used to test
 (a class minted by `ugm.facts.relation()` naming its own factory so `save`
-could find it) is gone along with `facts.py`'s quarantine -- see
+could find it) is gone along with `facts.py` itself -- see
 `docs/overview.md`. `_kind()` only ever resolves `module:ClassName` now.
 """
 

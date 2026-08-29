@@ -28,13 +28,16 @@ channels built on top of `Engine`, and `harneskills.examples.fs` is a
 domain built on top of `World` and `Loop` alone -- neither of which this
 package knows exists.
 
-⚠⚠ `ugm.facts` / `ugm.arbitration` / `ugm.request` are NOT imported here.
-They predate the rewrite above (plain dataclasses, several components per
-type, primitives-only fields) and do not currently work against it --
-`facts.Relation` subclassed a `Component` base class this package no
-longer has. They are ON HOLD, not deleted, pending a decision on whether a
-`fact`/`state`/`deny` vocabulary belongs in this package at all, or only as
-an optional, clearly-separate pattern library -- see `docs/overview.md`.
+There used to be a `ugm.facts` here too -- a `fact`/`state`/`deny`
+vocabulary for relations-as-components, and `ugm.arbitration`/
+`ugm.request`, two generic readers built on it. Removed rather than
+ported once the rewrite above landed: `Relation` subclassed a `Component`
+base class this package no longer has, nothing in this repository ever
+used any of the three, and the standing argument holds without the code
+-- a domain that wants "several values," interning, or a generic
+decision needs writes its own components and its own queries, the way
+`harneskills.examples.fs` already does. `engine/DECISION_PATTERNS.md`
+keeps the design note; see `docs/overview.md` for the removal itself.
 """
 
 from __future__ import annotations

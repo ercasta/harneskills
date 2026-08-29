@@ -1,15 +1,5 @@
 # UGM
 
-⚠⚠ **`facts.py`/`arbitration.py`/`request.py` are ON HOLD, 2026-08-29.**
-The core (`world.py`/`loop.py`/`engine.py`/`save.py`) was rewritten to
-plain dataclass components, several per entity, and primitives-only
-fields — see `docs/overview.md`. The three files below do not currently
-import against that core, are not imported by `ugm/__init__.py`, and
-their tests are skipped (`pytest.importorskip`) rather than fixed,
-pending a decision on whether a `fact`/`state`/`deny` vocabulary belongs in
-this package at all, or only as a separate, optional pattern library. Read
-what follows as history until that decision lands.
-
 **An entity-component world, a loop that runs rules over it, and one
 thread to run a session on.**
 
@@ -28,17 +18,14 @@ ugm/
   loop.py         every rule, in order, until nothing changes
   engine.py       one thread, the world, and the channels attached to it
   save.py         the world as JSONL: entities are ints, components are values
-  facts.py        the vocabulary rules say things in: relations as components
-  arbitration.py  several rules, one contested decision, one generic reader
-  request.py      one request, any number of oblivious responders, a watchdog
 tests/
   test_world.py        identity, values, and the intersection of the two
   test_loop.py         order, settling, the budget, a rule that raises
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
-  test_arbitration.py  propose, justify, veto, rank, commit -- and a tie refused
-  test_request.py      request, respond, complete -- fulfilled or timed out
-DECISION_PATTERNS.md   why arbitration.py is shaped the way it is
+DECISION_PATTERNS.md   a design note this package no longer ships the code
+                          for -- see History, "Facts/arbitration/request
+                          removed"
 ```
 
 ## Try it
@@ -74,32 +61,19 @@ wants anything with `.name`, `.deliver(message)`, and optionally
 `.start(engine)` / `.close()` — no base class, no import required to be
 one.
 
-**But a DISCIPLINE, which is not the same as a domain.** `facts.py` and
-`arbitration.py` ship a way of writing rules, and they are here
-deliberately. Neither knows what a relation MEANS — `facts.py` interns
-`relation("body")` and orders its rows without ever learning what a body
-is, and `arbitration.commit` names a winner without knowing what was
-being decided. What they encode is what a rule has to do to COMPOSE
-with the ones it does not know about:
-
-* **Conclude onto the world, not into a local.** `fact`/`state`/`deny`
-  write onto an entity; there is no return value to hide an answer in.
-  A conclusion kept beside the world is invisible to every later rule,
-  to `arbitration.commit`, and to `save.py`.
-* **Propose; do not decide.** A rule family that checks whether it should
-  fire is a rule family with an opinion about registration order — on a
-  loop that calls every rule every tick, that opinion is the bug. Deposit
-  a `candidate`, and let the one generic `commit` read the whole set.
-* **Refuse rather than guess.** Two candidates tied at the top is
-  `ambiguous`, reported; it is never broken by iteration order.
-
-⚠ **This is why they are here and not in the domain that wrote them.**
-Every line was extracted from `pystrider`, a domain on this world that
-reads and writes Python — and it was extracted because the failure is not
-`pystrider`'s. Any domain on a settle-when-nothing-changes loop either
-finds this pattern or finds the bug underneath it; that domain measured
-the bug first (two repair rules firing on one fault, "correct by luck").
-`DECISION_PATTERNS.md` is the argument in full.
+**And no vocabulary above entities and components either, any more.**
+This package used to also ship `facts.py`/`arbitration.py` — a
+`fact`/`state`/`deny` way of writing relations as components, and a
+generic reader arbitrating between rules proposing/vetoing/ranking
+candidates for one contested decision. Removed, not ported, once the
+core above was rewritten — see History, "Facts/arbitration/request
+removed." `DECISION_PATTERNS.md` keeps the argument for why a generic
+arbitration reader beats agency in the base rule (extracted from
+`pystrider`, a domain that measured the alternative's cost first: two
+repair rules firing on one bug, "correct by luck"); it just is not code
+in this package any more. A domain that wants that pattern writes its
+own components and its own generic reader over them, the way
+`harneskills.examples.fs` already writes everything else it needs.
 
 **`harneskills`, in the parent of this directory, is the worked door onto
 it** — a `Terminal` channel, a WebSocket `Listener` and `client`, a
@@ -108,6 +82,17 @@ domain built on `World` and `Loop` alone. None of that is imported here;
 this package does not know `harneskills` exists.
 
 ## History
+
+**Facts/arbitration/request removed, 2026-08-30.** `facts.py`,
+`arbitration.py` and `request.py` -- ON HOLD since the previous entry,
+below -- are deleted outright, along with their tests. Nothing in this
+repository ever imported any of the three (`harneskills.examples.fs`
+writes its own components throughout), they had not imported themselves
+since the core rewrite two entries down, and there was no third path
+between "port them" and "delete them" left worth keeping open: the
+standing argument for a generic arbitration reader
+(`DECISION_PATTERNS.md`, kept) does not need the CODE to survive, only
+a domain that wants it to reach for the pattern by hand.
 
 **Deltas removed, 2026-08-30.** A rule calls `world.spawn`/`attach`/
 `replace`/`detach`/`remove`/`destroy` directly again, the same as
