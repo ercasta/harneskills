@@ -145,8 +145,24 @@ or not its author meant it to" (`loopingrules`'s own
 match rule and a generation rule that can both apply to the same span
 become two responders proposing against one occasion, judged by one small,
 domain-owned arbiter — not a bug about which one happened to run first.
-This one is still open — `pystrider`'s own recognizer/generator rivalry
-has not been rebuilt on this shape yet.
+
+**Done, in `pystrider/repair.py`'s `relax`/`lower`.** Each is a
+`(propose, apply)` pair now: `propose` spawns a candidate entity tagged
+`loopingrules.world.Proposal(function.id)` instead of attaching
+`Candidate` straight onto the function, and `apply` acts once its own
+name matches `Winner`. What did NOT change, deliberately:
+`loopingrules.world.arbitrate` is not called here — it resolves
+"first `Proposal` registered wins," and this rivalry needs RANKED
+priority (`relax` beats `lower` when both apply, regardless of which
+proposed first) or the exact bug this module measures (`age >= 17`,
+two independent fixes) comes back. `repair.arbitrate` stays a small,
+domain-owned, ranked judge, reading candidate ENTITIES now instead of
+candidate COMPONENTS on one entity — the vocabulary moved, the
+judgment did not. See `repair.py`'s own module note, "rebuilt on
+propose/arbitrate/act," for the settling hazard a naive port would
+have introduced (an occasion that never resolves, like a permanent
+tie, spawning a fresh candidate every tick forever) and how a durable,
+self-sufficient `Candidate` record closes it without a registry.
 
 **It also happened a second, different way, sooner.** `pystrider` and
 `fs` did not just each apply this pattern to their OWN occasions
