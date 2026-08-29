@@ -776,3 +776,16 @@ restart un-clobbered by `$HARNESKILLS_FS_BIG_FLOOR` (the seed-only-if-absent
 policy holding up under an env var that actively disagrees with it); and
 the env var still does seed a genuinely first-run world. Nothing surprised
 on the way -- which was the point of building it.
+
+**`Proposal` moves to the engine, 2026-08-29.** "Propose/arbitrate,"
+above, added `Proposal` as this domain's own component. It is
+`ugm.world.Proposal` now -- one field, renamed `request` -> `occasion`
+in the move -- alongside `Said`/`Reply`, because the tag has to mean the
+same thing to any domain that wants to propose against an occasion or
+skip one that is not yet real, the same reason `Said`/`Reply` were never
+this domain's to define either. `ParseRequest` (fs's own occasion type)
+and `arbitrate_parse` (fs's own arbiter) did NOT move -- see
+`engine/README.md`'s History, "Proposal, a shared tag," for the
+distinction this rests on: vocabulary two domains must share is core,
+behavior they never share is not. `pytest` is unchanged at 152 checks in
+this package, 96 (was 95) in `engine`'s own suite.

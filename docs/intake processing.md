@@ -20,21 +20,32 @@ winning candidate's own component is now real, and every rule that consumes
 it can finally see it, because it was written all along to skip anything
 still tagged `Proposal`.
 
+`Proposal` is `ugm.world.Proposal` — a shared tag, not a domain's own
+component, and not something `fs.py` (or any domain) defines any more.
+Two domains cannot recognize or correctly skip each other's unresolved
+candidates without agreeing what the tag means, the same reason `Said`
+and `Reply` live there rather than in whichever domain happened to need
+a channel first. Nothing else here moved: the OCCASION type (`fs.py`'s
+`ParseRequest`) and the ARBITER (`arbitrate_parse`) stay in the domain
+that owns the conflict they resolve — see engine/README.md's History,
+"Proposal, a shared tag."
+
 ```
-ParseRequest              -- the occasion (fs.py's name for it; call it
+ParseRequest              -- the occasion (fs.py's own type; call it
                               whatever the domain's occasion actually is)
-Proposal(request)         -- tags a candidate entity: "one reading, not yet real"
+Proposal(occasion)        -- tags a candidate entity: "one reading, not yet real"
 <goal component>          -- rides alongside Proposal on the SAME candidate entity;
                               whatever a winning candidate should mean once real
 ```
 
 A responder rule is `for occasion in w.each(Occasion): if I recognize it:
-w.spawn(Proposal(occasion), MyReading(...))` — nothing more. It is not aware
-of any other responder, does not know how many other candidates exist, and
-does not decide who wins. That is what makes responders addable and
-removable independently: `fs.py`'s four `propose_*` rules already each cover
-one disjoint shape of line, added and (were they ever wrong) removable one
-at a time, with the arbiter and everything downstream untouched.
+w.spawn(Proposal(occasion.id), MyReading(...))` — nothing more. It is not
+aware of any other responder, does not know how many other candidates
+exist, and does not decide who wins. That is what makes responders
+addable and removable independently: `fs.py`'s four `propose_*` rules
+already each cover one disjoint shape of line, added and (were they ever
+wrong) removable one at a time, with the arbiter and everything
+downstream untouched.
 
 ## The arbiter starts trivial, and mostly stays that way
 

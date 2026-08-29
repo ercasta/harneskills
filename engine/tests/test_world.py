@@ -5,7 +5,7 @@ import dataclasses
 
 import pytest
 
-from ugm.world import Reply, Said, World
+from ugm.world import Proposal, Reply, Said, World
 
 
 @dataclasses.dataclass(frozen=True)
@@ -279,6 +279,19 @@ def test_said_and_reply_are_ordinary_components(w):
     w.spawn(Reply("user", "5 item(s)"))
     assert w.the(Said).text == "show file"
     assert w.the(Reply).channel == "user"
+
+
+def test_proposal_tags_a_candidate_against_any_occasion(w):
+    # Nothing mints an occasion specially -- an ordinary Named entity
+    # plays that role here, the same as a domain's own request entity
+    # would.
+    occasion = w.spawn(Named("decide me"))
+    candidate = w.spawn(Proposal(occasion.id), Size(17))
+    assert w.get(candidate, Proposal).occasion == occasion.id
+    # Detaching it is the literal "bind": the same entity, its other
+    # component now real, no longer tagged as a rival reading.
+    w.detach(candidate, Proposal)
+    assert not w.has(candidate, Proposal)
 
 
 def test_vocabulary_is_only_ever_added_to(w):

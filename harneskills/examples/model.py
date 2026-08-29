@@ -18,14 +18,17 @@ change. Being stale is not a property of a file, it is a claim
 `Failed` are occasions. A rule destroys the entity it acted on, so the
 next tick has nothing to match and the loop settles.
 
-**What a typed line might mean.** `ParseRequest` is the occasion; several
-responder rules in `fs.py` each read it and may spawn a *candidate* --
-an entity tagged `Proposal` and carrying whichever of the above goals
-that responder thinks the line asked for. `arbitrate_parse` is the one
-generic step: pick a winner, discard the rest, detach `Proposal` so
-whatever consumes that goal (`list_dir`, `flag_stale`, `do_rename`, ...)
-finally sees it. See `docs/intake processing.md` for the pattern this is
-one instance of, and `fs.py`'s own rules for the worked example.
+**What a typed line might mean.** `ParseRequest` is the occasion, defined
+here because it is fs's own -- no other domain has a reason to know what
+a typed line is. Several responder rules in `fs.py` each read it and may
+spawn a *candidate*: an entity tagged `ugm.world.Proposal` (a shared tag,
+not this module's -- see that module's own docstring) and carrying
+whichever of the above goals that responder thinks the line asked for.
+`arbitrate_parse` is the one generic step: pick a winner, discard the
+rest, detach `Proposal` so whatever consumes that goal (`list_dir`,
+`flag_stale`, `do_rename`, ...) finally sees it. See `docs/intake
+processing.md` for the pattern this is one instance of, and `fs.py`'s
+own rules for the worked example.
 
 `NeedsApproval` is the one worth pausing on. A rename waiting for a person
 and a rename about to happen are the same entity, and the only difference
@@ -229,17 +232,6 @@ class ParseRequest:
 
     said: int
     text: str
-
-
-@dataclass(frozen=True)
-class Proposal:
-    """Tags a candidate entity: 'one reading of that `ParseRequest`, not
-    yet real.' A candidate carries this PLUS whichever goal component
-    would make it real (`ListWanted`, `RenameWish`, ...) -- the same
-    trick `NeedsApproval` already plays on a `RenameWish`, one level up:
-    nothing that consumes a goal acts on one still carrying this."""
-
-    request: int
 
 
 @dataclass(frozen=True)

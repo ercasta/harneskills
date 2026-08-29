@@ -43,7 +43,11 @@ whichever goal it thinks the line asked for (`ListWanted`, `StaleHunt`,
 `RenameWish`, even a `Failed` for "recognized, but factually wrong");
 `arbitrate_parse` picks one winner and destroys the rest, in the SAME
 tick, because rule order already puts every `propose_*` rule ahead of it
-in the list above.
+in the list above. `Proposal` itself is `ugm.world.Proposal` now, not
+this module's -- shared vocabulary any domain proposing against an
+occasion tags with, the same as `Said`/`Reply`; `ParseRequest` (the
+occasion) and `arbitrate_parse` (the arbiter) stay here, because they
+are fs's own.
 
 The arbiter itself is the trivial rule the pattern doc asks for: first
 proposal registered wins. These four `propose_*` rules never actually
@@ -115,13 +119,13 @@ from __future__ import annotations
 import os
 import time
 
-from ugm.world import Reply, Said
+from ugm.world import Proposal, Reply, Said
 
 from . import fs_tools
 from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
                     Focus, Folder, FoundBig, FoundStale, HuntHere, IsDir,
                     ListWanted, Listed, Modified, NeedsApproval, Parsing,
-                    ParseRequest, Proposal, RenameWish, Renamed, Session,
+                    ParseRequest, RenameWish, Renamed, Session,
                     SetBigFloor, Size, Stale, StaleHunt)
 
 BIG_BYTES = 1000
@@ -451,7 +455,7 @@ def arbitrate_parse(w):
     """
     for request, req in w.each(ParseRequest):
         candidates = [entity for entity, proposal in w.each(Proposal)
-                     if proposal.request == request.id]
+                     if proposal.occasion == request.id]
         if not candidates:
             w.destroy(request)
             continue

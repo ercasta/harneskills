@@ -193,6 +193,29 @@ class Reply:
     text: str
 
 
+@dataclasses.dataclass(frozen=True)
+class Proposal:
+    """Tags a candidate entity: one rival reading of an `occasion`, not
+    yet real. A candidate carries this PLUS whichever component would
+    make it real if it wins -- nothing that consumes that component
+    acts on one still carrying this.
+
+    `occasion` is a plain entity id -- any entity a `Proposal` was
+    deposited against IS one, nothing mints it specially. This is the
+    vocabulary half of propose/arbitrate/act (see `docs/intake
+    processing.md` in `harneskills`, the domain this shape was first
+    worked out in): shared here because two domains cannot recognize
+    or skip each other's unresolved candidates without agreeing what
+    the tag means, the same reason `Said`/`Reply` are here and not in
+    a domain's own module. The ARBITER that resolves a `Proposal` --
+    which one wins, on what grounds -- is deliberately not: that is
+    behavior, decided by whatever a domain's own conflict actually
+    calls for, not a reader this package ships (see
+    `DECISION_PATTERNS.md`)."""
+
+    occasion: int
+
+
 def _lower(value: Any, where: str) -> Any:
     """`value`, with any `Entity` turned into its plain id -- recursively,
     through `list`/`dict`/`tuple` -- or a `TypeError` naming `where` if
