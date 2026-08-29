@@ -1,49 +1,4 @@
-# TODO
-
-Reviewed 2026-08-29, twice: first against the pre-existing `engine/ugm`
-code (deltas/systems/request-response), then again after a core rewrite
-the same day settled a more basic question — see "The core rewrite"
-below. Resolved items are kept, struck through, with a pointer to what
-answered them, so this file stays a record of what was asked, not just
-what's left.
-
-- ~~Maybe we don't need Deltas technically...~~ **Done.** `ugm.delta`
-  (`spawn`/`attach`/`detach`/`destroy` as returned data, applied only by
-  `Loop.tick`) shipped 2026-08-27; `replace`/`remove` joined it in the
-  core rewrite below. `Loop.run` settles on a whole pass changing
-  nothing, bounded by `budget` as the circuit breaker.
-- ~~The engine must allow rules (systems)~~ **Done.** `Loop.system`, and
-  a system may now declare `watches=` — the component types it could
-  possibly act on — to stay uncalled entirely on a tick where none of
-  them exist yet (`World.populated`); and `priority=` — higher runs
-  first, ties (including the default) keep registration order — for the
-  one thing registration order cannot express: two systems, from two
-  domains that do not know about each other, watching the same
-  component type. A system is one entry in `Loop.systems` regardless of
-  how many types it watches, so it fires at most once per tick no matter
-  how many of its watched types are populated — 2026-08-29.
-- ~~General request/response protocol~~ Built as `engine/ugm/request.py`
-  (request/respond/complete, a generic tick-ageing watchdog), but it sat
-  on `ugm.facts`, which is itself now on hold — see below. Kept, not
-  deleted; needs re-expressing in plain entities/components (or as an
-  explicitly optional pattern library) once the facts/relations question
-  resolves, same as `arbitration.py`.
-- ~~Represent components as plain dicts... or as dataclasses~~ **Done**,
-  as dataclasses — see the core rewrite below.
-- ~~Allow multiple components of the same type on an entity (a list)~~
-  **Done** — see the core rewrite below.
-
-## The core rewrite, 2026-08-29
-
-Working through the request/response item above surfaced a more basic
-objection: `facts.py`/`arbitration.py`/`request.py` add real API surface
-(`fact`/`state`/`deny`/`of`/`one`/`holds`, interning) on top of the five
-files that are supposed to be the whole engine — and the engine's own
-vocabulary should be entities and components, full stop, with a helper
-library justified only if it is a genuine, optional aid for a documented
-pattern rather than a second way to write a system.
-
-The core landed first, before that question was decided:
+# Overview
 
 - **Components are plain `@dataclasses.dataclass` instances.** No
   `Component` base class to inherit — `dataclasses.is_dataclass` is the
@@ -87,7 +42,7 @@ enough" that this rewrite was making.
   a generic reader beats agency in the base rule) stands regardless of
   the answer; what's undecided is whether it ships as code in this
   package. `request.py` is the same question, one layer up.
-- Helper functions for one-liner rules (lambdas) — the shape a system
+- Helper functions for one-liner rules (lambdas) — the shape a rule
   keeps repeating by hand (`for entity, x in w.each(Kind): ...`) might
   want its own sugar; open whether that's a `World`/`Loop` method or a
   recipe left to a domain.
