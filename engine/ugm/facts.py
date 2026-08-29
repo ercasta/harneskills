@@ -262,7 +262,7 @@ class Facts:
         """
         return domain(self.loop, self)
 
-    def system(self, fn=None, *, name=None, watches=None):
+    def system(self, fn=None, *, name=None, watches=None, priority=0):
         """Register one system -- wrapped so `fact`/`state`/`deny`/`node`/
         `word`/`value`/`reify`, called from inside it, describe a change
         instead of making one.
@@ -285,9 +285,13 @@ class Facts:
         NAME or a tuple of them here, not a component type -- `relation()`
         interns, so `watches="candidate"` and `watches=("candidate",
         "request")` resolve to the classes `Loop.populated` checks against.
+        `priority` passes straight through too -- see `Loop.system`'s own
+        note on why it orders every system, not just the ones sharing a
+        watched relation.
         """
         if fn is None:
-            return lambda f: self.system(f, name=name, watches=watches)
+            return lambda f: self.system(f, name=name, watches=watches,
+                                         priority=priority)
         kinds = None
         if watches is not None:
             names = (watches,) if isinstance(watches, str) else tuple(watches)
@@ -303,7 +307,7 @@ class Facts:
                 self._pending = self._overlay = self._minting = None
             return pending
 
-        return self.loop.system(wrapped, name=name, watches=kinds)
+        return self.loop.system(wrapped, name=name, watches=kinds, priority=priority)
 
     # -- reading back THIS TURN's own not-yet-applied writes ---------------
 

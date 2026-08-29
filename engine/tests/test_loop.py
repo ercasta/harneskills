@@ -257,6 +257,62 @@ def test_a_system_with_no_watches_runs_every_tick_regardless(loop):
     assert len(seen) == 2, "the default: called whether or not anything exists"
 
 
+# --- priority: the one deliberate override of registration order --------
+
+
+def test_higher_priority_runs_first_regardless_of_registration_order(loop):
+    order = []
+    loop.system(lambda w: order.append("low"), name="low", priority=1)
+    loop.system(lambda w: order.append("high"), name="high", priority=10)
+    loop.tick()
+    assert order == ["high", "low"]
+
+
+def test_equal_priority_including_the_default_keeps_registration_order(loop):
+    order = []
+    loop.system(lambda w: order.append("first"), name="first")
+    loop.system(lambda w: order.append("second"), name="second", priority=0)
+    loop.system(lambda w: order.append("third"), name="third", priority=5)
+    loop.tick()
+    # "third" (priority 5) leads; "first" and "second" are both priority 0
+    # and keep the order they were registered in relative to each other.
+    assert order == ["third", "first", "second"]
+
+
+def test_priority_does_not_reorder_the_registry_itself(loop):
+    """`self.systems` is what `/systems` prints and what other tests read
+    -- it stays in registration order. Priority is `tick()`'s own
+    execution order, not a second registry."""
+    loop.system(lambda w: None, name="low", priority=1)
+    loop.system(lambda w: None, name="high", priority=10)
+    assert [name for name, _ in loop.systems] == ["low", "high"]
+
+
+def test_a_late_registered_high_priority_system_still_runs_first(loop):
+    """Priority is read fresh each tick, not fixed at whatever position a
+    system happened to be appended at -- a system two domains install in
+    either order still runs in the order THEY declared, not the order
+    `install()` happened to run in."""
+    order = []
+    loop.tick()                                    # nothing registered yet
+    loop.system(lambda w: order.append("first-installed"), name="a", priority=0)
+    loop.system(lambda w: order.append("installed-later-but-important"),
+               name="b", priority=100)
+    loop.tick()
+    assert order == ["installed-later-but-important", "first-installed"]
+
+
+def test_a_system_watching_SEVERAL_kinds_still_fires_ONCE_per_tick(loop):
+    calls = []
+    loop.system(lambda w: calls.append(None), name="watcher",
+               watches=(Step, Ping, Pong))
+    loop.world.spawn(Step(0))
+    loop.world.spawn(Ping())
+    loop.world.spawn(Pong())               # all three watched kinds exist
+    loop.tick()
+    assert len(calls) == 1, "one entry in self.systems, called once, full stop"
+
+
 def test_after_tick_runs_between_ticks_not_at_the_end(loop):
     seen = []
 

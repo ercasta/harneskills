@@ -14,7 +14,9 @@ runs systems over it, and one thread to run a session on.
   nothing. A system is a function of one `World` that returns a list of
   deltas; `Loop.tick` is what applies them. A system may declare
   `watches=` -- the component types it could possibly do anything with --
-  and stay uncalled on any tick where none of them exist yet.
+  and stay uncalled on any tick where none of them exist yet; it may also
+  declare `priority=` to run ahead of another system, regardless of which
+  was registered first.
 * `ugm.engine` -- ONE thread that runs the loop, and the channels
   attached to it. `Said(name, "...")` in from whichever channel it
   arrived on; `Reply(user, "...")` out to every channel there is.

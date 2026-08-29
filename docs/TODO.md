@@ -15,7 +15,13 @@ what's left.
 - ~~The engine must allow rules (systems)~~ **Done.** `Loop.system`, and
   a system may now declare `watches=` — the component types it could
   possibly act on — to stay uncalled entirely on a tick where none of
-  them exist yet (`World.populated`).
+  them exist yet (`World.populated`); and `priority=` — higher runs
+  first, ties (including the default) keep registration order — for the
+  one thing registration order cannot express: two systems, from two
+  domains that do not know about each other, watching the same
+  component type. A system is one entry in `Loop.systems` regardless of
+  how many types it watches, so it fires at most once per tick no matter
+  how many of its watched types are populated — 2026-08-29.
 - ~~General request/response protocol~~ Built as `engine/ugm/request.py`
   (request/respond/complete, a generic tick-ageing watchdog), but it sat
   on `ugm.facts`, which is itself now on hold — see below. Kept, not
