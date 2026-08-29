@@ -84,6 +84,12 @@ _SPAN = re.compile(r'"[^"]*"|\S+')
 # a home dir, or quotes someone put there on purpose.
 _PATHISH = re.compile(r'[/\\~"]|\.\w')
 
+# Printed once a turn's output is all out. The read loop prints the NEXT
+# prompt the moment a line is posted -- before the reply for THIS one has
+# come back over the engine's own queue -- so without this, output and an
+# empty prompt with nothing after it are visually the same blank line.
+_SEP = "-" * 40
+
 HELP = """\
 /show      every entity in the world right now, and what it carries
 /rules     the rules installed, in the order they run each tick
@@ -264,8 +270,11 @@ class Terminal:
         elif "lines" in message:
             for line in message["lines"]:
                 self._print("  %s" % line)
+            self._print(_SEP)   # /show, /rules -- no "settled" follows these
         elif "settled" in message:
-            pass          # nothing to say; a richer terminal could redraw
+            self._print(_SEP)   # marks where this turn's output ends -- the
+                                # next thing on stdout is the read loop's own
+                                # prompt, already printed, waiting for a line
         elif "world" in message:
             # `loopingrules.save.dump`'s own shape: a header (no "entity"
             # key) then one record per component or bare entity, already

@@ -122,6 +122,14 @@ def test_a_line_becomes_a_saying_and_a_reply_is_printed_bare(loop):
     assert "hello yourself" in drive(loop, ["hello", "/quit"])
 
 
+def test_settled_prints_a_separator_after_the_replies_it_closes(loop):
+    # The read loop prints the NEXT prompt the moment a line is posted --
+    # before this turn's own reply comes back over the queue -- so without
+    # a marker here, a reply and an empty prompt look like one blank line.
+    printed = drive(loop, ["hello", "/quit"])
+    assert printed[printed.index("hello yourself") + 1] == repl._SEP
+
+
 def test_a_typo_is_corrected_against_what_a_domain_registered(loop):
     printed = drive(loop, ["helo", "/quit"])
     assert "  ~ helo -> hello" in printed
@@ -174,7 +182,8 @@ def test_show_is_the_whole_world_on_demand(loop):
 def test_rules_lists_them_in_the_order_they_run(loop):
     loop.rule(lambda w: None, name="second")
     printed = drive(loop, ["/rules", "/quit"])
-    assert printed[-2:] == ["   1. test_repl.greet", "   2. second"]
+    # `_SEP` marks the end of this command's output -- see `repl._render`.
+    assert printed[-3:] == ["   1. test_repl.greet", "   2. second", repl._SEP]
 
 
 def test_a_rule_that_blew_up_is_named_at_the_prompt(loop):
