@@ -39,7 +39,7 @@ tell "still open" from "gave up" by absence.
 whether or not anything else did, because ageing a counter *is* the
 observable: a request nobody is answering has to be seen and retired, not
 sit invisibly waiting for a change that will never come. That is a
-deliberate, narrow exception to `Loop`'s "a system fires by changing
+deliberate, narrow exception to `Loop`'s "a rule fires by changing
 something" -- it is still true here, the changing thing is just the clock
 itself, and it is bounded: the counter can move at most `timeout` (plus
 extensions) ticks past a request's birth before `watch()` closes it and stops
@@ -48,7 +48,7 @@ as it always did.
 
 ## Why the details entity carries facts, not raw components
 
-`facts.py`'s whole discipline is that a system describes by writing
+`facts.py`'s whole discipline is that a rule describes by writing
 `fact`/`state` onto an entity, never by touching the world -- so "the
 request has extra components that characterize it" is spelled the same way
 everything else here is: ordinary relations on `details`, readable by
@@ -116,7 +116,7 @@ def watch(f: Facts, timeout: int = 20):
     clock rather than on a change a responder made.
     """
 
-    def system(world) -> None:
+    def rule(world) -> None:
         for hub, details in f.each("request", arity=1):
             if f.has("outcome", details):
                 # ⚠ Retired on an earlier tick; the row itself is already
@@ -143,18 +143,18 @@ def watch(f: Facts, timeout: int = 20):
                 f.state("outcome", details, f.word("timed_out"))
                 f.deny("request", hub, details)
 
-    return system
+    return rule
 
 
 def install(loop, f: Facts, timeout: int = 20) -> None:
     """Register the watchdog. `timeout` is in ticks, not wall time -- the
     same unit `Loop.budget` already counts in.
 
-    ⚠ `watches="request"`, not `"elapsed"` or `"outcome"`: this system
+    ⚠ `watches="request"`, not `"elapsed"` or `"outcome"`: this rule
     WRITES those two every tick it runs, so watching either would mean
     "run again because I just ran" -- a self-feeding dormancy check is no
     dormancy at all. `request` is the one relation only the ASKING side
     ever writes, which is exactly the type whose presence should wake this
     up and whose absence should let it sleep.
     """
-    f.system(watch(f, timeout=timeout), name="request.watch", watches="request")
+    f.rule(watch(f, timeout=timeout), name="request.watch", watches="request")

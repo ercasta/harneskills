@@ -17,11 +17,11 @@ entity, and it can stop being that kind of thing by losing one::
     w.attach(entry, Stale())          # now it is also a stale thing
     w.detach(entry, Stale)            # now it is not
 
-A **system** -- what `ugm.loop` calls a rule -- is a function that asks
+A **rule** -- `ugm.loop`'s own name for it -- is a function that asks
 for the entities carrying a set of components, walks them, and RETURNS
 what should change -- see `ugm.delta`. It does not call `spawn`,
 `attach`, `detach` or `destroy` on this class itself; `Loop.tick` does,
-from what a system hands back::
+from what a rule hands back::
 
     def flag_big(w):
         deltas = []
@@ -38,7 +38,7 @@ Because a rule asks "everything that is X and Y but not Z" far more often
 than it asks "everything about this one thing". `each(Entry, Stale)` is
 the query the domain actually wants, and it costs a set intersection --
 where a bag of objects with a `stale` flag on them costs a scan and an
-`if`. Being stale is not a property of a file, it is a claim some system
+`if`. Being stale is not a property of a file, it is a claim some rule
 made about it, and detaching that claim is how it is unmade.
 
 The approval gate is the sharpest case: a rename waiting for a person is
@@ -61,7 +61,7 @@ convention, not enforced -- see the ⚠ below on why a component should never
 be mutated in place regardless.
 
 `Size(17) == Size(17)` is what makes `attach` idempotent: re-attaching a
-value equal to one already there changes nothing, so a system that
+value equal to one already there changes nothing, so a rule that
 recomputes the same answer every tick does not keep the world awake
 forever.
 
@@ -146,7 +146,7 @@ class Entity:
     def __repr__(self) -> str:
         return "#%d" % self.id
 
-    # Sugar, for the places a system already holds the entity and wants one
+    # Sugar, for the places a rule already holds the entity and wants one
     # thing off it. Everything here is `World`'s method with the entity
     # filled in -- there is no second way to do anything.
     def get(self, kind):
@@ -254,7 +254,7 @@ def _normalize(component: Any) -> Any:
 
 
 class World:
-    """Entities, the components on them, and the queries systems ask."""
+    """Entities, the components on them, and the queries rules ask."""
 
     def __init__(self) -> None:
         # entity id -> handle, in spawn order; and component type -> {entity
@@ -266,11 +266,11 @@ class World:
         self._next = 0
         # Bumped by every spawn, destroy, attach/replace that changed
         # something, and detach/remove that removed something. The loop
-        # reads it to tell a system that did something from one that did
+        # reads it to tell a rule that did something from one that did
         # not, which is the whole of how it knows the world has settled.
         self.revision = 0
         # Words a domain expects a person to type. Only the prompt reads
-        # this (to autocorrect); nothing here affects what a system finds.
+        # this (to autocorrect); nothing here affects what a rule finds.
         self.vocabulary: set = set()
 
     # -- entity ids, handles, either -----------------------------------
@@ -321,7 +321,7 @@ class World:
 
     def destroy(self, entity) -> bool:
         """It is not here any more, and neither is anything on it. True if
-        it was. What a system calls on an occasion it has finished with."""
+        it was. What a rule calls on an occasion it has finished with."""
         entity_id = self._id(entity)
         if self._entities.pop(entity_id, None) is None:
             return False
@@ -335,7 +335,7 @@ class World:
         their own type -- deduped against what is already there, so
         re-attaching a value equal to one already present is not a
         change: it is not stored again and `revision` does not move,
-        which is what lets a system recompute the same answer every tick
+        which is what lets a rule recompute the same answer every tick
         and still let the world settle.
 
         A live `Entity` inside a component field is lowered to its plain
@@ -451,10 +451,10 @@ class World:
         types -- an existence check, not a query: `O(len(kinds))` dict
         lookups, no intersection, no walk of a bucket.
 
-        This is what lets a system declare itself dormant (`Loop.system`'s
+        This is what lets a rule declare itself dormant (`Loop.rule`'s
         `watches=`) rather than merely fast: `each()` on an empty bucket
-        already returns quickly, but it still calls the system's own
-        Python body to find that out. A system that watches a type nobody
+        already returns quickly, but it still calls the rule's own
+        Python body to find that out. A rule that watches a type nobody
         has ever attached is skipped before it runs at all.
         """
         return any(self._by_type.get(k) for k in kinds)
@@ -472,7 +472,7 @@ class World:
         moment every matched kind is single-valued there, which is every
         case this codebase has today.
 
-        Materialised, not lazy -- a system is expected to spawn and
+        Materialised, not lazy -- a rule is expected to spawn and
         destroy while it walks what it found.
         """
         if not kinds:

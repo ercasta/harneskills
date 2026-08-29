@@ -38,7 +38,7 @@ def test_a_swapped_pair_counts_as_one_mistake():
 
 def test_a_word_near_two_words_equally_is_not_guessed_at():
     # `dats` is one edit from `days` and one from `data`: ambiguous, so it
-    # stays as typed and the domain's own systems decide it means nothing.
+    # stays as typed and the domain's own rules decide it means nothing.
     line, fixes = repl.autocorrect("dats", VOCAB | {"data"})
     assert (line, fixes) == ("dats", [])
 
@@ -111,7 +111,7 @@ def loop():
     lp = Loop()
     lp.world.learn("hello")
 
-    @lp.system
+    @lp.rule
     def greet(w):
         for entity, said in w.each(Said):
             if said.text == "hello":
@@ -130,14 +130,14 @@ def test_a_typo_is_corrected_against_what_a_domain_registered(loop):
     assert "hello yourself" in printed
 
 
-def test_a_line_no_system_took_is_reported_not_guessed_at(loop):
+def test_a_line_no_rule_took_is_reported_not_guessed_at(loop):
     assert "  (nothing understood: what is for dinner)" in drive(
         loop, ["what is for dinner", "/quit"])
 
 
 def test_a_reply_to_another_channel_says_which(loop):
     # A `Reply` not addressed to "user" goes to the ONE channel by that
-    # name -- not to everyone with a decorative prefix -- so this system
+    # name -- not to everyone with a decorative prefix -- so this rule
     # has to know the terminal's actual name, the way a domain that
     # tracked an asker's channel would.
     def gauge(w):
@@ -148,7 +148,7 @@ def test_a_reply_to_another_channel_says_which(loop):
     engine = Engine(loop)
     term = repl.Terminal(stdin=io.StringIO("/quit\n"), stdout=out, echo_prompt=False)
     term.name = "gauge"
-    loop.system(gauge, name="gauge")
+    loop.rule(gauge, name="gauge")
     engine.attach(term)
     thread = threading.Thread(target=engine.run, daemon=True)
     thread.start()
@@ -157,11 +157,11 @@ def test_a_reply_to_another_channel_says_which(loop):
     assert "[gauge] 97%" in out.getvalue()
 
 
-def test_nothing_else_a_system_spawns_reaches_the_terminal(loop):
+def test_nothing_else_a_rule_spawns_reaches_the_terminal(loop):
     def quiet(w):
         if not w.each(Secret):
             w.spawn(Secret())
-    loop.system(quiet, name="quiet")
+    loop.rule(quiet, name="quiet")
     assert [l for l in drive(loop, ["hello", "/quit"]) if "Secret" in l] == []
 
 
@@ -173,22 +173,22 @@ def test_show_is_the_whole_world_on_demand(loop):
     assert any(line.strip() == "#1    Secret()" for line in printed)
 
 
-def test_systems_lists_them_in_the_order_they_run(loop):
-    loop.system(lambda w: None, name="second")
-    printed = drive(loop, ["/systems", "/quit"])
+def test_rules_lists_them_in_the_order_they_run(loop):
+    loop.rule(lambda w: None, name="second")
+    printed = drive(loop, ["/rules", "/quit"])
     assert printed[-2:] == ["   1. test_repl.greet", "   2. second"]
 
 
-def test_a_system_that_blew_up_is_named_at_the_prompt(loop):
-    @loop.system
+def test_a_rule_that_blew_up_is_named_at_the_prompt(loop):
+    @loop.rule
     def explodes(w):
         raise ValueError("nope")
 
     assert "  ! test_repl.explodes: ValueError: nope" in drive(loop, ["hello", "/quit"])
 
 
-def test_a_system_that_never_settles_is_stopped_and_named(loop):
-    loop.system(lambda w: [spawn(Secret())], name="ping")   # spawn is never idempotent
+def test_a_rule_that_never_settles_is_stopped_and_named(loop):
+    loop.rule(lambda w: [spawn(Secret())], name="ping")   # spawn is never idempotent
     printed = drive(loop, ["/quit"])
     assert any("still firing: ping" in l for l in printed)
 
@@ -204,11 +204,11 @@ def test_a_command_may_hand_back_a_whole_new_loop(loop):
     def announce(w):
         if not w.each(Secret):
             w.spawn(Secret(), Reply("user", "new world"))
-    fresh.system(announce, name="announce")
+    fresh.rule(announce, name="announce")
     printed = drive(loop, ["/swap", "hello", "/quit"],
                     commands={"/swap": lambda engine, arg: fresh})
     assert "new world" in printed
-    # The old loop's systems are gone with it, so `hello` means nothing now.
+    # The old loop's rules are gone with it, so `hello` means nothing now.
     assert "hello yourself" not in printed
     assert "  (nothing understood: hello)" in printed
 

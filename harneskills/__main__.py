@@ -15,7 +15,7 @@ imported when, and only when, something names it.
 
 "The domains to install" is two lists, in this order: the standing ones,
 from `~/.config/harneskills/config` (see `harneskills.config`), then
-whatever is named on the command line. Standing first because systems run
+whatever is named on the command line. Standing first because rules run
 in installation order, and a domain you are naming NOW should get to see a
 world the standing ones have already set up. `--no-config` skips the file
 entirely -- the escape hatch for the session where the standing domain is
@@ -37,9 +37,9 @@ bound, to `harneskills.config.server_path()` -- `harneskills/serve.py`'s
 own note on why that file, and not the port alone, is the whole of the
 security story.
 
-`build` is separate from `main` because `/reload` runs it again: a system
+`build` is separate from `main` because `/reload` runs it again: a rule
 is a Python function, so picking up an edit means re-importing the module
-AND starting the world over -- systems already registered cannot be
+AND starting the world over -- rules already registered cannot be
 un-registered, and every component in the world was put there by the old
 ones. `/reload` restores the state file into the fresh world; `/reset` is
 the same act with that skipped, so the world start EMPTY -- see
@@ -221,7 +221,7 @@ def _keeper(state):
 
     Every settle, not on the way out: a prompt living in a service is
     killed, not quit. Skipped when nothing has changed since the last
-    write, so reading `/systems` or typing a line nobody understood costs
+    write, so reading `/rules` or typing a line nobody understood costs
     nothing.
 
     A save that fails is said once per distinct complaint and then the

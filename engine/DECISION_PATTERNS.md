@@ -12,7 +12,7 @@ note, built** — the vocabulary below is that module's, one for one. Read this 
 the module for the contract.*
 
 *⭐ It lives in `ugm` rather than in the domain that produced it because the failure it describes is
-not `pystrider`'s. On a loop that calls every system every tick, ANY rule family that decides for
+not `pystrider`'s. On a loop that calls every rule every tick, ANY rule family that decides for
 itself whether to fire has an opinion about registration order, whether or not its author meant it
 to — so any domain on this world reinvents this pattern or reinvents that bug. The evidence below is
 `pystrider`'s because that is who paid for it first; the pattern is not.*
@@ -51,7 +51,7 @@ each piece was load-bearing somewhere real, not as code you will find beside thi
   back. None of the three call each other. The loop's "run everyone, every tick, until nothing changes"
   *is* the dispatch.
 - **Free transitive propagation** — `effects.py`'s `transitive()`: `outer` calls `inner`, `inner` has an
-  effect, so `outer` does too — one more system reading the same fixpoint, not new machinery.
+  effect, so `outer` does too — one more rule reading the same fixpoint, not new machinery.
 
 ## The vocabulary
 
@@ -106,11 +106,11 @@ example: not chosen by override, just never eliminated once everything ahead of 
 There is no CNL in this plan. CNL's actual value was letting a non-programmer swap `business.cnl`
 without touching Python — a property about *who can author a rule*, not about whether its conclusion is
 visible. Every relation above is deposited with the same `fact`/`state` this codebase already uses in
-plain Python (`patterns.py`, `repair.py`, `design.py`), and nothing in `Facts` lets a system hide a
+plain Python (`patterns.py`, `repair.py`, `design.py`), and nothing in `Facts` lets a rule hide a
 conclusion in a local variable — `fact`/`state` write onto an entity, not into a return value. So the
 trace of a decision — which candidates existed, what ruled each one out, who won — is just
 `f.of("candidate", occasion)` / `f.of("ruled_out", occasion)` / `f.of("winner", occasion)`, inspectable
-by the same generic reads `why` already uses, regardless of which system or which language wrote them.
+by the same generic reads `why` already uses, regardless of which rule or which language wrote them.
 That's a *better* fit for a contested, multi-candidate decision than `cnl.explain()` ever was — its own
 docstring admits it re-derives symbolically and can't say which of several concluding rules actually
 fired. `winner(occasion, option)` says exactly that, for this run.
@@ -131,8 +131,8 @@ just whatever entity a `candidate` was deposited on: a `node()`, an interned `wo
 a `reify()`d proposition. No registry of decision points, and nothing to generalize past.
 
 ⭐ **Answered, by deletion.** *Should `needs` be a relation?* — **no.** A judge that lacks information
-asserts an ordinary fact and some unrelated system answers it; `commit` needs no code at all for this,
-because unblocking is "the guard read false, now it reads true," the same as every system, always.
+asserts an ordinary fact and some unrelated rule answers it; `commit` needs no code at all for this,
+because unblocking is "the guard read false, now it reads true," the same as every rule, always.
 The `Pending` verdict argued for below was not built, for the same reason.
 
 ⚠ **Still open.**

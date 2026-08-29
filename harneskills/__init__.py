@@ -5,7 +5,7 @@ say.
     python -m harneskills harneskills.examples.fs:install
     python -m harneskills --serve harneskills.examples.fs:install   # + a WebSocket door
 
-The engine itself -- the entity-component world, the loop of systems over
+The engine itself -- the entity-component world, the loop of rules over
 it, the one thread and the channel contract -- is `ugm`, not this
 package; see `ugm`'s own docstring. What lives here is everything that
 was never the engine's to know:
@@ -20,13 +20,13 @@ was never the engine's to know:
 * `harneskills.__main__` -- argv, wiring an `Engine` from `ugm` around
   whichever channels were asked for.
 
-A DOMAIN is one callable, `install(loop)`, that registers systems and
+A DOMAIN is one callable, `install(loop)`, that registers rules and
 spawns what they read -- named on the command line or in
 `~/.config/harneskills/config`, never shipped by the harness.
 `harneskills.examples.fs` is the worked one: listing, ageing and renaming
 real files, with every rename an automation proposes held for approval,
 asked as an ordinary reply rather than a blocked keypress -- nothing a
-system does may stop the world for a channel that is not the one asking.
+rule does may stop the world for a channel that is not the one asking.
 """
 
 from __future__ import annotations

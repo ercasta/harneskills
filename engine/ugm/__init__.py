@@ -1,5 +1,5 @@
 """UGM -- Universal Graph Machine: an entity-component world, a loop that
-runs systems over it, and one thread to run a session on.
+runs rules over it, and one thread to run a session on.
 
     from ugm import Engine, Loop, World
 
@@ -8,14 +8,14 @@ runs systems over it, and one thread to run a session on.
   `None`/`bool`/`int`/`float`/`str` and `list`/`dict`/`tuple` of those --
   another entity is referenced by its plain id, never a live handle. An
   entity may carry SEVERAL components of one type.
-* `ugm.delta` -- what a system RETURNS instead of touching the world:
+* `ugm.delta` -- what a rule RETURNS instead of touching the world:
   `spawn`, `attach`, `replace`, `detach`, `remove`, `destroy`, as data.
-* `ugm.loop` -- call every system, in order, until a whole pass changes
-  nothing. A system is a function of one `World` that returns a list of
-  deltas; `Loop.tick` is what applies them. A system may declare
+* `ugm.loop` -- call every rule, in order, until a whole pass changes
+  nothing. A rule is a function of one `World` that returns a list of
+  deltas; `Loop.tick` is what applies them. A rule may declare
   `watches=` -- the component types it could possibly do anything with --
   and stay uncalled on any tick where none of them exist yet; it may also
-  declare `priority=` to run ahead of another system, regardless of which
+  declare `priority=` to run ahead of another rule, regardless of which
   was registered first.
 * `ugm.engine` -- ONE thread that runs the loop, and the channels
   attached to it. `Said(name, "...")` in from whichever channel it

@@ -25,7 +25,7 @@ def test_a_request_is_fulfilled_once_every_responder_that_started_finishes():
     hub = f.node("hub")
     details = request(f, hub, "analyze", f.word("program"))
 
-    @f.system
+    @f.rule
     def responder(world):
         if not f.holds("responding", details, f.word("alice")):
             f.fact("responding", details, f.word("alice"))
@@ -45,7 +45,7 @@ def test_two_responders_both_have_to_finish():
         f.fact("responding", details, f.word(name))
     f.fact("completed", details, f.word("alice"))
 
-    @f.system
+    @f.rule
     def slow_bob(world):
         # Finishes on the SECOND tick it is asked, not the first -- so the
         # request must still be open, and only alice done, for one tick.
@@ -96,7 +96,7 @@ def test_extend_widens_the_deadline_past_the_installed_timeout():
     extend(f, details, f.word("alice"), 10)
 
     # Finishes on tick 5 -- inside the extended deadline, past the bare one.
-    @f.system
+    @f.rule
     def slow(world):
         if f.has("outcome", details):
             return
@@ -115,7 +115,7 @@ def test_without_the_extension_the_same_slow_responder_times_out():
     details = request(f, hub, "analyze", f.word("program"))
     f.fact("responding", details, f.word("alice"))
 
-    @f.system
+    @f.rule
     def slow(world):
         if f.has("outcome", details):
             return

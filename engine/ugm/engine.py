@@ -20,7 +20,7 @@ takes one, spawns a `Said`, settles the loop, and routes what came out.
 So there is no lock around the world, no reentrancy, and a tick means the
 same thing on every channel.
 
-It also means nothing a system does may BLOCK. A system that stopped to
+It also means nothing a rule does may BLOCK. A rule that stopped to
 `input()` an approval would stop the world for every other channel, and
 would be reading a keyboard the terminal channel is already reading. That
 is why `fs.approve` asks by spawning a `Reply` and waiting for a `yes` --
@@ -163,7 +163,7 @@ class Engine:
 
         Replies first, then whatever blew up, then the lines nobody
         claimed -- and `unheard=False` between ticks, because a line no
-        system has claimed YET is not a line nobody understood. Only a
+        rule has claimed YET is not a line nobody understood. Only a
         settled world can say that.
         """
         world = self.loop.world
@@ -183,7 +183,7 @@ class Engine:
     def settle(self) -> None:
         """Run to quiescence, say what was said, then write the world down.
 
-        Drained after every tick, not just at the end: a system that stops
+        Drained after every tick, not just at the end: a rule that stops
         to ask a question must not do it over the top of what the same
         tick already said.
         """
@@ -217,9 +217,9 @@ class Engine:
             self.to(channel.name, {"lines": [world.show(e)
                                              for e in world.entities()]})
             return
-        if name == "/systems":
+        if name == "/rules":
             self.to(channel.name, {"lines": ["%2d. %s" % (i, n) for i, (n, _)
-                                             in enumerate(self.loop.systems, 1)]})
+                                             in enumerate(self.loop.rules, 1)]})
             return
         handler = self.commands.get(name)
         if handler is None:

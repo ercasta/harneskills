@@ -1,21 +1,21 @@
 # HarneSkills
 
-**An entity-component world, a loop that runs systems over it, and a
+**An entity-component world, a loop that runs rules over it, and a
 prompt onto both.**
 
 Only one dependency, and it is the engine underneath this: `ugm`, embedded
 here under `./engine` (its distribution root -- `import ugm` either way)
 as its own package. An *entity* is an identity with no data — `#7`. A
-*component* is data with no identity — `Size(bytes=4300)`. A *system* is
+*component* is data with no identity — `Size(bytes=4300)`. A *rule* is
 a Python function that asks for the entities carrying a set of components
-and walks them. The *loop* calls every system, in order, over and over,
+and walks them. The *loop* calls every rule, in order, over and over,
 until a whole pass changes nothing — and that is when the world has
 something to say. Everything else here is arranged around that loop, not
 underneath it:
 
 ```
-engine/ugm/world.py     entities, components, and the queries systems ask.
-engine/ugm/loop.py      call every system, in order, until nothing changes.
+engine/ugm/world.py     entities, components, and the queries rules ask.
+engine/ugm/loop.py      call every rule, in order, until nothing changes.
 engine/ugm/engine.py    ONE thread that runs the loop; any number of channels
                           attached to it -- a terminal, several WebSockets.
 engine/ugm/save.py      the world on disk, so a restart is not an amnesia.
@@ -25,7 +25,7 @@ harneskills/serve.py    a WebSocket channel -- JSON in, JSON out.
 harneskills/client.py   a small program that speaks to a served engine.
 ```
 
-A **domain** is one callable — `install(loop)` — that registers systems
+A **domain** is one callable — `install(loop)` — that registers rules
 and spawns what they read. The harness ships none; you name the one you
 want. `harneskills.examples.fs` is the worked example: listing, ageing and
 renaming real files, with every rename an automation proposes held for
@@ -98,7 +98,7 @@ renamed huge.bin -> enormous.bin
 
 That difference is not a feature — it is one component. `propose_rename`
 attaches `NeedsApproval` because an *automation* proposed it; typing it
-yourself spawns the same `RenameWish` without the tag, and the system that
+yourself spawns the same `RenameWish` without the tag, and the rule that
 acts asks for exactly that:
 
 ```python
@@ -106,7 +106,7 @@ w.each(RenameWish, NeedsApproval)             # ask about these
 w.each(RenameWish, without=NeedsApproval)     # do these
 ```
 
-Approving is `detach(entity, NeedsApproval)`, one delta a system returns
+Approving is `detach(entity, NeedsApproval)`, one delta a rule returns
 — the same wish, no longer waiting. Nothing is copied from a held queue
 to a live one. Holding your own renames too would be one more `attach`,
 not a different design.
@@ -116,7 +116,7 @@ not a different design.
 You type `show file`. The REPL spawns one entity carrying one component —
 `Said(user, "show file")` — and runs the loop:
 
-| tick | system | what changed |
+| tick | rule | what changed |
 |------|--------|--------------|
 | 1 | `hear` | destroys the `Said` entity, spawns one carrying `ListWanted(#4)` |
 | 1 | `list_dir` | destroys the goal, calls `ls` — an entity per entry, each with `Entry`/`Size`/`Modified` — moves `Focus`, spawns `Listed(#4, 5)` |
@@ -124,42 +124,42 @@ You type `show file`. The REPL spawns one entity carrying one component —
 | 2 | *(everything)* | nothing changes — settled |
 
 Then the prompt prints the replies and destroys them. Every arrow there is
-an entity spawned by one system and destroyed by another; nothing is a
-call from one system into the next, so inserting a system between any two
+an entity spawned by one rule and destroyed by another; nothing is a
+call from one rule into the next, so inserting a rule between any two
 of them is just registering it in between.
 
-**System order is the whole of arbitration.** No attention, no scoring, no
-ranking of who most deserves a turn. Systems run in the order they were
+**Rule order is the whole of arbitration.** No attention, no scoring, no
+ranking of who most deserves a turn. Rules run in the order they were
 installed, every tick, and the same input produces the same output in the
 same order every time. If a listing should report entries and *then* count
-them, register the entry system first.
+them, register the entry rule first.
 
-**A system fires by changing something.** The loop reads `world.revision`
-before and after; a system that re-attached a component equal to the one
+**A rule fires by changing something.** The loop reads `world.revision`
+before and after; a rule that re-attached a component equal to the one
 already there did not fire. That is what "settled" is measured in — and
 why `World.attach` comparing before it stores is load-bearing rather than
 a convenience.
 
-**A system loops.** `flag_big` walks every entry in the folder in a `for`,
+**A rule loops.** `flag_big` walks every entry in the folder in a `for`,
 in one call, and destroys the goal entity that let it run. It cannot fire
 twice on the same goal because the goal is gone — so there is no per-file
 bookkeeping to write, and none to get wrong.
 
-**A budget is the circuit breaker.** Two systems can feed each other
-forever. The loop counts ticks, stops at 200, and names the systems still
+**A budget is the circuit breaker.** Two rules can feed each other
+forever. The loop counts ticks, stops at 200, and names the rules still
 firing:
 
 ```
   ! gave up after 200 ticks, still firing: kitchen.ping, kitchen.pong
 ```
 
-A system is named for its module and its function, because two domains
+A rule is named for its module and its function, because two domains
 installed at once will both have one called `hear`.
 
 ## The world
 
 `World`'s own four writing methods -- what `ugm.engine` and a domain's
-own `install()` call directly, outside any system's turn:
+own `install()` call directly, outside any rule's turn:
 
 ```python
 entry = w.spawn(Entry(folder, "notes.txt"), Size(2048))   # a new entity
@@ -169,7 +169,7 @@ w.each(Entry, Size, without=IsDir)                        # [(entity, entry, siz
 w.destroy(entity)                                         # finished with it
 ```
 
-A SYSTEM never calls these four -- see "Writing a domain", below, for
+A RULE never calls these four -- see "Writing a domain", below, for
 what it calls instead.
 
 **A component is a value.** `Size(17) == Size(17)`, so re-attaching one
@@ -185,14 +185,14 @@ exactly "this entity is in that set" and detaching it is "no longer".
 **A relationship is an entity in a component.** `Entry(folder=#1,
 name='todo.txt')` — no object graph, no back references to keep in step.
 Renaming makes the point: the entity is the same afterwards, still in its
-folder, still carrying whatever any system concluded about it. Only its
+folder, still carrying whatever any rule concluded about it. Only its
 `Entry` component is replaced.
 
 **A query is an intersection**, walked from the rarest component asked
 for, oldest entity first. `each` hands back the entity and then the
 components in the order asked for.
 
-**Destroying is what makes a system fire once** per thing asked of it.
+**Destroying is what makes a rule fire once** per thing asked of it.
 Goals and occasions are destroyed by whoever acts on them; standing
 entities — a folder, an entry, the session — are not.
 
@@ -209,11 +209,11 @@ class WantBoiled(Component): pass      # a tag: asked for, not yet done
 class Boiling(Component): pass
 
 def install(loop):
-    loop.system(hear)
-    loop.system(boil)
+    loop.rule(hear)
+    loop.rule(boil)
     loop.world.spawn(Kettle("kettle"))       # install() itself may touch the
     loop.world.learn("kettle", "boil")       # world directly -- it runs once,
-                                              # before any system's own turn.
+                                              # before any rule's own turn.
 
 def hear(w):
     deltas = []
@@ -233,11 +233,11 @@ def boil(w):
     return deltas
 ```
 
-A system READS the world (`w.each`, `w.get`, `w.has`, `w.first`, `w.the`)
+A rule READS the world (`w.each`, `w.get`, `w.has`, `w.first`, `w.the`)
 and RETURNS what should change, as a list of deltas from `ugm.delta` --
 it never calls `w.spawn`/`w.attach`/`w.detach`/`w.destroy` itself.
-`Loop.tick` applies one system's own deltas right after calling it,
-before the next system runs, so `boil` still sees what `hear` just did,
+`Loop.tick` applies one rule's own deltas right after calling it,
+before the next rule runs, so `boil` still sees what `hear` just did,
 in the same tick, exactly as if `hear` had mutated directly.
 
 ```
@@ -249,7 +249,7 @@ the kettle is boiling
 Three conventions, and the harness enforces none of them:
 
 - **`Said(user, "...")`** is what a typed line arrives as. A line no
-  system claims is still there when the world settles, and the prompt says
+  rule claims is still there when the world settles, and the prompt says
   so (`(nothing understood: ...)`) instead of guessing.
 - **`Reply(channel, "...")`** is the only thing printed unasked — one
   line, bare, then the entity destroyed, because a thing said is over and
@@ -261,7 +261,7 @@ Three conventions, and the harness enforces none of them:
   swapped pair counting as one — so `shwo` reaches `show`, and `for` stays
   two edits from `to` and is left alone. A tie is left alone too.
   Correction stops at the first word that looks like a path and never
-  resumes: `show file in /etc/rc.d` reaches the systems with `rc.d` intact,
+  resumes: `show file in /etc/rc.d` reaches the rules with `rc.d` intact,
   and a folder called `Documnets` is not a typo this prompt has an opinion
   about.
 
@@ -437,15 +437,15 @@ everything else it carried.
 
 ```
 /show      every entity in the world right now, and what it carries
-/systems   the systems installed, in the order they run each tick
+/rules   the rules installed, in the order they run each tick
 /reload    re-import every domain; the world comes back with it
 /reset     re-import every domain and start the world EMPTY
 /quit      leave
 ```
 
-`/reload` is the edit-a-system loop: change a module in another window,
+`/reload` is the edit-a-rule loop: change a module in another window,
 type `/reload`, and the new function is what runs. It re-imports every
-domain (`importlib.reload`) and builds a **new world** — systems already
+domain (`importlib.reload`) and builds a **new world** — rules already
 registered cannot be un-registered — and then restores the state file
 into it, so the code is new and the world is the one you had. It re-reads
 the config file too, so a domain added mid-session takes effect without
@@ -453,7 +453,7 @@ leaving the prompt.
 
 `/reset` is the same act with the restore skipped: an empty world, and
 since the next settle writes, it empties the file too. That is the
-difference between "I edited a system" and "I made a mess" — with
+difference between "I edited a rule" and "I made a mess" — with
 `--no-state` there is nothing to bring back and the two are one act
 again.
 
@@ -467,13 +467,13 @@ engine/                  the ugm engine, its own package (see engine/README.md).
                           the note in this repo's own pyproject.toml.
   pyproject.toml
   ugm/
-    world.py              entities, components, and the queries systems ask
-    loop.py                every system, in order, until nothing changes
+    world.py              entities, components, and the queries rules ask
+    loop.py                every rule, in order, until nothing changes
     engine.py             one thread, the world, and the channels attached to it
     save.py                 the world as JSON: entities are ints, components are values
   tests/
     test_world.py         identity, values, and the intersection of the two
-    test_loop.py           order, settling, the budget, a system that raises
+    test_loop.py           order, settling, the budget, a rule that raises
     test_engine.py        one world, several channels, a broadcast reply
     test_save.py            the same world, ids and all, next time
 
@@ -486,7 +486,7 @@ harneskills/             doors onto a ugm world, and the domain worked over one
   config.py              which domains, and where the world/server files live
   examples/
     model.py              the file domain's components: what a thing can BE
-    fs.py                 its thirteen systems, and what words reach them
+    fs.py                 its thirteen rules, and what words reach them
     fs_tools.py           ls, stat, rename -- what those words do to a real disk
 tests/
   test_repl.py           autocorrect, and a scripted session over the engine
@@ -501,7 +501,7 @@ tests/
 ## Scope
 
 **The engine bakes in no domain.** `engine/ugm/world.py`, `loop.py`,
-`engine.py` and `save.py` ship no systems, no components beyond `Said`
+`engine.py` and `save.py` ship no rules, no components beyond `Said`
 and `Reply`, no vocabulary and no knowledge of files -- and no channel,
 no transport, no config-file format either; those are `harneskills`'s to
 define, on top of an engine that has never heard of any of them.
@@ -510,7 +510,7 @@ names. `harneskills/examples/` is different on purpose: worked
 demonstrations, each an `install(loop)` the config or the command line
 can name, never imported unless you ask for it by name.
 
-**The harness bakes in no transport either.** A domain's systems read and
+**The harness bakes in no transport either.** A domain's rules read and
 write the `World`; whether that world is reached by one terminal, by a
 terminal and three WebSocket clients, or headless with no terminal at
 all, is a decision `harneskills/__main__.py` makes from the command line,
@@ -526,7 +526,7 @@ engine is `loop.py`: 43 lines of code that call functions until nothing
 changes, over `world.py`'s entity-component store.
 
 The filesystem example is the same demo it always was — listing, ageing,
-proposing, approving, renaming — reimplemented as eleven systems over
+proposing, approving, renaming — reimplemented as eleven rules over
 three tools, and it is now covered by tests (`tests/test_fs.py`) rather
 than by hand. The previous README noted that the suite never reached
 `examples/` and that two bugs had sat there unnoticed as a result; that
@@ -545,7 +545,7 @@ Three things the old design needed and this one does not:
 
 - **Guard facts.** `considered(...)`, `weighed(...)`, `replied(...)`,
   `heard(...)` existed because a pattern rule re-matched what was still
-  believed every tick. A system that destroys its goal and loops over the
+  believed every tick. A rule that destroys its goal and loops over the
   work in Python cannot fire twice on the same goal.
 - **Attention.** "The folder you are looking at" was a claim that faded on
   a clock, restored whenever a move touched it, ranked against every other
@@ -560,11 +560,11 @@ What the entity-component split buys over the tuple store it replaced,
 found while porting rather than argued for in advance:
 
 - A rename is one `attach`. The entity does not change, so `Stale`,
-  `Big`, and everything else a system had concluded about that file stays
+  `Big`, and everything else a rule had concluded about that file stays
   attached to it — where the tuple version had to rewrite four facts keyed
   by the old name and hope nothing else referred to it.
 - The approval gate stopped being a second queue. `NeedsApproval` is a tag
-  on the wish, `w.each(RenameWish, without=NeedsApproval)` is the system
+  on the wish, `w.each(RenameWish, without=NeedsApproval)` is the rule
   that acts, and approving detaches it.
 - `/show` became worth reading: one line per entity, every component it
   carries, `Big()` and `IsDir()` visible on the files that have them.
@@ -630,9 +630,9 @@ directory is the fix that holds regardless of working directory or
 invocation; the package inside, and everywhere it is imported from, did
 not need to change at all.
 
-**Deltas, 2026-08-27.** `ugm`'s own systems stopped touching the world
+**Deltas, 2026-08-27.** `ugm`'s own rules stopped touching the world
 and started returning it -- see `engine/README.md`'s own entry on this;
-same day, same reason. `harneskills.examples.fs`'s thirteen systems and
+same day, same reason. `harneskills.examples.fs`'s thirteen rules and
 `fs_tools.py`'s three tools moved to the new contract with it: every
 `w.spawn`/`attach`/`detach`/`destroy` became `ugm.delta.spawn`/`attach`/
 `detach`/`destroy`, appended to a list and returned. `Contents.by_name`
@@ -643,16 +643,16 @@ place" -- stopped being that: `fs_tools.ls`/`rename` compute a fresh
 
 The one place order genuinely mattered rather than merely reading as if
 it did: `_understand`'s rename branch used to create-and-immediately-list
-a never-before-seen folder within one call, which a system that only
+a never-before-seen folder within one call, which a rule that only
 returns deltas cannot do (nothing it describes is real until it returns).
 No test exercises "rename as literally the first command of a session,
 before any listing" -- every one lists first -- so the branch now reads
 the folder only if the world ALREADY has one, which answers exactly the
 same as a freshly-created empty folder would: nothing found, "no such
 file here". Every other `_listed`-then-act pattern (`flag_stale`,
-`flag_big`) needed no such change, because a `Pending` a system spawns
+`flag_big`) needed no such change, because a `Pending` a rule spawns
 is always resolved to a real entity by the time it finishes its OWN
-turn, before the next system runs -- so nothing LATER, even later in the
+turn, before the next rule runs -- so nothing LATER, even later in the
 same tick, ever sees an unresolved one.
 
 `pytest` is 237 checks, 0 failing, 35 of them `test_fs.py`'s -- unchanged

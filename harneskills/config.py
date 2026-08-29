@@ -18,8 +18,8 @@ A line whose first non-blank character is `#` is a comment; a blank line is
 nothing. That is the entire file format.
 
 A domain is a Python callable taking the `Loop` -- `install(loop)` -- and
-expected to register systems and spawn what they read. There is no other
-kind of line, because there is no other kind of content: a system is
+expected to register rules and spawn what they read. There is no other
+kind of line, because there is no other kind of content: a rule is
 Python, so a domain's model and its behaviour are the same import, and a
 config that named folders of data would be naming files nothing reads.
 
@@ -109,7 +109,7 @@ def read_domains(path=None) -> "list[str]":
     No file is not an error -- it is the ordinary case for someone who has
     never written one, and it means "no standing domains", exactly as if
     the file were empty. The same spec named twice is kept once:
-    installing a domain twice registers its systems twice, and every one
+    installing a domain twice registers its rules twice, and every one
     of them would then run twice a tick.
     """
     if path is None:

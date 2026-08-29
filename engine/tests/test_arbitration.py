@@ -61,7 +61,7 @@ def test_everything_ruled_out_is_unresolved_not_a_guess():
             for (option,) in [r for r in held.rows if len(r) == 1]:
                 f.fact("ruled_out", occ, option, f.word("no_reason_given"))
 
-    f.system(veto, name="veto")
+    f.rule(veto, name="veto")
     f.run()
     assert f.text("verdict", occasion) == "unresolved"
     assert f.of("winner", occasion) == []
@@ -103,7 +103,7 @@ def test_a_hard_veto_dominates_the_soft_preference_it_already_won_on():
                 if f.holds("realizes", option, f.word("junk_food")):
                     f.fact("ruled_out", occasion, option, f.word("dieting"))
 
-    f.system(diet, name="diet")
+    f.rule(diet, name="diet")
     f.run()
     assert f.text("verdict", dessert) == "forced"
     assert f.show(f.one("winner", dessert)) == "nothing"
@@ -113,11 +113,11 @@ def test_a_hard_veto_dominates_the_soft_preference_it_already_won_on():
 
 
 def test_a_judge_that_needs_information_unblocks_without_any_goal_machinery():
-    """Two systems, each oblivious to the other. `judge` cannot rule until
+    """Two rules, each oblivious to the other. `judge` cannot rule until
     it knows a price, so it asserts `needs` instead of guessing —
     `docs/decision_patterns.md`'s claim, made runnable: `needs` is an
     ordinary fact, satisfied by whoever happens to make it true, with no
-    call from one system into the other and nothing suspended in between.
+    call from one rule into the other and nothing suspended in between.
     """
     f = Facts()
     lunch = f.node("lunch")
@@ -145,8 +145,8 @@ def test_a_judge_that_needs_information_unblocks_without_any_goal_machinery():
                 if f.one("price", item) is None:
                     f.fact("price", item, f.value(7))
 
-    f.system(judge, name="judge")
-    f.system(unrelated_pricer, name="pricer")
+    f.rule(judge, name="judge")
+    f.rule(unrelated_pricer, name="pricer")
     f.run()
 
     assert f.holds("affordable", lunch, pizza)

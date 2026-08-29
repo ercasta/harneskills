@@ -1,6 +1,6 @@
-"""What the loop promises: every system, in order, until nothing changes
--- and every change made through the deltas a system returns, never by a
-system touching the world itself."""
+"""What the loop promises: every rule, in order, until nothing changes
+-- and every change made through the deltas a rule returns, never by a
+rule touching the world itself."""
 
 import dataclasses
 
@@ -35,29 +35,29 @@ def loop():
     return Loop()
 
 
-def test_systems_run_in_registration_order_every_tick(loop):
+def test_rules_run_in_registration_order_every_tick(loop):
     order = []
-    loop.system(lambda w: order.append("first"), name="first")
-    loop.system(lambda w: order.append("second"), name="second")
+    loop.rule(lambda w: order.append("first"), name="first")
+    loop.rule(lambda w: order.append("second"), name="second")
     loop.tick()
     loop.tick()
     assert order == ["first", "second", "first", "second"]
 
 
-def test_a_system_is_named_for_its_module_and_function(loop):
-    @loop.system
+def test_a_rule_is_named_for_its_module_and_function(loop):
+    @loop.rule
     def flag_big(w):
         pass
 
-    @loop.system(name="say hello")
+    @loop.rule(name="say hello")
     def _(w):
         pass
 
-    assert [name for name, _ in loop.systems] == ["test_loop.flag_big", "say hello"]
+    assert [name for name, _ in loop.rules] == ["test_loop.flag_big", "say hello"]
 
 
-def test_a_system_fires_by_changing_something(loop):
-    @loop.system
+def test_a_rule_fires_by_changing_something(loop):
+    @loop.rule
     def marks(w):
         return [attach(e, Seen())            # news once, and then never again
                for e, _ in w.each(Step)]
@@ -67,8 +67,8 @@ def test_a_system_fires_by_changing_something(loop):
     assert loop.tick() == []
 
 
-def test_a_system_may_return_none_for_nothing_to_do(loop):
-    @loop.system
+def test_a_rule_may_return_none_for_nothing_to_do(loop):
+    @loop.rule
     def idle(w):
         for entity, step in w.each(Step):
             pass   # no return statement -- None, same as an empty list
@@ -78,7 +78,7 @@ def test_a_system_may_return_none_for_nothing_to_do(loop):
 
 
 def test_run_settles_when_a_whole_pass_changes_nothing(loop):
-    @loop.system
+    @loop.rule
     def chain(w):
         deltas = []
         for entity, step in w.each(Step):
@@ -98,7 +98,7 @@ def test_a_spawn_s_pending_entity_is_usable_the_same_list(loop):
     """`spawn(...)` hands back the delta; `.entity` on it is a `Pending`
     that later deltas in the SAME returned list may already attach to or
     embed inside another component's own field."""
-    @loop.system
+    @loop.rule
     def make_and_mark(w):
         made = spawn(Step(1))
         return [made, attach(made.entity, Seen())]
@@ -118,7 +118,7 @@ def test_a_pending_nested_in_a_component_field_resolves_too(loop):
     class Index:
         by_name: dict
 
-    @loop.system
+    @loop.rule
     def make(w):
         made = spawn(Step(1))
         return [made,
@@ -136,10 +136,10 @@ def test_a_pending_nested_in_a_component_field_resolves_too(loop):
     assert index.by_name == {"a": target.id}
 
 
-def test_a_system_that_touches_the_world_directly_is_a_named_error(loop):
-    @loop.system
+def test_a_rule_that_touches_the_world_directly_is_a_named_error(loop):
+    @loop.rule
     def cheats(w):
-        w.spawn(Step(0))          # forbidden: a system returns deltas
+        w.spawn(Step(0))          # forbidden: a rule returns deltas
         return []
 
     settled = loop.run()
@@ -154,7 +154,7 @@ def test_a_system_that_touches_the_world_directly_is_a_named_error(loop):
 
 
 def test_returning_something_that_is_not_a_delta_is_a_named_error(loop):
-    @loop.system
+    @loop.rule
     def bogus(w):
         return [object()]
 
@@ -163,8 +163,8 @@ def test_returning_something_that_is_not_a_delta_is_a_named_error(loop):
     assert "not a delta" in str(loop.errors[0][1])
 
 
-def test_two_systems_feeding_each_other_stop_at_the_budget_and_are_named(loop):
-    @loop.system
+def test_two_rules_feeding_each_other_stop_at_the_budget_and_are_named(loop):
+    @loop.rule
     def ping(w):
         deltas = []
         for entity, _ in w.each(Pong):
@@ -172,7 +172,7 @@ def test_two_systems_feeding_each_other_stop_at_the_budget_and_are_named(loop):
             deltas.append(spawn(Ping()))
         return deltas
 
-    @loop.system
+    @loop.rule
     def pong(w):
         deltas = []
         for entity, _ in w.each(Ping):
@@ -186,14 +186,14 @@ def test_two_systems_feeding_each_other_stop_at_the_budget_and_are_named(loop):
     assert sorted(set(settled.hot)) == ["test_loop.ping", "test_loop.pong"]
 
 
-def test_a_system_that_raises_is_recorded_and_the_others_still_run(loop):
-    @loop.system
+def test_a_rule_that_raises_is_recorded_and_the_others_still_run(loop):
+    @loop.rule
     def explodes(w):
         raise ValueError("no")
 
-    @loop.system
+    @loop.rule
     def carries_on(w):
-        # `attach`, not `spawn`: spawning is never idempotent, so a system
+        # `attach`, not `spawn`: spawning is never idempotent, so a rule
         # that spawned every tick would keep the world awake by itself and
         # tell us nothing about the one that raises.
         return [attach(e, Seen()) for e, _ in w.each(Step)]
@@ -210,17 +210,17 @@ def test_a_system_that_raises_is_recorded_and_the_others_still_run(loop):
 def test_install_hands_the_loop_to_a_domain(loop):
     def domain(lp, greeting="hi"):
         lp.world.spawn(Step(greeting))
-        lp.system(lambda w: None, name="noop")
+        lp.rule(lambda w: None, name="noop")
 
     loop.install(domain, greeting="hello")
     assert loop.world.the(Step).n == "hello"
-    assert [name for name, _ in loop.systems] == ["noop"]
+    assert [name for name, _ in loop.rules] == ["noop"]
 
 
-def test_a_system_with_watches_is_not_even_called_while_dormant(loop):
+def test_a_rule_with_watches_is_not_even_called_while_dormant(loop):
     calls = []
 
-    @loop.system(watches=(Step,))
+    @loop.rule(watches=(Step,))
     def counts_calls(w):
         calls.append(None)
 
@@ -237,8 +237,8 @@ def test_a_system_with_watches_is_not_even_called_while_dormant(loop):
 
 def test_watches_accepts_a_single_type_or_several(loop):
     seen = []
-    loop.system(lambda w: seen.append("one"), name="one", watches=Step)
-    loop.system(lambda w: seen.append("either"), name="either",
+    loop.rule(lambda w: seen.append("one"), name="one", watches=Step)
+    loop.rule(lambda w: seen.append("either"), name="either",
                watches=(Step, Ping))
 
     loop.tick()
@@ -249,9 +249,9 @@ def test_watches_accepts_a_single_type_or_several(loop):
     assert seen == ["either"], "Ping alone wakes the OR-watcher, not the Step one"
 
 
-def test_a_system_with_no_watches_runs_every_tick_regardless(loop):
+def test_a_rule_with_no_watches_runs_every_tick_regardless(loop):
     seen = []
-    loop.system(lambda w: seen.append(None), name="always")
+    loop.rule(lambda w: seen.append(None), name="always")
     loop.tick()
     loop.tick()
     assert len(seen) == 2, "the default: called whether or not anything exists"
@@ -262,17 +262,17 @@ def test_a_system_with_no_watches_runs_every_tick_regardless(loop):
 
 def test_higher_priority_runs_first_regardless_of_registration_order(loop):
     order = []
-    loop.system(lambda w: order.append("low"), name="low", priority=1)
-    loop.system(lambda w: order.append("high"), name="high", priority=10)
+    loop.rule(lambda w: order.append("low"), name="low", priority=1)
+    loop.rule(lambda w: order.append("high"), name="high", priority=10)
     loop.tick()
     assert order == ["high", "low"]
 
 
 def test_equal_priority_including_the_default_keeps_registration_order(loop):
     order = []
-    loop.system(lambda w: order.append("first"), name="first")
-    loop.system(lambda w: order.append("second"), name="second", priority=0)
-    loop.system(lambda w: order.append("third"), name="third", priority=5)
+    loop.rule(lambda w: order.append("first"), name="first")
+    loop.rule(lambda w: order.append("second"), name="second", priority=0)
+    loop.rule(lambda w: order.append("third"), name="third", priority=5)
     loop.tick()
     # "third" (priority 5) leads; "first" and "second" are both priority 0
     # and keep the order they were registered in relative to each other.
@@ -280,43 +280,43 @@ def test_equal_priority_including_the_default_keeps_registration_order(loop):
 
 
 def test_priority_does_not_reorder_the_registry_itself(loop):
-    """`self.systems` is what `/systems` prints and what other tests read
+    """`self.rules` is what `/rules` prints and what other tests read
     -- it stays in registration order. Priority is `tick()`'s own
     execution order, not a second registry."""
-    loop.system(lambda w: None, name="low", priority=1)
-    loop.system(lambda w: None, name="high", priority=10)
-    assert [name for name, _ in loop.systems] == ["low", "high"]
+    loop.rule(lambda w: None, name="low", priority=1)
+    loop.rule(lambda w: None, name="high", priority=10)
+    assert [name for name, _ in loop.rules] == ["low", "high"]
 
 
-def test_a_late_registered_high_priority_system_still_runs_first(loop):
+def test_a_late_registered_high_priority_rule_still_runs_first(loop):
     """Priority is read fresh each tick, not fixed at whatever position a
-    system happened to be appended at -- a system two domains install in
+    rule happened to be appended at -- a rule two domains install in
     either order still runs in the order THEY declared, not the order
     `install()` happened to run in."""
     order = []
     loop.tick()                                    # nothing registered yet
-    loop.system(lambda w: order.append("first-installed"), name="a", priority=0)
-    loop.system(lambda w: order.append("installed-later-but-important"),
+    loop.rule(lambda w: order.append("first-installed"), name="a", priority=0)
+    loop.rule(lambda w: order.append("installed-later-but-important"),
                name="b", priority=100)
     loop.tick()
     assert order == ["installed-later-but-important", "first-installed"]
 
 
-def test_a_system_watching_SEVERAL_kinds_still_fires_ONCE_per_tick(loop):
+def test_a_rule_watching_SEVERAL_kinds_still_fires_ONCE_per_tick(loop):
     calls = []
-    loop.system(lambda w: calls.append(None), name="watcher",
+    loop.rule(lambda w: calls.append(None), name="watcher",
                watches=(Step, Ping, Pong))
     loop.world.spawn(Step(0))
     loop.world.spawn(Ping())
     loop.world.spawn(Pong())               # all three watched kinds exist
     loop.tick()
-    assert len(calls) == 1, "one entry in self.systems, called once, full stop"
+    assert len(calls) == 1, "one entry in self.rules, called once, full stop"
 
 
 def test_after_tick_runs_between_ticks_not_at_the_end(loop):
     seen = []
 
-    @loop.system
+    @loop.rule
     def countdown(w):
         deltas = []
         for entity, step in w.each(Step):

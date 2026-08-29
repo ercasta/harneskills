@@ -8,7 +8,7 @@ made runnable.
 caller mints (`f.node("dessert")`, or an interned `f.word("decision:screen")`
 — this module does not care). Every relation below is read generically by
 `commit`, regardless of how many judges propose, justify, rank, or rule
-candidates out for it: a new judge is a new system on the loop and changes
+candidates out for it: a new judge is a new rule on the loop and changes
 nothing here.
 
 ⭐ WHY THIS SHIPS IN `ugm` RATHER THAN IN THE DOMAIN THAT NEEDED IT. Every
@@ -17,7 +17,7 @@ writes Python on this world), and the reason it did not stay there is what
 that domain measured before the extraction: with each rule family deciding
 FOR ITSELF whether to fire, two repairs both fired on one bug and the answer
 was correct by luck. Agency in the base rule does not compose — on a loop
-that runs every system every tick, a rule with an opinion about its rivals is
+that runs every rule every tick, a rule with an opinion about its rivals is
 a rule with an opinion about registration order. So the arbitration lives in
 ONE generic reader over the candidate set, and a domain that skips it is not
 choosing a simpler design, it is choosing that bug. That is the sense in
@@ -27,9 +27,9 @@ which a `ugm` user should comply with this file.
 relation here, and that is the point rather than a gap. A judge that needs
 more information before it can rank or rule on a candidate asserts an
 ordinary fact (see the pricing example in `tests/test_arbitration.py`) and
-whatever answers it is some other, unrelated system — `commit` needs no
+whatever answers it is some other, unrelated rule — `commit` needs no
 code at all to support this, because unblocking is just "the guard read
-false, now it reads true," the same as every system, always. Baking `needs`
+false, now it reads true," the same as every rule, always. Baking `needs`
 in here would be inventing goal machinery for a case that does not need any.
 
 ⚠⚠ HARD BEATS SOFT, STRUCTURALLY, NOT BY CONVENTION. `commit` computes
@@ -55,19 +55,19 @@ def realizes_closure(f: Facts):
     """The transitive closure of `realizes` — `pizza realizes deep_dish`,
     `deep_dish realizes junk_food` => `pizza realizes junk_food` — so a
     judge authored against `junk_food` reaches `pizza` without ever being
-    told `deep_dish` exists. An ordinary system reading its own conclusion at
+    told `deep_dish` exists. An ordinary rule reading its own conclusion at
     a fixpoint — the same shape as propagating anything else transitively
     (an effect across a call graph, a reachability across a tree), narrowed
     to one named relation.
     """
 
-    def system(world) -> None:
+    def rule(world) -> None:
         for option, property_ in f.each("realizes", arity=1):
             for further in f.objects("realizes", property_):
                 if not f.holds("realizes", option, further):
                     f.fact("realizes", option, further)
 
-    return system
+    return rule
 
 
 def commit(f: Facts):
@@ -83,7 +83,7 @@ def commit(f: Facts):
     to survive every veto, rather than teaching this reader about defaults.
     """
 
-    def system(world) -> None:
+    def rule(world) -> None:
         for occasion in f.subjects("candidate"):
             options = f.objects("candidate", occasion)
             if not options:
@@ -114,7 +114,7 @@ def commit(f: Facts):
                     f.deny("winner", occasion, current)
                 f.state("verdict", occasion, f.word("ambiguous"))
 
-    return system
+    return rule
 
 
 #: ⭐ The two pieces, in one place, so a caller can install a SUBSET — for
@@ -126,7 +126,7 @@ DESCRIPTIONS = {"realizes_closure": realizes_closure, "commit": commit}
 #: `Loop`'s note on `watches`. Neither reader has a reason to run before
 #: anyone has proposed anything: `realizes_closure` only ever reads
 #: `realizes` rows, `commit` only ever reads `candidate` ones. A session
-#: that never calls this domain at all now costs these two systems nothing
+#: that never calls this domain at all now costs these two rules nothing
 #: but the one `world.populated()` check per tick, not a walk of an empty
 #: query every time.
 WATCHES = {"realizes_closure": "realizes", "commit": "candidate"}
@@ -136,4 +136,4 @@ def install(loop, f: Facts, only=None) -> None:
     """Register the pieces. `only` names a subset, for a control."""
     for name, make in DESCRIPTIONS.items():
         if only is None or name in only:
-            f.system(make(f), name=f"arbitration.{name}", watches=WATCHES[name])
+            f.rule(make(f), name=f"arbitration.{name}", watches=WATCHES[name])

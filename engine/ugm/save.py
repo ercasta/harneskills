@@ -47,7 +47,7 @@ still pointing at, and the two would silently become one thing.
 
 ## What is NOT saved
 
-The SYSTEMS: a domain registers those in `install()`, from code, every
+The RULES: a domain registers those in `install()`, from code, every
 time. Anything a domain would rather recompute than restore is its own
 business to reconcile -- see `fs.install`, which attaches a fresh `Session`
 over the restored one so that the clock and the working directory are this

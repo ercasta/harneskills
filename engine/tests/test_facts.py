@@ -156,13 +156,13 @@ def test_a_WORD_and_a_LITERAL_are_different_kinds_of_entity():
 @pytest.mark.parametrize("payload", ["a'b", 'q"q', "", 3, -2.5, True, None, b"\x00"])
 def test_a_literal_survives_the_world_exactly(payload):
     """The value lives IN the world as an entity's printed name, via `repr`, so
-    nothing is held in a Python map the systems cannot see."""
+    nothing is held in a Python map the rules cannot see."""
     f = Facts()
     assert f.payload(f.value(payload)) == payload
     assert type(f.payload(f.value(payload))) is type(payload)
 
 
-def test_a_system_RE_DERIVING_what_already_holds_still_SETTLES():
+def test_a_rule_RE_DERIVING_what_already_holds_still_SETTLES():
     """⚠⚠ The `no <own conclusion>` premise is not load-bearing here. An engine with
     no inert set offers an application that changed nothing again, so a rule that
     did not stop itself never stopped — the whole budget burned on the first
@@ -171,7 +171,7 @@ def test_a_system_RE_DERIVING_what_already_holds_still_SETTLES():
     n = f.node("n")
     f.fact("for_stmt", n)
 
-    @f.system
+    @f.rule
     def restates(world):
         for subject in f.subjects("for_stmt"):
             f.fact("iteration", subject)
@@ -189,18 +189,18 @@ def test_a_reader_sees_what_a_SYSTEM_concluded_not_only_what_a_caller_wrote():
     n = f.node("n")
     f.fact("for_stmt", n)
 
-    @f.system
+    @f.rule
     def describe(world):
         for subject in f.subjects("for_stmt"):
             f.fact("iteration", subject)
 
-    @f.system
+    @f.rule
     def read_it_back(world):
         for subject in f.subjects("iteration"):
             f.fact("seen", subject)
 
     f.run()
-    assert f.has("seen", n), "the second system read the first system's conclusion"
+    assert f.has("seen", n), "the second rule read the first rule's conclusion"
 
 
 # -- the delta contract ----------------------------------------------------------
@@ -214,7 +214,7 @@ def test_a_deny_then_a_fact_in_ONE_turn_sees_its_own_effect():
     cmp_ = f.node("cmp")
     f.fact("operator", cmp_, f.word("gt"))
 
-    @f.system
+    @f.rule
     def repair(world):
         for subject in f.subjects("operator"):
             if f.deny("operator", subject, f.word("gt")):
@@ -224,15 +224,15 @@ def test_a_deny_then_a_fact_in_ONE_turn_sees_its_own_effect():
     assert [f.show(o) for (o,) in f.of("operator", cmp_)] == ["ge"]
 
 
-def test_a_word_MINTED_inside_a_system_is_found_again_by_a_LATER_turn():
-    """⭐ `word()` inside a system DESCRIBES an entity; that description resolves
+def test_a_word_MINTED_inside_a_rule_is_found_again_by_a_LATER_turn():
+    """⭐ `word()` inside a rule DESCRIBES an entity; that description resolves
     only within its own turn, so a later turn needing the same text has to find what
     an earlier one already made real. Two entities for `ge` would not join."""
     f = Facts()
     for name in ("a", "b"):
         f.fact("cmp", f.node(name))
 
-    @f.system
+    @f.rule
     def mint(world):
         for subject in f.subjects("cmp"):
             if not f.has("operator", subject):
@@ -243,13 +243,13 @@ def test_a_word_MINTED_inside_a_system_is_found_again_by_a_LATER_turn():
     assert len(made) == 1, "one `ge`, not one per turn"
 
 
-def test_a_system_that_RAISED_is_re_raised_rather_than_settling_quietly():
+def test_a_rule_that_RAISED_is_re_raised_rather_than_settling_quietly():
     """⚠⚠ `Loop.run` records it on `loop.errors` and carries on, which is right for a
     prompt and wrong for a derivation: the world settles LOOKING quiescent while the
     conclusion the rule owed is simply absent."""
     f = Facts()
 
-    @f.system
+    @f.rule
     def broken(world):
         raise ValueError("no")
 
@@ -336,7 +336,7 @@ def test_a_word_MINTED_INSIDE_A_SYSTEM_is_marked_too():
     f = Facts()
     f.fact("cmp", f.node("c"))
 
-    @f.system
+    @f.rule
     def repair(world):
         for subject in f.subjects("cmp"):
             if not f.has("operator", subject):

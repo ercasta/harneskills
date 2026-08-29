@@ -21,12 +21,12 @@ A line is posted as `say`, which the engine turns into `Said(name, "show
 file")` where `name` is this terminal's own channel name -- never
 literally `"user"`, which the engine reserves for "everyone" (see its own
 docstring, "Channels, and who hears what"). Whether the words mean
-anything is a question for the systems a domain installed; a line no
-system claims comes back as `{"unheard": ...}` and is printed as such,
+anything is a question for the rules a domain installed; a line no
+rule claims comes back as `{"unheard": ...}` and is printed as such,
 not guessed at.
 
-There is no way to author a system at this prompt, and no mode that would
-let you: a system is a Python function, so writing one means editing a
+There is no way to author a rule at this prompt, and no mode that would
+let you: a rule is a Python function, so writing one means editing a
 module and `/reload`ing.
 
 ## The output is a channel, and a reply is the only thing printed unasked
@@ -50,7 +50,7 @@ word equally near two known words is a word this prompt cannot read.
 
 Correction stops at the first span that looks like a path (a `/`, a `.`,
 a `~`, or a quoted span) and never resumes: `show file in /etc/rc.d` must
-reach the systems with `rc.d` intact, and a folder called `Documnets` is
+reach the rules with `rc.d` intact, and a folder called `Documnets` is
 not a typo this prompt is entitled to have an opinion about.
 
 Reading `engine.loop.world.vocabulary` straight off the engine's own
@@ -86,12 +86,12 @@ _PATHISH = re.compile(r'[/\\~"]|\.\w')
 
 HELP = """\
 /show      every entity in the world right now, and what it carries
-/systems   the systems installed, in the order they run each tick
+/rules     the rules installed, in the order they run each tick
 /quit      leave -- ends the whole session (see this module's docstring)
 
 Type what you want in words -- `show file`, `show file in /tmp`, `show
 big`. A line becomes `Said("%s", "...")` and means whatever the installed
-domains' systems make of it; a line nobody claims is reported, not
+domains' rules make of it; a line nobody claims is reported, not
 guessed at. Only a reply is printed unasked. A misspelled word is
 corrected against the vocabulary a domain registered, and echoed (`~ fiel
 -> file`); a path, and everything after it on the line, is left exactly

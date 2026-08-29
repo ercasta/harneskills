@@ -1,4 +1,4 @@
-"""What a system RETURNS instead of touching a world: a description of a
+"""What a rule RETURNS instead of touching a world: a description of a
 change, not the change itself. `ugm.loop.Loop.tick` is the only thing
 that ever applies one.
 
@@ -13,8 +13,8 @@ that ever applies one.
 
 Four kinds, one free function each, mirroring `World`'s own four writing
 methods by name -- `spawn`, `attach`, `detach`, `destroy` -- so porting a
-system that used to call `w.spawn(...)` is `spawn(...)`, appended to a
-list, rather than a new vocabulary to learn. A system may still call
+rule that used to call `w.spawn(...)` is `spawn(...)`, appended to a
+list, rather than a new vocabulary to learn. A rule may still call
 `w.each`, `w.get`, `w.has`, `w.first`, `w.the` and every other READING
 method exactly as before; only the four that move `world.revision` are
 no longer its to call.
@@ -35,11 +35,11 @@ component coming back off disk: `object.__new__` and a fresh `__dict__`,
 because there is no constructor signature this could call in general
 (see `_resolve_component`).
 
-A `Pending` is *sugar for staying inside one system's own turn*, not a
-second kind of entity. `Loop.tick` applies one system's deltas right
-after calling it, before the next system runs -- so a `Pending` never
-needs to survive past the list it was born in, and a system that wants
-to act on something ANOTHER system just made waits for the next tick and
+A `Pending` is *sugar for staying inside one rule's own turn*, not a
+second kind of entity. `Loop.tick` applies one rule's deltas right
+after calling it, before the next rule runs -- so a `Pending` never
+needs to survive past the list it was born in, and a rule that wants
+to act on something ANOTHER rule just made waits for the next tick and
 reads it back off the world, an ordinary `Entity`, the same as always.
 """
 

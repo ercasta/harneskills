@@ -1,13 +1,13 @@
 """What a thing in the filesystem domain can BE: the components, and
 nothing that does anything with them.
 
-Read as three groups, because a system reads them that way too:
+Read as three groups, because a rule reads them that way too:
 
 **What something is.** `Folder`, `Contents`, `Entry`, `Size`, `Modified`,
 `IsDir`, `Session`. Observation and setting -- put there by a tool or at
 install time, and true until the disk says otherwise.
 
-**What a system has concluded.** `Stale`, `Big`, `Focus`. Tags: no fields,
+**What a rule has concluded.** `Stale`, `Big`, `Focus`. Tags: no fields,
 so every instance is equal to every other and attaching one twice is not a
 change. Being stale is not a property of a file, it is a claim
 `flag_stale` made about it -- and `detach(entity, Stale)` unmakes it.
@@ -15,7 +15,7 @@ change. Being stale is not a property of a file, it is a claim
 **What is being asked for, and what just happened.** `ListWanted`,
 `StaleHunt`, `BigHunt`, `HuntHere`, `RenameWish`, `NeedsApproval`,
 `Asked` are goals; `Listed`, `FoundStale`, `FoundBig`, `Renamed`,
-`Failed` are occasions. A system destroys the entity it acted on, so the
+`Failed` are occasions. A rule destroys the entity it acted on, so the
 next tick has nothing to match and the loop settles.
 
 `NeedsApproval` is the one worth pausing on. A rename waiting for a person
@@ -51,7 +51,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class Folder:
     """A directory, by path. One entity per path, and `fs.folder_at` is
-    the only thing that makes them, so two systems asking about the same
+    the only thing that makes them, so two rules asking about the same
     directory are asking about the same entity."""
 
     path: str
@@ -65,7 +65,7 @@ class Contents:
     in place -- and put on with `world.replace`, which is what makes
     re-listing an unchanged folder cost a dict comparison rather than a
     revision: this used to be the one hand-kept structure in the domain,
-    mutated by hand and reported with `world.changed()`, until a system
+    mutated by hand and reported with `world.changed()`, until a rule
     stopped being the thing allowed to touch a world at all -- see
     `ugm.delta`.
     """
@@ -116,7 +116,7 @@ class Session:
     big_floor: int
 
 
-# -- what a system has concluded -----------------------------------------
+# -- what a rule has concluded -----------------------------------------
 
 @dataclass(frozen=True)
 class Focus:

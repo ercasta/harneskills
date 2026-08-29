@@ -25,7 +25,7 @@ def echoing_loop():
     understand, exercising the ordinary unheard path too."""
     loop = Loop()
 
-    @loop.system
+    @loop.rule
     def echo(w):
         for entity, said in w.each(Said):
             if said.text == "silence":

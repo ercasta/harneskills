@@ -11,7 +11,7 @@ from harneskills.examples.model import Session
 def test_a_named_domain_is_imported_and_handed_the_loop():
     loop = Loop()
     assert install(loop, ["harneskills.examples.fs:install"]) == []
-    assert [name for name, _ in loop.systems][:2] == ["fs.hear", "fs.hear_answer"]
+    assert [name for name, _ in loop.rules][:2] == ["fs.hear", "fs.hear_answer"]
     assert loop.world.the(Session) is not None
 
 
@@ -28,7 +28,7 @@ def test_every_way_a_spec_can_be_wrong_is_named_and_survivable():
     assert "expected module:callable" in problems[0]
     assert "no_such_callable" in problems[2]
     assert "not callable" in problems[3]
-    assert loop.systems, "the good spec still installed"
+    assert loop.rules, "the good spec still installed"
 
 
 def test_a_domain_that_raises_on_install_is_named_not_raised(tmp_path, monkeypatch):
@@ -38,7 +38,7 @@ def test_a_domain_that_raises_on_install_is_named_not_raised(tmp_path, monkeypat
     loop = Loop()
     problems = install(loop, ["boomdomain:install", "harneskills.examples.fs:install"])
     assert problems == ["boomdomain:install: RuntimeError: nope"]
-    assert loop.systems, "the domain after it still installed"
+    assert loop.rules, "the domain after it still installed"
 
 
 def test_reload_picks_up_an_edited_module(monkeypatch):
@@ -57,7 +57,7 @@ def test_build_installs_standing_domains_before_the_command_line(tmp_path, capsy
     loop = build(str(conf), ["harneskills.examples.fs:install"])
     # Named on both sides, installed once -- twice would run every rule
     # twice a tick.
-    assert [name for name, _ in loop.systems].count("fs.hear") == 1
+    assert [name for name, _ in loop.rules].count("fs.hear") == 1
     assert "installed:" in capsys.readouterr().out
 
 

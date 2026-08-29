@@ -106,7 +106,7 @@ def test_remove_takes_ONE_value_leaving_the_rest_of_that_type_standing(w):
 
 
 def test_attaching_an_equal_component_is_not_a_change(w):
-    # What lets a system recompute the same answer every tick without
+    # What lets a rule recompute the same answer every tick without
     # keeping the world awake forever.
     entity = w.spawn(Size(17))
     before = w.revision
@@ -225,7 +225,7 @@ def test_matches_come_back_oldest_first_whatever_was_asked_for(w):
     assert [e for e, _, _ in w.each(Size, Named)] == [first, second]
 
 
-def test_each_is_a_snapshot_so_a_system_may_write_while_it_walks(w):
+def test_each_is_a_snapshot_so_a_rule_may_write_while_it_walks(w):
     for name in "ab":
         w.spawn(Named(name))
     for entity, named in w.each(Named):

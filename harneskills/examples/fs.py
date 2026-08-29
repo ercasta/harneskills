@@ -2,7 +2,7 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Thirteen systems over `model.py`'s components and `fs_tools.py`'s three
+Thirteen rules over `model.py`'s components and `fs_tools.py`'s three
 tools. Read top to bottom, they are the order they run in each tick, and
 that order is the whole of the plan::
 
@@ -18,15 +18,15 @@ that order is the whole of the plan::
     flag_big        BigHunt                     -> Big on every large entry, FoundBig
     reply_big / reply_renamed / reply_failed     -> what you are told
 
-`approve` sits ABOVE the system that proposes, which reads like a mistake
+`approve` sits ABOVE the rule that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
 one, which is what puts "2 of 5 older than 7 day(s)" on screen before the
-question about the first of them. System order is the schedule, and a
+question about the first of them. Rule order is the schedule, and a
 tick boundary is the only thing there is to schedule against.
 
-Every system here RETURNS a list of deltas instead of touching the world
--- see `ugm.delta` -- and `Loop.tick` applies one system's own deltas
-right after calling it, before the next system runs. That is what makes
+Every rule here RETURNS a list of deltas instead of touching the world
+-- see `ugm.delta` -- and `Loop.tick` applies one rule's own deltas
+right after calling it, before the next rule runs. That is what makes
 the schedule above still mean what it says: `list_dir` returning what
 makes a folder's listing real is applied before `reply_listing` runs, in
 the SAME tick, the same as if `list_dir` had spawned it directly.
@@ -34,9 +34,9 @@ the SAME tick, the same as if `list_dir` had spawned it directly.
 ## The compounding step is `propose_rename`, and it is one line
 
 Finding a stale file attaches `Stale`. Deciding what to DO about a stale
-file is a different system, and what it spawns is a WISH carrying
+file is a different rule, and what it spawns is a WISH carrying
 `NeedsApproval` -- not a rename. A domain that wanted to archive instead
-of rename changes that system and nothing else: the tools, the listing,
+of rename changes that rule and nothing else: the tools, the listing,
 the approval prompt and every reply stay exactly as they are.
 
 ## Approval is a component, not a feature
@@ -47,7 +47,7 @@ the tag, and `do_rename` asks for exactly that::
 
     w.each(RenameWish, without=NeedsApproval)
 
-So nothing holds your own renames, one system asks about everything held,
+So nothing holds your own renames, one rule asks about everything held,
 and approving is `detach(entity, NeedsApproval)` -- the same wish, no
 longer waiting. Wanting your own renames held too is one more `attach`,
 not a different design.
@@ -60,7 +60,7 @@ it returns the question as an ordinary `Reply` and marks the wish `Asked`.
 it arrives, resolves whichever wish is currently `Asked`. The suspension
 IS the state; there is no callback held anywhere waiting to be called.
 
-## A system loops, so a guard is rarely needed
+## A rule loops, so a guard is rarely needed
 
 `flag_big` walks every entry in the folder in a `for`, in one call, and
 destroys the goal entity that let it run. It cannot fire twice on the same
@@ -98,7 +98,7 @@ WORDS = ("show", "file", "files", "big", "in", "stale", "after", "day",
 def folder_at(w, path: str):
     r"""`(deltas, entity)` -- the entity for this directory: the one that
     already exists, or a new one this call's own `deltas` describe. The
-    only place a `Folder` is described, so two systems asking about the
+    only place a `Folder` is described, so two rules asking about the
     same directory are asking about the same entity -- once the `Spawn`
     that names it has actually been applied.
 
@@ -268,7 +268,7 @@ def _understand(w, line: str):
     return None
 
 
-# -- the systems ----------------------------------------------------------
+# -- the rules ----------------------------------------------------------
 
 def hear(w):
     """What you typed -> a goal, if this domain has a reading of it.
@@ -299,7 +299,7 @@ def hear_answer(w):
     outstanding is not this domain's business and is left for `hear` to
     try as everything else it might mean (which, being one letter, is
     nothing -- and it is reported unheard, same as any other line no
-    system claims).
+    rule claims).
     """
     held = w.first(RenameWish, NeedsApproval, Asked)
     if held is None:
@@ -336,7 +336,7 @@ def list_dir(w):
 
 def reply_listing(w):
     """One line per entry, then the count -- in that order, because this
-    system returns them in that order and nothing reorders replies."""
+    rule returns them in that order and nothing reorders replies."""
     deltas = []
     for entity, listed in w.each(Listed):
         deltas.append(destroy(entity))
@@ -385,7 +385,7 @@ def propose_rename(w):
 def do_rename(w):
     """A wish nobody is waiting on -> the tool. Reached by an approval
     detaching the tag, or straight from a person typing `rename a to b`,
-    and this system cannot tell which -- which is the point: holding is
+    and this rule cannot tell which -- which is the point: holding is
     the proposer's business, not the act's."""
     deltas = []
     for entity, wish in w.each(RenameWish, without=NeedsApproval):
@@ -431,7 +431,7 @@ def flag_big(w):
 
 
 # -- what you are told ----------------------------------------------------
-# Every system above decides what HAPPENED. These decide what a person
+# Every rule above decides what HAPPENED. These decide what a person
 # reading the prompt hears about it, and they are the ones to edit for a
 # quieter or louder session -- nothing above this line returns a reply.
 
@@ -481,7 +481,7 @@ def approve(w):
     ⚠ This used to call `ask(prompt)` and block for the answer -- the
     right thing for one terminal owning the loop, and wrong the moment
     more than one channel can be attached (`ugm.engine`): nothing
-    a system does may stop the world for everyone else. The fix is not a
+    a rule does may stop the world for everyone else. The fix is not a
     trick, it is the thing this whole domain already does for every other
     goal -- suspend as a component (`Asked`), and let the answer arrive as
     an ordinary line whenever it does.
@@ -499,13 +499,13 @@ def approve(w):
                % (entry.name, wish.new_name, folder))]
 
 
-SYSTEMS = (hear, hear_answer, list_dir, reply_listing, approve,
+RULES = (hear, hear_answer, list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            reply_big, reply_renamed, reply_failed)
 
 
 def install(loop, clock=time.time, cwd=os.getcwd) -> None:
-    """Every system, in order, plus the one `Session` they read.
+    """Every rule, in order, plus the one `Session` they read.
 
     `clock` and `cwd` are arguments because a domain that reads the world
     outside the world should say where it does it. Both are read ONCE,
@@ -522,13 +522,13 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     component, and the OLD one gone rather than standing alongside it
     (`Session` is not a kind an entity should ever carry two of).
 
-    ⚠ This function, unlike every system above it, calls `world.spawn`
+    ⚠ This function, unlike every rule above it, calls `world.spawn`
     and `world.replace` directly -- and correctly. It runs once, before
     the loop is running at all, not on every tick over a query; there is
     no "turn" for it to return deltas from, only a world to seed.
     """
-    for system in SYSTEMS:
-        loop.system(system)
+    for rule in RULES:
+        loop.rule(rule)
     world = loop.world
     world.learn(*WORDS, "y", "yes", "n", "no")
     was = world.first(Session)

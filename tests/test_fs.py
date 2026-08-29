@@ -59,7 +59,7 @@ def named(w, folder, name):
 
 
 def folder_of(w, path):
-    # `folder_at` now returns `(deltas, entity)` -- a system's own shape,
+    # `folder_at` now returns `(deltas, entity)` -- a rule's own shape,
     # since it may need to describe a fresh `Folder` rather than touch
     # the world to make one. This helper only ever looks one up after a
     # test has already listed it, so the entity is what it wants.
@@ -279,7 +279,7 @@ def test_a_rename_that_cannot_happen_says_why(folder):
 def test_a_line_this_domain_has_no_reading_of_is_left_standing(folder):
     loop = session(folder)
     assert say(loop, "what is for dinner") == []
-    # Still there, unclaimed, for another domain's systems or for the REPL
+    # Still there, unclaimed, for another domain's rules or for the REPL
     # to report -- never guessed at, never quietly dropped.
     assert loop.world.the(Said).text == "what is for dinner"
 
@@ -337,7 +337,7 @@ def test_what_was_concluded_survives_too(folder, tmp_path):
 
     w = restart(folder, path).world
     entity = named(w, folder_of(w, folder), "alpha.txt")
-    assert w.has(entity, Stale), "a claim a system made is part of the world"
+    assert w.has(entity, Stale), "a claim a rule made is part of the world"
 
 
 def test_the_folder_you_were_looking_at_survives(folder, tmp_path):

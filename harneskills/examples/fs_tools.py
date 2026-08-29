@@ -1,10 +1,10 @@
 """The three things this example does to a real filesystem: `ls`, `stat`,
 `rename`. Each one reads the world (never writes it) and does real I/O,
 then hands back what it learned as DELTAS -- see `ugm.delta` -- for
-whichever system called it to fold into its own.
+whichever rule called it to fold into its own.
 
-A tool is not a system. It has no query and is not called every tick -- a
-system decides one is warranted and calls it, which keeps the "when" and
+A tool is not a rule. It has no query and is not called every tick -- a
+rule decides one is warranted and calls it, which keeps the "when" and
 the "what" in different files: `fs.py` decides that a person asking to see
 a folder means listing it, and this module knows what listing IS.
 
@@ -13,20 +13,20 @@ the entity the thing already has: `Size`, `Modified`, `IsDir`, and a
 freshly `spawn`ed `Entry` for something seen for the first time.
 `Failed` is `spawn`ed as an entity of its own -- it did not work, and
 this is what the OS said. Nothing here decides what to SAY about any of
-it; `fs.py` has a system that turns a `Failed` into a reply.
+it; `fs.py` has a rule that turns a `Failed` into a reply.
 
 ## A tool does not touch a world -- it hands its caller data instead
 
 `ls`, `stat` and `rename` read the world (`w.get`, never `w.spawn` or
 `w.attach`) and touch the real disk, then return deltas exactly like a
-system does -- the system that calls one folds the tool's deltas into
+rule does -- the rule that calls one folds the tool's deltas into
 its own returned list, and `Loop.tick` applies the WHOLE of that
-system's turn together, once, after it returns.
+rule's turn together, once, after it returns.
 
 `ls` hands back its freshly found `entries` too --
 `(entity, name, size, modified, is_dir)` per name, `entity` a real one
 if this name was already known, a `Pending` (from a `Spawn` earlier in
-the SAME returned list) if it was not -- so the system that called it
+the SAME returned list) if it was not -- so the rule that called it
 (`flag_stale` deciding which entries are old, say) can act on what was
 just found in its OWN turn, without reading it back off a world these
 deltas have not reached yet.
@@ -39,7 +39,7 @@ deltas have not reached yet.
   re-listing an unchanged folder cost a dict comparison, not a revision.
 * An entry that has gone from the disk is destroyed. Re-listing a folder
   is a refresh, not an accumulation, and a world still carrying an entity
-  for a deleted file is one where every later system reasons about
+  for a deleted file is one where every later rule reasons about
   something that is not there.
 """
 
@@ -75,7 +75,7 @@ def _observe(path: str, entity, name: str):
         # Listed a moment ago and gone now, or in a directory we may read
         # but whose entries we may not stat. Neither is worth taking a
         # whole listing down for: the entity keeps its `Entry`, and a
-        # system that needs a `Size` simply does not match it.
+        # rule that needs a `Size` simply does not match it.
         return [], None, None, False
     is_dir = os.path.isdir(full)
     # `replace`, not `attach`: an entity is re-`_observe`d every listing,
@@ -141,11 +141,11 @@ def rename(w, entity, new_name: str):
     along with it.
 
     The entity does not change -- it is the same file, now called
-    something else, still carrying whatever any system had concluded
+    something else, still carrying whatever any rule had concluded
     about it. Only its `Entry` is replaced, and the folder's index
     re-keyed. `ok` is False if the OS refused (`Failed` is in `deltas`
     then). `deltas` ends with a `spawn` of `Renamed`, an occasion, taken
-    by whichever system reports it.
+    by whichever rule reports it.
     """
     entry = w.get(entity, fs.Entry)
     path = w.get(entry.folder, fs.Folder).path

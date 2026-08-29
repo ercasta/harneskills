@@ -122,7 +122,7 @@ def test_an_entity_already_in_the_world_needs_no_resolving(world):
 
 def test_a_component_with_no_pending_fields_is_returned_unchanged(world):
     """No needless rebuild when there is nothing to resolve -- the same
-    object a system built, attached as-is."""
+    object a rule built, attached as-is."""
     made = spawn(Size(1))
     resolved = {}
     made._apply(world, resolved)

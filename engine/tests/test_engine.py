@@ -142,7 +142,7 @@ def test_say_spawns_said_under_the_poster_s_own_channel_name(engine):
 
 
 def test_a_reply_addressed_to_user_is_seen_by_the_asker_too(loop):
-    @loop.system
+    @loop.rule
     def echo(w):
         deltas = []
         for entity, said in w.each(Said):
@@ -173,7 +173,7 @@ def test_stop_posted_through_the_queue_does_not_strand_a_say_before_it(loop):
     # The race this guards: a channel that posts `say` and then `stop` in
     # quick succession must have the say acted on first, not have `stop`
     # race it to the front (see `Engine.post`'s own docstring).
-    @loop.system
+    @loop.rule
     def echo(w):
         deltas = []
         for entity, said in w.each(Said):
@@ -226,12 +226,12 @@ def test_a_command_may_hand_back_a_fresh_loop(loop):
     assert engine.loop is fresh
 
 
-def test_show_and_systems_are_built_in_commands(loop):
-    loop.system(lambda w: None, name="noop")
+def test_show_and_rules_are_built_in_commands(loop):
+    loop.rule(lambda w: None, name="noop")
     engine = Engine(loop)
     fake = Fake()
     engine.attach(fake)
-    engine.post(fake, "command", "/systems")
+    engine.post(fake, "command", "/rules")
     run_briefly(engine)
     lines = [m["lines"] for m in fake.messages if "lines" in m]
     assert lines and "noop" in lines[0][0]
@@ -249,13 +249,13 @@ def test_an_unknown_command_says_so_to_the_one_who_typed_it(engine):
 # --- settling -----------------------------------------------------------
 
 def test_settle_reports_a_runaway_pair_and_their_names(loop):
-    @loop.system
+    @loop.rule
     def ping(w):
         return [detach(e, Ping) for e, _ in w.each(Ping)]
 
     loop.world.spawn(Ping())
 
-    @loop.system
+    @loop.rule
     def pong(w):
         return [] if w.each(Ping) else [spawn(Ping())]
 

@@ -22,7 +22,7 @@ def served():
     """A running engine, one Listener attached, torn down after."""
     loop = Loop()
 
-    @loop.system
+    @loop.rule
     def echo(w):
         for entity, said in w.each(Said):
             w.destroy(entity)

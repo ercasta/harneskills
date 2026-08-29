@@ -1,6 +1,6 @@
 """Propositions over the world: the vocabulary a domain on `ugm` reasons in.
 
-`world.py` gives entities and components; `loop.py` runs systems over them until
+`world.py` gives entities and components; `loop.py` runs rules over them until
 nothing changes. That is enough to build anything and not enough to build it the
 same way twice. This module is the layer in between — **a relation is a component
 type, its objects are the rows that component carries, and a kind is one empty
@@ -22,9 +22,9 @@ re-derived it re-derived the same four hazards with it.
 `ugm`'s scope note is that it ships no domain — no files, no sockets, no Python
 syntax, no business. That still holds of every line below: `Facts` knows nothing
 about what a relation MEANS, only that it is interned by name and its rows are
-ordered and deduped. What it does ship is the **discipline** for writing systems,
-and that is not optional the way a domain is. A system that writes through
-`fact`/`state`/`deny` composes with every other system on the loop; one that
+ordered and deduped. What it does ship is the **discipline** for writing rules,
+and that is not optional the way a domain is. A rule that writes through
+`fact`/`state`/`deny` composes with every other rule on the loop; one that
 keeps its conclusion in a local variable, or mutates a dict beside the world, is
 invisible to `arbitration.commit`, to `save.py`, and to whoever comes next.
 
@@ -43,7 +43,7 @@ invisible to `arbitration.commit`, to `save.py`, and to whoever comes next.
    not stop itself never stopped — a run burning its whole budget on the first
    applicable rule while every later rule never fired. `Loop` settles on
    `world.revision` and `World.attach` compares before it stores, so **re-deriving
-   a fact that already holds is not a change**. Systems still say "only the ones
+   a fact that already holds is not a change**. Rules still say "only the ones
    not yet described" where that is the honest reading of the query; they no
    longer say it to avoid a hang.
 
@@ -58,18 +58,18 @@ invisible to `arbitration.commit`, to `save.py`, and to whoever comes next.
    family is dead while the suite stays green. This distinction is about what a
    symbol MEANS, not how it is stored, so no substrate change retires it.
 
-## ⚠⚠ Systems return deltas, and that is why `_mint` exists
+## ⚠⚠ Rules return deltas, and that is why `_mint` exists
 
-A system does not touch its world (`ugm` 11c459a); it returns a list of deltas and
+A rule does not touch its world (`ugm` 11c459a); it returns a list of deltas and
 `Loop.tick` applies them. Every write here goes through `fact`/`state`/`deny`, so
 a domain written against this module did not change one line of its own LOGIC when
 that contract landed — the whole adaptation lives in this one class.
-`fact`/`state`/`deny` accumulate instead of writing; `system()` wraps a registered
+`fact`/`state`/`deny` accumulate instead of writing; `rule()` wraps a registered
 function to collect what accumulated and hand it back; `_held` lets a `deny` then a
 `fact` on the same `(name, subject)` in one turn see the accumulated write rather
 than the world as of the turn's start. The genuinely new piece is `_mint`:
 `word`/`value`/`node`/`reify` DESCRIBE a fresh entity rather than making one when
-called from inside a system, and since that description resolves only within its own
+called from inside a rule, and since that description resolves only within its own
 turn, a LATER turn needing the same text has to find what an EARLIER one already
 made real — `_find`, a scan, and the one place this layer pays a cost a
 direct-write version did not.
@@ -88,7 +88,7 @@ from .world import Component, Entity, World
 #: every constant Python's grammar can express (`str`, `bytes`, `int`, `float`,
 #: `complex`, `bool`, `None`, and the ellipsis). ⚠ The value therefore lives IN
 #: the world as an entity's printed name rather than in a Python dict beside it —
-#: a side map would be state the systems cannot see, which is the thing this
+#: a side map would be state the rules cannot see, which is the thing this
 #: substrate is for.
 _ELLIPSIS = "..."
 
@@ -120,7 +120,7 @@ class Interned(Component):
 
     ⭐ So the fact that gives an entity its identity lives IN the world, which is
     exactly the argument `_ELLIPSIS` already makes about a literal's payload: a
-    side map is state the systems cannot see, and this substrate exists so that
+    side map is state the rules cannot see, and this substrate exists so that
     there is no such map. `_words`/`_values` are a CACHE of this now, not the
     truth.
 
@@ -187,10 +187,10 @@ _RELATIONS: Dict[str, type] = {}
 def relation(name: str) -> type:
     """The component class for this relation. The SAME class every call.
 
-    ⭐ This is what a system names: `world.each(relation("for_stmt"), ...)`. A
+    ⭐ This is what a rule names: `world.each(relation("for_stmt"), ...)`. A
     domain that wants to read well binds them once at module scope —
-    `ForStmt = relation("for_stmt")` — and its systems then look like the plain
-    `World.each` systems in `ugm`'s own tests, because they are.
+    `ForStmt = relation("for_stmt")` — and its rules then look like the plain
+    `World.each` rules in `ugm`'s own tests, because they are.
     """
     cls = _RELATIONS.get(name)
     if cls is None:
@@ -228,7 +228,7 @@ class Facts:
         #: IDENTITY — what `_find` matches, what interning keys, what `save` writes
         #: — and identity that grows with the derivation is identity being used as
         #: payload. Refusing it is the same rule `known()` already keeps one door
-        #: over: a system reads the vocabulary, it does not inflate it. The longest
+        #: over: a rule reads the vocabulary, it does not inflate it. The longest
         #: name any settled `pystrider` suite produces is 147 characters.
         self.ceiling = ceiling
         #: Interning tables. ⚠ Per-world, because an entity belongs to a world:
@@ -241,7 +241,7 @@ class Facts:
         #: process interned (`save.read` into this world). See `_adopt`.
         self._adopted = False
         #: THIS TURN's own not-yet-applied writes, or `None` between turns --
-        #: see `system()`. `_pending` is the flat list `ugm.loop.Loop.tick`
+        #: see `rule()`. `_pending` is the flat list `ugm.loop.Loop.tick`
         #: applies; `_overlay` and `_minting` are what let `fact`/`deny`/`word`
         #: read back what THIS SAME turn already described, before any of it
         #: is real.
@@ -257,40 +257,40 @@ class Facts:
         """Hand this loop to a domain's `install(loop, facts)`.
 
         ⚠ Two arguments where a bare `Loop` domain takes one: a domain here needs
-        the naming table as well as the world, because a system that wants to
+        the naming table as well as the world, because a rule that wants to
         deposit `iteration(n)` needs the same `Facts` the reader will ask.
         """
         return domain(self.loop, self)
 
-    def system(self, fn=None, *, name=None, watches=None, priority=0):
-        """Register one system -- wrapped so `fact`/`state`/`deny`/`node`/
+    def rule(self, fn=None, *, name=None, watches=None, priority=0):
+        """Register one rule -- wrapped so `fact`/`state`/`deny`/`node`/
         `word`/`value`/`reify`, called from inside it, describe a change
         instead of making one.
 
         ⚠⚠ **This is the whole of what the delta contract changed for the
         domains above this module — nothing in them did.** `ugm` 11c459a made a
-        system return deltas rather than touch the world; every system registered
+        rule return deltas rather than touch the world; every rule registered
         through here already went through `f.fact(...)`, never
         `world.attach(...)` directly, so ONE place absorbs the new contract:
         `f.fact`/`state`/`deny` accumulate instead of writing, this wrapper
         collects what accumulated and hands it back, and `Loop.tick` applies
-        it exactly as it always applied whatever a system returned.
+        it exactly as it always applied whatever a rule returned.
 
         `functools.wraps` is load-bearing, not tidiness: `ugm.loop`'s own
-        `_name_of` reads `fn.__module__`/`fn.__name__` to name a system
-        `patterns.iteration` rather than `facts.wrapped`, and the SYSTEMS
-        registry `/systems` prints is only legible if it does.
+        `_name_of` reads `fn.__module__`/`fn.__name__` to name a rule
+        `patterns.iteration` rather than `facts.wrapped`, and the RULES
+        registry `/rules` prints is only legible if it does.
 
-        `watches`, passed straight through to `Loop.system`, is a relation
+        `watches`, passed straight through to `Loop.rule`, is a relation
         NAME or a tuple of them here, not a component type -- `relation()`
         interns, so `watches="candidate"` and `watches=("candidate",
         "request")` resolve to the classes `Loop.populated` checks against.
-        `priority` passes straight through too -- see `Loop.system`'s own
-        note on why it orders every system, not just the ones sharing a
+        `priority` passes straight through too -- see `Loop.rule`'s own
+        note on why it orders every rule, not just the ones sharing a
         watched relation.
         """
         if fn is None:
-            return lambda f: self.system(f, name=name, watches=watches,
+            return lambda f: self.rule(f, name=name, watches=watches,
                                          priority=priority)
         kinds = None
         if watches is not None:
@@ -307,7 +307,7 @@ class Facts:
                 self._pending = self._overlay = self._minting = None
             return pending
 
-        return self.loop.system(wrapped, name=name, watches=kinds, priority=priority)
+        return self.loop.rule(wrapped, name=name, watches=kinds, priority=priority)
 
     # -- reading back THIS TURN's own not-yet-applied writes ---------------
 
@@ -337,13 +337,13 @@ class Facts:
         The fallback for exactly what `_words`/`_values`/`_minting` do not
         cover: a word or value first minted mid-turn is a `Pending`, never
         cached in the global tables (see `_mint`), so a LATER turn -- even
-        the very next tick, the same system reasoning about the same
+        the very next tick, the same rule reasoning about the same
         thing again -- has nothing to look up and would otherwise mint a
         SECOND entity for the same text every single time it asks. That
         is not a slow path, it is a world that never settles: `answer`
         deriving `could_not_evaluate(f, c, value(refused))` fresh every
         tick, each with a DIFFERENT entity for the identical refusal
-        string, so the row never repeats and the system never stops
+        string, so the row never repeats and the rule never stops
         firing -- `test_an_unmodelled_operator_is_refused_BY_NAME` is
         what this looked like before `_find` existed.
         """
@@ -353,15 +353,15 @@ class Facts:
         return None
 
     def _mint(self, text: str, kind: Optional[str] = None):
-        """A fresh `Printed(text)` -- an `Entity` outside a system's turn
+        """A fresh `Printed(text)` -- an `Entity` outside a rule's turn
         (nothing to describe instead of), a `Pending` inside one, the same
         way `spawn()` itself hands one back. `_find` first, mid-turn: an
         EARLIER turn's own mint may already be real by now (`Loop.tick`
-        applies a system's deltas the moment it returns, before the next
+        applies a rule's deltas the moment it returns, before the next
         one runs), just not yet reflected in `_words`/`_values`.
 
         ⚠⚠ **`word`/`value` cache only a REAL entity, never a `Pending`.**
-        `_words`/`_values` are read by ANY system, on ANY later tick — a
+        `_words`/`_values` are read by ANY rule, on ANY later tick — a
         `Pending` only resolves within the list its own `Spawn` came back
         in, so caching one globally would hand a LATER turn a token that
         blows up the moment it is used (`ugm.delta` refuses it by name).
@@ -371,9 +371,9 @@ class Facts:
         mints a second, different "ge".
         """
         if len(text) > self.ceiling:
-            # ⭐ Raised INSIDE the system that minted it, so `Loop.tick` records it
-            # against that system's name and `run` re-raises it already attributed:
-            # "the system 'plan.lower' raised". The culprit names itself.
+            # ⭐ Raised INSIDE the rule that minted it, so `Loop.tick` records it
+            # against that rule's name and `run` re-raises it already attributed:
+            # "the rule 'plan.lower' raised". The culprit names itself.
             raise RuntimeError(
                 f"a name of {len(text)} characters is over this world's ceiling of "
                 f"{self.ceiling} — a name is identity here, so one that grows with "
@@ -471,9 +471,9 @@ class Facts:
         ⚠⚠ **THE ONE READ THAT MUST NOT MINT, and minting here is a world that never
         settles.** `word()` spawns on a miss, so a matcher that resolved an atom
         through it would `spawn` on every failed unification — the revision moves,
-        the loop calls that a firing system, and it ticks until the budget runs out
+        the loop calls that a firing rule, and it ticks until the budget runs out
         having concluded nothing. It is the old no-inert-set hang arriving through a
-        different door, so the door is closed rather than documented: a system reads
+        different door, so the door is closed rather than documented: a rule reads
         the vocabulary, it does not extend it.
 
         ⭐ It does read a RESTORED vocabulary, though, and that keeps the rule
@@ -524,7 +524,7 @@ class Facts:
 
     def _write(self, subject: Entity, component: Component) -> None:
         """Put this component on that subject -- described as a delta if
-        this is inside a system's turn (staged in the overlay too, so
+        this is inside a rule's turn (staged in the overlay too, so
         THIS SAME turn reads it back), attached directly otherwise. The
         one place `fact`/`state` actually write.
         """
@@ -567,7 +567,7 @@ class Facts:
         """Deposit `name(subject, objects...)` as the ONLY row of that relation.
 
         ⭐ `fact()` appends, which is what a body of statements needs; this
-        REPLACES, which is what a conclusion that can be revised needs. A system
+        REPLACES, which is what a conclusion that can be revised needs. A rule
         that re-resolves a screen shape every tick must not leave both answers
         standing — `one()` would then refuse to pick between them, correctly, about
         a question that has exactly one answer.
@@ -628,7 +628,7 @@ class Facts:
         """Every `name(subject, ...)` that holds, in deposit order.
 
         Insertion-ordered, because a body is an ordered thing. Reads
-        `_held`, not `self.world.get` — a system that `fact`s or `deny`s
+        `_held`, not `self.world.get` — a rule that `fact`s or `deny`s
         and then reads the SAME (name, subject) again before its own turn
         ends must see what it just described, not the world as of the
         turn's start.
@@ -680,7 +680,7 @@ class Facts:
                 ...
 
         `arity`, when given, silently SKIPS a row of a different width
-        rather than raising -- a system reading `stmt(subject, a, b)` next
+        rather than raising -- a rule reading `stmt(subject, a, b)` next
         to `stmt(subject, a)` should see one shape or the other, not choke
         on either; a caller that wants to know about the mismatch reads
         `of()` directly, the way `one()` already does.
@@ -708,7 +708,7 @@ class Facts:
 
         ⚠ Reads `self.world` straight, NOT `_held` — this asks across every
         entity there is, and the overlay only ever knows about the ones a
-        single subject-keyed write already named. A system that `fact`s a
+        single subject-keyed write already named. A rule that `fact`s a
         NEW subject onto `name` and then calls `subjects(name)` in the SAME
         turn will not see that subject until the next one; nothing
         currently does both in one turn, and `test_the_world_SETTLES`
@@ -745,9 +745,9 @@ class Facts:
     # -- running ----------------------------------------------------------
 
     def run(self, budget: Optional[int] = None):
-        """Call every system until a whole pass changes nothing.
+        """Call every rule until a whole pass changes nothing.
 
-        ⚠⚠ **A system that raised is RE-RAISED here, which `Loop.run` does not
+        ⚠⚠ **A rule that raised is RE-RAISED here, which `Loop.run` does not
         do.** `loop.py` records the exception on `loop.errors` and carries on,
         because a typo in one domain should not take a person's REPL down with it.
         That is right for a prompt and wrong for a DERIVATION: a rule that raised
@@ -760,13 +760,13 @@ class Facts:
         if self.loop.errors:
             name, error = self.loop.errors[0]
             raise RuntimeError(
-                f"the system {name!r} raised, so whatever it concludes is missing "
+                f"the rule {name!r} raised, so whatever it concludes is missing "
                 f"from a world that otherwise looks settled: {error!r}"
             ) from error
         if settled.hot:
             raise RuntimeError(
                 f"the world did not settle in {settled.ticks} ticks — still firing: "
-                f"{', '.join(settled.hot)}. Two systems are feeding each other, or "
+                f"{', '.join(settled.hot)}. Two rules are feeding each other, or "
                 f"one concludes something it cannot recognise as already concluded."
             )
         return settled
