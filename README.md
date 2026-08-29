@@ -390,35 +390,42 @@ a save that only ran at `/quit` would be a save that never ran. A settle
 that changed nothing writes nothing.
 
 An entity is an integer and a component is a value with named fields, so
-the file is just that:
+the file is just that -- one JSON object per LINE (JSONL): a header, then
+one record per component, or a bare `{"entity": id}` for an entity that
+carries none:
 
 ```json
-{"version": 1, "next": 23, "entities": [
-  {"id": 3, "components": [
-     {"type": "harneskills.examples.model:Folder",
-      "fields": {"path": "/tmp/notes"}}]}]}
+{"version": 2, "next": 23}
+{"entity": 3, "type": "harneskills.examples.model:Folder", "fields": {"path": "/tmp/notes"}}
 ```
 
-Four things worth knowing:
+Five things worth knowing:
 
-- **A component is rebuilt without its `__init__`.** `Entry(folder, name)`
-  takes positional arguments that are not its field names; there is no
-  signature a loader could call in general. It comes back as
-  `object.__new__(cls)` with its `__dict__` restored, so a domain can
-  write any constructor it likes.
+- **A component is rebuilt without its `__init__`.** A dataclass's
+  constructor takes its fields in declaration order, and nothing here
+  needs to know that order to put them back: it comes back as
+  `object.__new__(cls)` with each field set directly, so a domain's
+  `__init__` -- whatever it validates or coerces -- never has to agree
+  with what a loader could call in general.
 - **Ids are preserved, and so is the counter.** Every reference in every
-  component is an id, so `{"$entity": 3}` has to come back as `#3` — and a
-  world that resumed counting at 1 would hand a new entity an id something
-  is still pointing at.
+  component is already a plain id -- no wrapper, no translation either
+  way -- and a world that resumed counting at 1 would hand a new entity
+  an id something is still pointing at.
 - **A field may hold** `None`, `bool`, `int`, `float`, `str`, `list`,
-  `tuple`, `dict` with string keys, and an `Entity`, nested however deep.
-  Anything else — a set, an open file — is refused *by name* when saving
-  rather than written as something it is not.
+  `dict` with string keys, or `tuple` (written as `{"$tuple": [...]}`,
+  JSON's own way of telling one from a list), nested however deep --
+  never a live entity handle, only its id. `World.attach` enforces this
+  on the way IN, not just on the way to a file: a set, an open file, or
+  any other Python object a component field might hold is refused *by
+  name*, naming the field, before it ever gets near `save.py`.
+- **One entity can carry several components of one type.** Each is
+  already its own line, so there is nothing nested to grow one entry at a
+  time the way a per-entity list would.
 - **The restore happens before any domain installs**, and reconciling that
   is the domain's own business: nothing in the harness can tell a
   `Session` a domain just spawned from one restored out of a file.
-  `fs.install` is the worked answer — it `attach`es a fresh `Session` to
-  the entity that already carries one, so the clock and the working
+  `fs.install` is the worked answer — it `replace`s the entity that
+  already carries one with a fresh `Session`, so the clock and the working
   directory belong to the process now running while every folder and entry
   stays where it was.
 
@@ -438,7 +445,7 @@ everything else it carried.
 
 ```
 /show      every entity in the world right now, and what it carries
-/rules   the rules installed, in the order they run each tick
+/rules     the rules installed, in the order they run each tick
 /reload    re-import every domain; the world comes back with it
 /reset     re-import every domain and start the world EMPTY
 /quit      leave
