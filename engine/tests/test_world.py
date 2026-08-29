@@ -5,7 +5,7 @@ import dataclasses
 
 import pytest
 
-from ugm.world import Entity, Reply, Said, World
+from ugm.world import Reply, Said, World
 
 
 @dataclasses.dataclass(frozen=True)

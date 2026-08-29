@@ -13,7 +13,7 @@ import pytest
 # ⚠⚠ ON HOLD, not deleted: `facts.py` predates the plain-dataclass /
 # multi-valued / primitives-only rewrite of `ugm.world` and does not
 # currently import (`Relation` subclassed the `Component` base class that
-# rewrite removed). See `docs/TODO.md` and `ugm/__init__.py`'s own note.
+# rewrite removed). See `docs/overview.md` and `ugm/__init__.py`'s own note.
 pytest.importorskip("ugm.facts", exc_type=ImportError)
 from ugm.facts import Facts, Printed, relation
 

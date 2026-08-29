@@ -2,7 +2,7 @@
 
 ⚠⚠ **ON HOLD, 2026-08-29** — `ugm/arbitration.py` does not currently import
 (it sits on `ugm/facts.py`, which sits on a `Component` base class the core
-rewrite removed). See `docs/TODO.md` and this repo's `README.md`. The
+rewrite removed). See `docs/overview.md` and this repo's `README.md`. The
 argument below stands regardless of what happens to the module; read it as
 the reasoning to preserve even if the code it describes is rewritten.
 

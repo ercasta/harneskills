@@ -478,7 +478,7 @@ engine/                  the ugm engine, its own package (see engine/README.md).
     world.py              entities, components, and the queries rules ask
     loop.py                every rule, in order, until nothing changes
     engine.py             one thread, the world, and the channels attached to it
-    save.py                 the world as JSON: entities are ints, components are values
+    save.py                 the world as JSONL: entities are ints, components are values
   tests/
     test_world.py         identity, values, and the intersection of the two
     test_loop.py           order, settling, the budget, a rule that raises

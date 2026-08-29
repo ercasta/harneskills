@@ -32,6 +32,21 @@
   `engine/README.md`'s "Deltas removed" History entry for the argument in
   full, including a live example of the old contract silently not
   holding in this repo's own test suite.
+- **"Systems" are "rules," everywhere** — `Loop.system`/`Facts.system` →
+  `Loop.rule`/`Facts.rule`, `loop.systems` → `loop.rules`, the `/systems`
+  REPL command → `/rules`. Not a rename for its own sake: "system" doubled
+  as "the OS," "a filesystem," and the name of the one concept this
+  package actually has, and only one of those meanings was ever this
+  package's business.
+- **`Loop.rule` takes `watches=` and `priority=`.** `watches=(Kind, ...)`
+  skips calling a rule's body entirely on a tick where none of those
+  component types exist yet (`World.populated`) — the fix for a large
+  ruleset where most rules have nothing to do most ticks. `priority=N`
+  — higher runs first, ties (the default, `0`) keep registration order —
+  is the one deliberate override of "registration order is the whole of
+  arbitration," for the one thing registration order can't express: two
+  rules from domains that don't know about each other, both watching the
+  same component type.
 
 `facts.py` / `arbitration.py` / `request.py` are **on hold, not deleted**:
 they do not currently import (`Relation` subclassed the removed

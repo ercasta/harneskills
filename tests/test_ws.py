@@ -161,7 +161,6 @@ def test_ping_is_answered_with_pong_and_hidden_from_the_message_api(sockets):
     client.sendall(ws.frame(b"hi", ws.TEXT, mask=True))
     reader = ws.Reader(server, is_server=True)
     assert reader.message() == (ws.TEXT, b"hi")   # PING never surfaces
-    pong = ws.Reader(client, is_server=False)
     # The server answered on the same socket -- read it directly, since
     # a client Reader would try to unmask a frame the server never masks.
     first = client.recv(2)

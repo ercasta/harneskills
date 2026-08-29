@@ -19,7 +19,7 @@ entity, and it can stop being that kind of thing by losing one::
 
 A **rule** -- `ugm.loop`'s own name for it -- is a function that asks
 for the entities carrying a set of components, walks them, and WRITES
-directly through the four methods below -- `Loop.tick` calls it once a
+directly through the six methods below -- `Loop.tick` calls it once a
 tick and nothing stands between the call and the write::
 
     def flag_big(w):

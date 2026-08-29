@@ -4,7 +4,6 @@ printed unasked -- now as one channel over a running `Engine`."""
 import dataclasses
 import io
 import threading
-import time
 
 import pytest
 

@@ -128,8 +128,25 @@ functions — is deleted outright, not deprecated; `Loop.tick` is
 correspondingly a few lines shorter, with nothing left to apply after
 calling a rule and nothing left to check for a rule having "cheated."
 
+**Priority ordering, 2026-08-29.** `Loop.rule(fn, priority=N)` -- higher
+runs first, ties (the default, `0`, included) keep registration order.
+The one deliberate override of "registration order is the whole of
+arbitration": two rules `watches`-ing the same component type, installed
+by two domains that do not know about each other and so cannot agree on
+which one to register first. A rule is still one entry in `self.rules`
+regardless of how many types it watches, so declaring `priority` changes
+WHEN it runs, never how many times.
+
+**Rules, not systems, 2026-08-29.** `Loop.system`/`Facts.system` →
+`Loop.rule`/`Facts.rule`, `self.systems` → `self.rules`, the `/systems`
+REPL command → `/rules`, `fs.py`'s `SYSTEMS` tuple → `RULES`, and every
+docstring, comment, and README that said "a system is a function that..."
+now says "a rule." "Filesystem," `SystemExit`, `systemd`, and TOML's own
+`[build-system]` table name are the same words for something else
+entirely and stayed put.
+
 **A request/response protocol, 2026-08-29.** `request.py` extracted the
-other pattern `docs/TODO.md` had been asking for since before this package's
+other pattern `docs/overview.md` had been asking for since before this package's
 own split: a rule deposits a request (a `details` entity, characterized by
 ordinary facts and listed in one row of `request(hub, details)`), any number
 of responders `respond`/`complete` on it without knowing about each other or

@@ -7,7 +7,7 @@ from __future__ import annotations
 import pytest
 
 # ⚠⚠ ON HOLD, not deleted: `request.py` sits on `ugm.facts`, which does not
-# currently import. See `docs/TODO.md` and `ugm/__init__.py`'s own note.
+# currently import. See `docs/overview.md` and `ugm/__init__.py`'s own note.
 pytest.importorskip("ugm.facts", exc_type=ImportError)
 from ugm.facts import Facts
 from ugm.request import extend, install, request

@@ -17,11 +17,15 @@ keywords = ["ecs", "entity-component", "game-loop", "world-model",
 # and it ships no domain, no channel and no transport, so nothing above
 # it is baked in here.
 #
-# It DOES ship a vocabulary (`facts.py`) and a way to arbitrate between
-# rules that do not know about each other (`arbitration.py`). That is a
+# It ships a vocabulary (`facts.py`) and a way to arbitrate between
+# rules that do not know about each other (`arbitration.py`) too -- a
 # discipline rather than a domain: neither knows what a relation means, and
 # both are what a rule has to do to compose with the ones it has never
 # heard of. See the Scope section of README.md, and DECISION_PATTERNS.md.
+#
+# ⚠ ON HOLD as of 2026-08-29: `facts.py`/`arbitration.py`/`request.py` do
+# not currently import against `world.py`'s own rewrite and are not
+# imported by `ugm/__init__.py` -- see `docs/overview.md`.
 dependencies = []
 
 [project.optional-dependencies]
