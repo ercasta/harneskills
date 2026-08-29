@@ -735,3 +735,28 @@ registration order, whether its author meant it to or not.
 
 `pytest` is unchanged in count and still green; nothing above touched a
 test.
+
+**Tunable knobs, 2026-08-29.** `docs/tunable knobs.md` names the second
+general pattern this week: a value that shapes a decision (a threshold, a
+floor) as an ordinary component, not a module constant -- seeded once,
+mutable by any rule ever after, restored across a process restart the same
+as any other conclusion. `fs.py`'s `BIG_BYTES` module constant is the first
+worked instance: `flag_big`'s floor is now `BigFloor`, a component in the
+"what a rule has concluded" group, read the same way `Stale`/`Focus`
+already are. `install()` seeds it from `$HARNESKILLS_FS_BIG_FLOOR` (falling
+back to `BIG_BYTES`) ONLY if the restored world doesn't already have one --
+deliberately NOT the `Session` policy (replace unconditionally, every
+install): `cwd`/`now` are process facts with nothing to accumulate, and a
+knob is the opposite, so replacing it unconditionally would silently
+discard a preference a rule wrote or anything a future tuner learned, every
+single restart. `model.Session`'s own docstring and `BigFloor`'s now name
+each other, so the two policies are not a comment away from being
+confused. Nothing else changed shape: a rule that changes a knob from a
+typed preference, or a future one that learns it from past sessions, is
+just another writer of the same component -- `w.replace`, the same call
+`_focus` and `do_rename` already make on `Focus` and `Stale`.
+
+`test_fs.py`'s one touch is mechanical: the test that forced a low floor
+now attaches a `BigFloor` instead of a three-field `Session` -- 35 tests,
+still green, `Session` down to the two fields (`cwd`, `now`) it always
+should have had.

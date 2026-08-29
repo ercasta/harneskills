@@ -91,6 +91,18 @@ IS the state; there is no callback held anywhere waiting to be called.
 destroys the goal entity that let it run. It cannot fire twice on the same
 goal because the goal is gone, so there is no per-file bookkeeping to
 write, and none to get wrong.
+
+## A knob is a component, not a module constant
+
+`flag_big` measures against `BigFloor`, not the module-level `BIG_BYTES`
+straight -- `install` only reads `BIG_BYTES` (or `$HARNESKILLS_FS_BIG_FLOOR`)
+to SEED a brand-new world; a restored one keeps whatever `BigFloor` it
+already had, because a knob is ordinary state a rule can change, not a
+process fact like `Session.cwd` that is replaced fresh every run. See
+`docs/tunable knobs.md` for the general shape and where this is going
+(a rule that changes a knob from a typed preference; a future one that
+learns it from past sessions -- both are just another writer of the same
+component, nothing new to build for either).
 """
 
 from __future__ import annotations
@@ -101,8 +113,8 @@ import time
 from ugm.world import Reply, Said
 
 from . import fs_tools
-from .model import (Asked, Big, BigHunt, Contents, Entry, Failed, Focus,
-                    Folder, FoundBig, FoundStale, HuntHere, IsDir,
+from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
+                    Focus, Folder, FoundBig, FoundStale, HuntHere, IsDir,
                     ListWanted, Listed, Modified, NeedsApproval, Parsing,
                     ParseRequest, Proposal, RenameWish, Renamed, Session,
                     Size, Stale, StaleHunt)
@@ -498,7 +510,7 @@ def flag_big(w):
     for entity, hunt in w.each(BigHunt, without=Proposal):
         w.destroy(entity)
         entries = _listed(w, hunt.folder)
-        floor, found = w.the(Session).big_floor, 0
+        floor, found = w.the(BigFloor).bytes, 0
         for child, _name, size, _modified, is_dir in entries:
             if size is None or is_dir or size < floor:
                 continue
@@ -580,7 +592,8 @@ RULES = (hear, hear_answer,
 
 
 def install(loop, clock=time.time, cwd=os.getcwd) -> None:
-    """Every rule, in order, plus the one `Session` they read.
+    """Every rule, in order, plus the `Session` and `BigFloor` they read --
+    two entities, seeded by TWO DIFFERENT policies, on purpose.
 
     `clock` and `cwd` are arguments because a domain that reads the world
     outside the world should say where it does it. Both are read ONCE,
@@ -589,13 +602,26 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     ⚠ The world handed in may already hold everything this domain knew
     last time (`ugm.save`), and reconciling that is this
     function's job -- nothing in the harness can tell a restored entity
-    from a fresh one. The policy here: every folder and entry stays
-    exactly as it was, and the `Session` is REPLACED, because the clock
-    and the working directory belong to the process now running and not
-    to the one that wrote the file. `world.replace` on the entity that
-    already carries one is the whole of that -- same entity, new
-    component, and the OLD one gone rather than standing alongside it
-    (`Session` is not a kind an entity should ever carry two of).
+    from a fresh one. Two different policies apply, for two different
+    kinds of thing:
+
+    - **`Session` is REPLACED, always.** The clock and the working
+      directory belong to the process now running, never to the one that
+      wrote the file -- `world.replace` on the entity that already
+      carries one is the whole of that: same entity, new component, and
+      the OLD one gone rather than standing alongside it (`Session` is
+      not a kind an entity should ever carry two of).
+    - **`BigFloor` is SEEDED, only if the world doesn't already have
+      one.** It is a knob, not a process fact: a rule may change it (a
+      typed preference, one day a tuner reading past sessions), and a
+      restored world's value is exactly that rule's conclusion, not
+      something this function has any business overwriting every time it
+      runs. `$HARNESKILLS_FS_BIG_FLOOR` (falling back to `BIG_BYTES`) is
+      read ONLY to give a brand-new world a starting point. See
+      `docs/tunable knobs.md`.
+
+    Every folder and entry stays exactly as it was either way -- neither
+    policy touches them.
 
     This function runs once, before the loop is running at all -- there
     is no tick for it to be a rule's own turn in, only a world to seed.
@@ -605,5 +631,6 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     world = loop.world
     world.learn(*WORDS, "y", "yes", "n", "no")
     was = world.first(Session)
-    world.replace(was[0] if was else world.spawn(),
-                  Session(cwd(), int(clock()), BIG_BYTES))
+    world.replace(was[0] if was else world.spawn(), Session(cwd(), int(clock())))
+    if world.first(BigFloor) is None:
+        world.spawn(BigFloor(int(os.environ.get("HARNESKILLS_FS_BIG_FLOOR", BIG_BYTES))))

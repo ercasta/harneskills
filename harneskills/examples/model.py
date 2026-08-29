@@ -110,8 +110,12 @@ class IsDir:
 
 @dataclass(frozen=True)
 class Session:
-    """Where the conversation is and what it measures by -- one entity,
-    spawned at install.
+    """Where the conversation is and what it measures BY the clock -- one
+    entity, REPLACED at every install, never restored: `cwd` and `now`
+    belong to the process now running, not to whichever process wrote the
+    state file. See `BigFloor`, below, for the opposite policy -- a knob
+    is not this kind of thing, even though both start out looking like
+    "some configuration."
 
     `now` is read from the clock ONCE, so a session open for an hour ages
     files against the clock it started with and the same question twice
@@ -121,7 +125,6 @@ class Session:
 
     cwd: str
     now: int
-    big_floor: int
 
 
 # -- what a rule has concluded -----------------------------------------
@@ -131,6 +134,26 @@ class Focus:
     """The folder you are looking at. Exactly one entity carries it, and
     `fs._focus` is what moves it: list A, list B, ask, and you get B.
     There is no attention model, nothing fades, and nothing is ranked."""
+
+
+@dataclass(frozen=True)
+class BigFloor:
+    """The knob `flag_big` measures against -- how many bytes make an
+    entry `Big`. One entity, like `Session`, but the OPPOSITE policy:
+    `fs.install` seeds this only if the restored world doesn't already
+    have one (a brand-new world, reading `HARNESKILLS_FS_BIG_FLOOR` as
+    the bootstrap default); a restored value is left exactly as it was.
+
+    That is what makes this a knob rather than a `Session`-style process
+    fact: it is ordinary, `w.replace`-able state, same as `Focus` or
+    `Stale` below, so a rule reacting to a typed preference ("call big
+    anything over 2000 bytes") writes it exactly the way `_focus` moves
+    `Focus` -- and so does a future rule that adjusts it from past
+    sessions rather than from one line typed just now. See `docs/tunable
+    knobs.md`.
+    """
+
+    bytes: int
 
 
 @dataclass(frozen=True)

@@ -146,8 +146,8 @@ def test_show_big_in_a_folder_nobody_listed_looks_first(folder):
 def test_a_directory_is_never_big_however_many_bytes_the_entry_takes(folder):
     loop = session(folder)
     w = loop.world
-    entity, session_ = w.each(Session)[0]
-    w.attach(entity, Session(session_.cwd, session_.now, big_floor=1))
+    entity, _floor = w.each(fs.BigFloor)[0]
+    w.replace(entity, fs.BigFloor(1))
     assert "sub" not in " ".join(say(loop, "show big in %s" % folder))
 
 
@@ -355,7 +355,7 @@ def test_installing_over_a_restored_world_replaces_only_the_session(folder, tmp_
     say(loop, "show file")
     before = len(loop.world)
     loop.world.attach(loop.world.each(SessionComponent)[0][0],
-                      SessionComponent("/somewhere/else", 1, 1))
+                      SessionComponent("/somewhere/else", 1))
     save.write(loop.world, path)
 
     w = restart(folder, path).world
