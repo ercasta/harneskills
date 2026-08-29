@@ -3,56 +3,47 @@ runs systems over it, and one thread to run a session on.
 
     from ugm import Engine, Loop, World
 
-* `ugm.world` -- entities (identity, no data) and components (data, no
-  identity). Everything anything knows.
+* `ugm.world` -- entities (identity, no data) and components: plain
+  `@dataclasses.dataclass` instances, no base class, holding only
+  `None`/`bool`/`int`/`float`/`str` and `list`/`dict`/`tuple` of those --
+  another entity is referenced by its plain id, never a live handle. An
+  entity may carry SEVERAL components of one type.
 * `ugm.delta` -- what a system RETURNS instead of touching the world:
-  `spawn`, `attach`, `detach`, `destroy`, as data.
+  `spawn`, `attach`, `replace`, `detach`, `remove`, `destroy`, as data.
 * `ugm.loop` -- call every system, in order, until a whole pass changes
   nothing. A system is a function of one `World` that returns a list of
-  deltas; `Loop.tick` is what applies them.
+  deltas; `Loop.tick` is what applies them. A system may declare
+  `watches=` -- the component types it could possibly do anything with --
+  and stay uncalled on any tick where none of them exist yet.
 * `ugm.engine` -- ONE thread that runs the loop, and the channels
   attached to it. `Said(name, "...")` in from whichever channel it
   arrived on; `Reply(user, "...")` out to every channel there is.
-* `ugm.save` -- the world as plain data, and back.
+* `ugm.save` -- the world as JSONL (one record per line), and back.
 
-* `ugm.facts` -- the VOCABULARY systems say things in: a relation is a
-  component type, its objects are that component's ordered rows, and a
-  kind is one empty row. `fact`/`state`/`deny` to write, `of`/`one`/
-  `holds` to read.
-* `ugm.arbitration` -- how several systems decide ONE contested thing
-  without knowing about each other: propose `candidate`s, justify them
-  through `realizes`, veto with `ruled_out`, order with `ranked`, and let
-  ONE generic `commit` read the whole set and name a `winner`.
+That is the whole of `ugm`: entities and components, nothing else in this
+package's own vocabulary. `harneskills` is the worked door onto it --
+`harneskills.repl`, `harneskills.serve` and `harneskills.client` are
+channels built on top of `Engine`, and `harneskills.examples.fs` is a
+domain built on top of `World` and `Loop` alone -- neither of which this
+package knows exists.
 
-⚠⚠ THE LAST TWO ARE A DISCIPLINE, NOT A DOMAIN. `ugm` still ships no
-files, no sockets, no syntax and no business — `facts.py` cannot tell you
-what a relation MEANS. What it does ship is the way to write systems that
-compose, and unlike a domain that is not optional: a system that keeps its
-conclusion in a local variable is invisible to every other system, to
-`arbitration.commit` and to `save`, and a rule family that decides for
-itself whether to fire has an opinion about registration order whether or
-not its author meant it to. Both were measured, at cost, in a domain built
-on this package; see each module's own note.
-
-UGM ships no domain, no channel and no transport. `Engine.attach` wants
-anything with `.name`, `.deliver(message)`, and optionally `.start(engine)`
-/ `.close()` -- a terminal, a WebSocket, a test double, all the same
-shape. `harneskills` is the worked door onto this: `harneskills.repl`,
-`harneskills.serve` and `harneskills.client` are channels built on top of
-`Engine`, and `harneskills.examples.fs` is a domain built on top of
-`World` and `Loop` -- neither of which this package knows exists.
+⚠⚠ `ugm.facts` / `ugm.arbitration` / `ugm.request` are NOT imported here.
+They predate the rewrite above (plain dataclasses, several components per
+type, primitives-only fields) and do not currently work against it --
+`facts.Relation` subclassed a `Component` base class this package no
+longer has. They are ON HOLD, not deleted, pending a decision on whether a
+`fact`/`state`/`deny` vocabulary belongs in this package at all, or only as
+an optional, clearly-separate pattern library -- see `docs/TODO.md`.
 """
 
 from __future__ import annotations
 
-from . import arbitration, delta, engine, facts, loop, save, world
+from . import delta, engine, loop, save, world
 from .engine import Engine
-from .facts import Facts, relation
 from .loop import Loop
 from .world import World
 
 __version__ = "0.1.0"
 
-__all__ = ["Engine", "Facts", "Loop", "World", "arbitration", "delta",
-          "engine", "facts", "loop", "relation", "save", "world",
-          "__version__"]
+__all__ = ["Engine", "Loop", "World", "delta", "engine", "loop", "save",
+          "world", "__version__"]

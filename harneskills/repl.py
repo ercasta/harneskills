@@ -267,11 +267,22 @@ class Terminal:
         elif "settled" in message:
             pass          # nothing to say; a richer terminal could redraw
         elif "world" in message:
-            for record in message["world"].get("entities", ()):
-                self._print("  #%-4s %s" % (record["id"], "  ".join(
-                    "%s(%s)" % (c["type"].rpartition(":")[2],
-                                ", ".join("%s=%r" % kv
-                                         for kv in c["fields"].items()))
-                    for c in record["components"])))
+            # `ugm.save.dump`'s own shape: a header (no "entity" key) then
+            # one record per component or bare entity, already grouped
+            # contiguously by entity -- see that module's own docstring.
+            entity_id, shown = None, []
+            for record in message["world"]:
+                if "entity" not in record:
+                    continue                    # the header
+                if record["entity"] != entity_id:
+                    if entity_id is not None:
+                        self._print("  #%-4s %s" % (entity_id, "  ".join(shown)))
+                    entity_id, shown = record["entity"], []
+                if "type" in record:
+                    shown.append("%s(%s)" % (record["type"].rpartition(":")[2],
+                                             ", ".join("%s=%r" % kv for kv
+                                                       in record["fields"].items())))
+            if entity_id is not None:
+                self._print("  #%-4s %s" % (entity_id, "  ".join(shown)))
         else:
             self._print("  ? %r" % (message,))

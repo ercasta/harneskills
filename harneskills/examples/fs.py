@@ -517,11 +517,13 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     from a fresh one. The policy here: every folder and entry stays
     exactly as it was, and the `Session` is REPLACED, because the clock
     and the working directory belong to the process now running and not
-    to the one that wrote the file. `attach` on the entity that already
-    carries one is the whole of that -- same entity, new component.
+    to the one that wrote the file. `world.replace` on the entity that
+    already carries one is the whole of that -- same entity, new
+    component, and the OLD one gone rather than standing alongside it
+    (`Session` is not a kind an entity should ever carry two of).
 
     ⚠ This function, unlike every system above it, calls `world.spawn`
-    and `world.attach` directly -- and correctly. It runs once, before
+    and `world.replace` directly -- and correctly. It runs once, before
     the loop is running at all, not on every tick over a query; there is
     no "turn" for it to return deltas from, only a world to seed.
     """
@@ -530,5 +532,5 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     world = loop.world
     world.learn(*WORDS, "y", "yes", "n", "no")
     was = world.first(Session)
-    world.attach(was[0] if was else world.spawn(),
-                 Session(cwd(), int(clock()), BIG_BYTES))
+    world.replace(was[0] if was else world.spawn(),
+                  Session(cwd(), int(clock()), BIG_BYTES))

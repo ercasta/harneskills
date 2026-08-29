@@ -87,7 +87,7 @@ def test_listing_spawns_an_entity_per_entry(folder):
     here = folder_of(w, folder)
     assert sorted(w.get(here, Contents).by_name) == ["alpha.txt", "huge.bin", "sub"]
     assert w.get(named(w, here, "huge.bin"), Size) == Size(5000)
-    assert w.get(named(w, here, "sub"), Entry).folder == here
+    assert w.get(named(w, here, "sub"), Entry).folder == here.id
     assert w.has(named(w, here, "sub"), fs.IsDir)
 
 
@@ -160,7 +160,7 @@ def test_a_finding_is_a_component_on_the_file_it_is_about(folder):
     say(loop, "show big in %s" % folder)
     w = loop.world
     here = folder_of(w, folder)
-    assert [e for e, _ in w.each(Big)] == [named(w, here, "huge.bin")]
+    assert [e.id for e, _ in w.each(Big)] == [named(w, here, "huge.bin")]
 
 
 # --- stale, proposed, approved ----------------------------------------
@@ -383,7 +383,7 @@ def test_a_restarted_world_does_not_reuse_an_id_something_points_at(folder, tmp_
     say(back, "show file in %s" % os.path.join(folder, "sub"))
     fresh = [e.id for e in w.entities() if e.id not in known]
     assert fresh and not (set(fresh) & known)
-    assert w.get(here, Contents).by_name["huge.bin"].id in known
+    assert w.get(here, Contents).by_name["huge.bin"] in known
 
 
 # --- one directory is one folder --------------------------------------

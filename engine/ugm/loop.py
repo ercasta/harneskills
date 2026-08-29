@@ -58,6 +58,27 @@ re-attached a component equal to the one already on the entity did not.
 That is what settling is measured in, and it is why `World.attach`
 comparing before it stores is load-bearing rather than a convenience.
 
+## A system may declare what would ever wake it
+
+`loop.system(fn, watches=(Kind, ...))` tells the loop the component types a
+system could possibly have something to do with. A system that declared
+`watches` is skipped -- its Python body never called at all -- on any tick
+where `world.populated(*watches)` is false, i.e. NOTHING carries any of
+those types yet. `watches=None` (the default) means what it always meant:
+called every tick, no questions asked.
+
+⚠ `watches` must be an OVER-approximation of what could matter, not the
+exact query -- get it right and a whole class of systems in a large ruleset
+stay silent, entities and all, until their own domain has anything on the
+world at all; get it wrong (name too NARROW a set) and the system goes
+dormant while something it depended on sits unnoticed on a type it never
+declared, which looks exactly like the old "no inert set" hang except
+inverted: not too much firing, but a system that should have fired and
+silently didn't. There is no way to catch this from here -- `populated` does
+not know what a system's own body reads -- so declare a superset when in
+doubt; a system that watches one type too many merely gets called with
+nothing to do, the same cost `each()` already pays on an empty bucket.
+
 ## The budget is the circuit breaker
 
 Two systems can feed each other forever -- one spawns what the other
@@ -113,7 +134,7 @@ class Loop:
 
     # -- registering --------------------------------------------------
 
-    def system(self, fn=None, *, name=None):
+    def system(self, fn=None, *, name=None, watches=None):
         """Register a system. Bare or called::
 
             @loop.system
@@ -121,9 +142,18 @@ class Loop:
 
             @loop.system(name="flag big")
             def _(w): ...
+
+            @loop.system(watches=(Request,))
+            def watch(w): ...             # skipped while no Request exists
+
+        `watches`, if given, is a component type or a tuple of them -- see
+        the module note on what it promises and what it does not.
         """
         if fn is None:
-            return lambda f: self.system(f, name=name)
+            return lambda f: self.system(f, name=name, watches=watches)
+        if watches is not None:
+            fn._ugm_watches = ((watches,) if isinstance(watches, type)
+                               else tuple(watches))
         self.systems.append((name or _name_of(fn), fn))
         return fn
 
@@ -150,6 +180,9 @@ class Loop:
         move on. Returns the names of the ones that changed something."""
         fired = []
         for name, fn in self.systems:
+            watches = getattr(fn, "_ugm_watches", None)
+            if watches is not None and not self.world.populated(*watches):
+                continue    # dormant -- not even called, see the module note
             before = self.world.revision
             try:
                 deltas = fn(self.world)

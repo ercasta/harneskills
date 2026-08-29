@@ -70,12 +70,23 @@ def _render(message: dict) -> None:
     elif "welcome" in message:
         print("  connected as %s" % message["welcome"].get("channel"))
     elif "world" in message:
-        world = message["world"]
-        for record in world.get("entities", ()):
-            print("  #%-4s %s" % (record["id"], "  ".join(
-                "%s(%s)" % (c["type"].rpartition(":")[2],
-                            ", ".join("%s=%r" % kv for kv in c["fields"].items()))
-                for c in record["components"])))
+        # `ugm.save.dump`'s own shape: a header (no "entity" key) then one
+        # record per component or bare entity, already grouped
+        # contiguously by entity -- see that module's own docstring.
+        entity_id, shown = None, []
+        for record in message["world"]:
+            if "entity" not in record:
+                continue                        # the header
+            if record["entity"] != entity_id:
+                if entity_id is not None:
+                    print("  #%-4s %s" % (entity_id, "  ".join(shown)))
+                entity_id, shown = record["entity"], []
+            if "type" in record:
+                shown.append("%s(%s)" % (record["type"].rpartition(":")[2],
+                                         ", ".join("%s=%r" % kv for kv
+                                                   in record["fields"].items())))
+        if entity_id is not None:
+            print("  #%-4s %s" % (entity_id, "  ".join(shown)))
     elif "settled" in message:
         pass          # state moved; a richer client would redraw here
     else:

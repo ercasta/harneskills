@@ -145,7 +145,8 @@ def test_say_gets_a_reply_and_get_gets_the_world(echoing_loop):
     client.recv()
     client.send({"get": "world"})
     world = client.recv()
-    assert "world" in world and world["world"]["entities"] == []
+    # `ugm.save.dump`'s own shape: a list, header only for an empty world.
+    assert "world" in world and len(world["world"]) == 1
     client.close()
     stop(engine, thread)
 

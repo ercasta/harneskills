@@ -2,27 +2,31 @@
 -- and every change made through the deltas a system returns, never by a
 system touching the world itself."""
 
+import dataclasses
+
 import pytest
 
 from ugm.delta import attach, destroy, spawn
 from ugm.loop import Loop
-from ugm.world import Component
 
 
-class Step(Component):
-    def __init__(self, n):
-        self.n = n
+@dataclasses.dataclass(frozen=True)
+class Step:
+    n: object
 
 
-class Ping(Component):
+@dataclasses.dataclass(frozen=True)
+class Ping:
     pass
 
 
-class Pong(Component):
+@dataclasses.dataclass(frozen=True)
+class Pong:
     pass
 
 
-class Seen(Component):
+@dataclasses.dataclass(frozen=True)
+class Seen:
     pass
 
 
@@ -106,13 +110,13 @@ def test_a_spawn_s_pending_entity_is_usable_the_same_list(loop):
 
 
 def test_a_pending_nested_in_a_component_field_resolves_too(loop):
-    class Holder(Component):
-        def __init__(self, ref):
-            self.ref = ref
+    @dataclasses.dataclass(frozen=True)
+    class Holder:
+        ref: object
 
-    class Index(Component):
-        def __init__(self, by_name):
-            self.by_name = by_name
+    @dataclasses.dataclass(frozen=True)
+    class Index:
+        by_name: dict
 
     @loop.system
     def make(w):
@@ -126,8 +130,10 @@ def test_a_pending_nested_in_a_component_field_resolves_too(loop):
     target = w.each(Step)[0][0]
     holder = w.each(Holder)[0][1]
     index = w.each(Index)[0][1]
-    assert holder.ref == target
-    assert index.by_name == {"a": target}
+    # A component field never holds a live handle -- see ugm.world's own
+    # note -- so a Pending resolved mid-apply still comes out as a plain id.
+    assert holder.ref == target.id
+    assert index.by_name == {"a": target.id}
 
 
 def test_a_system_that_touches_the_world_directly_is_a_named_error(loop):
@@ -209,6 +215,46 @@ def test_install_hands_the_loop_to_a_domain(loop):
     loop.install(domain, greeting="hello")
     assert loop.world.the(Step).n == "hello"
     assert [name for name, _ in loop.systems] == ["noop"]
+
+
+def test_a_system_with_watches_is_not_even_called_while_dormant(loop):
+    calls = []
+
+    @loop.system(watches=(Step,))
+    def counts_calls(w):
+        calls.append(None)
+
+    loop.tick()
+    loop.tick()
+    assert calls == [], "Step has never existed -- the body never ran"
+
+    loop.world.spawn(Step(0))
+    loop.tick()
+    assert len(calls) == 1, "a Step exists now -- it runs"
+    loop.tick()
+    assert len(calls) == 2, "populated now, so it runs every tick again"
+
+
+def test_watches_accepts_a_single_type_or_several(loop):
+    seen = []
+    loop.system(lambda w: seen.append("one"), name="one", watches=Step)
+    loop.system(lambda w: seen.append("either"), name="either",
+               watches=(Step, Ping))
+
+    loop.tick()
+    assert seen == []
+
+    loop.world.spawn(Ping())
+    loop.tick()
+    assert seen == ["either"], "Ping alone wakes the OR-watcher, not the Step one"
+
+
+def test_a_system_with_no_watches_runs_every_tick_regardless(loop):
+    seen = []
+    loop.system(lambda w: seen.append(None), name="always")
+    loop.tick()
+    loop.tick()
+    assert len(seen) == 2, "the default: called whether or not anything exists"
 
 
 def test_after_tick_runs_between_ticks_not_at_the_end(loop):

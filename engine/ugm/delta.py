@@ -107,7 +107,7 @@ class Attach(Delta):
 
 
 class Detach(Delta):
-    """These component types, off that entity."""
+    """Every component of these types, off that entity."""
 
     def __init__(self, entity, *kinds) -> None:
         self.entity = entity
@@ -120,6 +120,44 @@ class Detach(Delta):
     def _apply(self, world, resolved: dict) -> None:
         entity = _resolve_value(self.entity, resolved)
         world.detach(entity, *self.kinds)
+
+
+class Replace(Delta):
+    """These components, each replacing every existing component of ITS
+    OWN type on that entity -- `World.replace`, for a kind meant to stay
+    singular (`Session`, `Contents`, a folder's `Size`)."""
+
+    def __init__(self, entity, *components) -> None:
+        self.entity = entity
+        self.components = components
+
+    def __repr__(self) -> str:
+        return "Replace(%r, %s)" % (self.entity,
+                                    ", ".join(repr(c) for c in self.components))
+
+    def _apply(self, world, resolved: dict) -> None:
+        entity = _resolve_value(self.entity, resolved)
+        components = [_resolve_component(c, resolved) for c in self.components]
+        world.replace(entity, *components)
+
+
+class Remove(Delta):
+    """One component equal to this value, off that entity -- leaving any
+    other instances of the same type standing. `World.detach` still clears
+    a whole type; this is the one-value counterpart a multi-valued type
+    needs."""
+
+    def __init__(self, entity, component) -> None:
+        self.entity = entity
+        self.component = component
+
+    def __repr__(self) -> str:
+        return "Remove(%r, %r)" % (self.entity, self.component)
+
+    def _apply(self, world, resolved: dict) -> None:
+        entity = _resolve_value(self.entity, resolved)
+        component = _resolve_component(self.component, resolved)
+        world.remove(entity, component)
 
 
 class Destroy(Delta):
@@ -150,6 +188,14 @@ def attach(entity, *components) -> Attach:
 
 def detach(entity, *kinds) -> Detach:
     return Detach(entity, *kinds)
+
+
+def replace(entity, *components) -> Replace:
+    return Replace(entity, *components)
+
+
+def remove(entity, component) -> Remove:
+    return Remove(entity, component)
 
 
 def destroy(entity) -> Destroy:

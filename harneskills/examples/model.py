@@ -30,67 +30,78 @@ and no flag has to be read to tell the two apart. `Asked` is the same
 idea one step earlier: the question has gone out and the wish is
 waiting on an answer that will arrive as an ordinary line on an ordinary
 channel, not as a return value nothing here is allowed to block for.
+
+## Every class here is a plain, frozen dataclass
+
+`ugm.world` ships no `Component` base class to inherit -- a component is
+whatever `dataclasses.is_dataclass` says yes to. `folder`/`entry`/every
+other field that names another entity holds its plain integer id, never a
+live handle: `World.attach` lowers a handle passed in (the ergonomic thing
+to write, straight from a query) to its `.id` on the way in, so nothing
+below has to spell `.id` itself.
 """
 
 from __future__ import annotations
 
-from ugm.world import Component
+from dataclasses import dataclass, field
 
 
 # -- what something is ---------------------------------------------------
 
-class Folder(Component):
+@dataclass(frozen=True)
+class Folder:
     """A directory, by path. One entity per path, and `fs.folder_at` is
     the only thing that makes them, so two systems asking about the same
     directory are asking about the same entity."""
 
-    def __init__(self, path: str) -> None:
-        self.path = path
+    path: str
 
 
-class Contents(Component):
-    """The folder's index: `name -> entity`.
+@dataclass(frozen=True)
+class Contents:
+    """The folder's index: `name -> entity id`.
 
     Computed fresh by `fs_tools.ls`/`rename` every time -- never mutated
-    in place -- and ATTACHED like any other component. `World.attach`
-    comparing before it stores is what makes re-listing an unchanged
-    folder cost a dict comparison rather than a revision: this used to be
-    the one hand-kept structure in the domain, mutated by hand and
-    reported with `world.changed()`, until a system stopped being the
-    thing allowed to touch a world at all -- see `ugm.delta`.
+    in place -- and put on with `world.replace`, which is what makes
+    re-listing an unchanged folder cost a dict comparison rather than a
+    revision: this used to be the one hand-kept structure in the domain,
+    mutated by hand and reported with `world.changed()`, until a system
+    stopped being the thing allowed to touch a world at all -- see
+    `ugm.delta`.
     """
 
-    def __init__(self, by_name: dict = None) -> None:
-        self.by_name: dict = dict(by_name) if by_name else {}
+    by_name: dict = field(default_factory=dict)
 
 
-class Entry(Component):
-    """Something in a folder, by name. `folder` is the folder's ENTITY,
+@dataclass(frozen=True)
+class Entry:
+    """Something in a folder, by name. `folder` is the folder's ENTITY id,
     which is how a relationship is spelled here -- no object graph, no
     back reference to keep in step."""
 
-    def __init__(self, folder, name: str) -> None:
-        self.folder = folder
-        self.name = name
+    folder: int
+    name: str
 
 
-class Size(Component):
-    def __init__(self, num_bytes: int) -> None:
-        self.bytes = int(num_bytes)
+@dataclass(frozen=True)
+class Size:
+    bytes: int
 
 
-class Modified(Component):
+@dataclass(frozen=True)
+class Modified:
     """When it was last written, as a unix time."""
 
-    def __init__(self, when: int) -> None:
-        self.when = int(when)
+    when: int
 
 
-class IsDir(Component):
+@dataclass(frozen=True)
+class IsDir:
     """It is a directory. A tag: carrying it is the whole of the claim."""
 
 
-class Session(Component):
+@dataclass(frozen=True)
+class Session:
     """Where the conversation is and what it measures by -- one entity,
     spawned at install.
 
@@ -100,64 +111,69 @@ class Session(Component):
     bare `show file` means however far a later listing wanders.
     """
 
-    def __init__(self, cwd: str, now: int, big_floor: int) -> None:
-        self.cwd = cwd
-        self.now = int(now)
-        self.big_floor = int(big_floor)
+    cwd: str
+    now: int
+    big_floor: int
 
 
 # -- what a system has concluded -----------------------------------------
 
-class Focus(Component):
+@dataclass(frozen=True)
+class Focus:
     """The folder you are looking at. Exactly one entity carries it, and
     `fs._focus` is what moves it: list A, list B, ask, and you get B.
     There is no attention model, nothing fades, and nothing is ranked."""
 
 
-class Stale(Component):
+@dataclass(frozen=True)
+class Stale:
     """Older than someone asked about. Detached when the file is dealt
     with -- a claim unmade, not a flag set back to False."""
 
 
-class Big(Component):
+@dataclass(frozen=True)
+class Big:
     """Over the session's floor."""
 
 
 # -- what is being asked for ---------------------------------------------
 
-class ListWanted(Component):
-    def __init__(self, folder) -> None:
-        self.folder = folder
+@dataclass(frozen=True)
+class ListWanted:
+    folder: int
 
 
-class StaleHunt(Component):
-    def __init__(self, folder, days: int) -> None:
-        self.folder = folder
-        self.days = int(days)
+@dataclass(frozen=True)
+class StaleHunt:
+    folder: int
+    days: int
 
 
-class BigHunt(Component):
-    def __init__(self, folder) -> None:
-        self.folder = folder
+@dataclass(frozen=True)
+class BigHunt:
+    folder: int
 
 
-class HuntHere(Component):
+@dataclass(frozen=True)
+class HuntHere:
     """The hunt is on, but which folder is not decided yet. `focus_big`
     trades this tag for a `BigHunt` aimed at the folder you last looked
     at -- the same entity, now knowing where it is going."""
 
 
-class RenameWish(Component):
-    def __init__(self, entry, new_name: str) -> None:
-        self.entry = entry
-        self.new_name = new_name
+@dataclass(frozen=True)
+class RenameWish:
+    entry: int
+    new_name: str
 
 
-class NeedsApproval(Component):
+@dataclass(frozen=True)
+class NeedsApproval:
     """A person has not said yes yet. See this module's docstring."""
 
 
-class Asked(Component):
+@dataclass(frozen=True)
+class Asked:
     """The question has already gone out for this wish -- `approve` put
     it on `Reply(user, ...)` and is now waiting for an answer on the same
     channel every other reply goes out on.
@@ -172,29 +188,29 @@ class Asked(Component):
 
 # -- what just happened --------------------------------------------------
 
-class Listed(Component):
-    def __init__(self, folder, count: int) -> None:
-        self.folder = folder
-        self.count = int(count)
+@dataclass(frozen=True)
+class Listed:
+    folder: int
+    count: int
 
 
-class FoundStale(Component):
-    def __init__(self, entry) -> None:
-        self.entry = entry
+@dataclass(frozen=True)
+class FoundStale:
+    entry: int
 
 
-class FoundBig(Component):
-    def __init__(self, entry) -> None:
-        self.entry = entry
+@dataclass(frozen=True)
+class FoundBig:
+    entry: int
 
 
-class Renamed(Component):
-    def __init__(self, entry, was: str) -> None:
-        self.entry = entry
-        self.was = was
+@dataclass(frozen=True)
+class Renamed:
+    entry: int
+    was: str
 
 
-class Failed(Component):
-    def __init__(self, what: str, why: str) -> None:
-        self.what = what
-        self.why = why
+@dataclass(frozen=True)
+class Failed:
+    what: str
+    why: str

@@ -1,5 +1,11 @@
 # Decision patterns — agency without a backward-chaining engine
 
+⚠⚠ **ON HOLD, 2026-08-29** — `ugm/arbitration.py` does not currently import
+(it sits on `ugm/facts.py`, which sits on a `Component` base class the core
+rewrite removed). See `docs/TODO.md` and this repo's `README.md`. The
+argument below stands regardless of what happens to the module; read it as
+the reasoning to preserve even if the code it describes is rewritten.
+
 *Written 2026-08-27 as a design note inside `pystrider` (a domain that reads and writes Python on this
 world), and moved here 2026-08-28 along with the code it argued for. **`ugm/arbitration.py` is this
 note, built** — the vocabulary below is that module's, one for one. Read this for the argument; read

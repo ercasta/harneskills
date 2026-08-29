@@ -262,7 +262,7 @@ class Facts:
         """
         return domain(self.loop, self)
 
-    def system(self, fn=None, *, name=None):
+    def system(self, fn=None, *, name=None, watches=None):
         """Register one system -- wrapped so `fact`/`state`/`deny`/`node`/
         `word`/`value`/`reify`, called from inside it, describe a change
         instead of making one.
@@ -280,9 +280,18 @@ class Facts:
         `_name_of` reads `fn.__module__`/`fn.__name__` to name a system
         `patterns.iteration` rather than `facts.wrapped`, and the SYSTEMS
         registry `/systems` prints is only legible if it does.
+
+        `watches`, passed straight through to `Loop.system`, is a relation
+        NAME or a tuple of them here, not a component type -- `relation()`
+        interns, so `watches="candidate"` and `watches=("candidate",
+        "request")` resolve to the classes `Loop.populated` checks against.
         """
         if fn is None:
-            return lambda f: self.system(f, name=name)
+            return lambda f: self.system(f, name=name, watches=watches)
+        kinds = None
+        if watches is not None:
+            names = (watches,) if isinstance(watches, str) else tuple(watches)
+            kinds = tuple(relation(n) for n in names)
 
         @functools.wraps(fn)
         def wrapped(world):
@@ -294,7 +303,7 @@ class Facts:
                 self._pending = self._overlay = self._minting = None
             return pending
 
-        return self.loop.system(wrapped, name=name)
+        return self.loop.system(wrapped, name=name, watches=kinds)
 
     # -- reading back THIS TURN's own not-yet-applied writes ---------------
 
@@ -649,6 +658,46 @@ class Facts:
                 f"`one` answers about a single object; the caller wants `of`"
             )
         return got[0][0]
+
+    def each(self, name: str, arity: Optional[int] = None):
+        """Every `(subject, *objects)` row of this relation, across every
+        subject that carries it -- generator, not a list, but see `World.each`:
+        it walks the world's own materialised query, so this costs nothing
+        extra to consume more than once.
+
+        ⭐ The generic reader's boilerplate, named: `arbitration.commit` and
+        `request.watch` each used to spell `for occasion, held in
+        world.each(Candidate): for row in held.rows: if len(row) != 1:
+        continue; (option,) = row` by hand -- one relation, one arity, one
+        subject per row is the overwhelmingly common shape, and this is that
+        walk, done once, here::
+
+            for occasion, option in f.each("candidate", arity=1):
+                ...
+
+        `arity`, when given, silently SKIPS a row of a different width
+        rather than raising -- a system reading `stmt(subject, a, b)` next
+        to `stmt(subject, a)` should see one shape or the other, not choke
+        on either; a caller that wants to know about the mismatch reads
+        `of()` directly, the way `one()` already does.
+        """
+        for subject, held in self.world.each(relation(name)):
+            for row in held.rows:
+                if arity is not None and len(row) != arity:
+                    continue
+                yield (subject,) + row
+
+    def objects(self, name: str, subject: Entity) -> List[Entity]:
+        """Every single OBJECT of a ONE-PLACE relation on this subject --
+        `of()` filtered to one-place rows and unwrapped.
+
+        The list a caller reaches for instead of `one()`'s refusal, when
+        several rows are exactly what is expected (`f.objects("responding",
+        details)` for however many workers answered) rather than an error:
+        `[row[0] for row in f.of(name, subject) if len(row) == 1]`, spelled
+        out by hand in `arbitration.py` and `request.py` before this existed.
+        """
+        return [row[0] for row in self.of(name, subject) if len(row) == 1]
 
     def subjects(self, name: str) -> List[Entity]:
         """Every entity this relation is asserted of, in spawn order.

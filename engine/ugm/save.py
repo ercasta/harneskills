@@ -4,70 +4,39 @@
     save.read(world, path)          # into an EMPTY world, before any domain
 
 An entity is an integer and a component is a value with named fields, so
-there is nothing here but that::
+there is nothing here but that -- one JSON object PER LINE (JSONL), which is
+what "an entity can carry several components of one type" wants: every
+instance is already its own record, so there is no nested list to grow one
+entry at a time. The first line is a header; every line after it is either a
+component or a bare, component-less entity::
 
-    {"version": 1, "next": 23, "entities": [
-       {"id": 3, "components": [
-          {"type": "harneskills.examples.model:Folder",
-           "fields": {"path": "/tmp/notes"}}]}]}
+    {"version": 2, "next": 23}
+    {"entity": 3, "type": "harneskills.examples.model:Folder", "fields": {"path": "/tmp/notes"}}
+    {"entity": 7}
 
 ## A component is rebuilt WITHOUT its `__init__`
 
-`Entry(folder, name)` takes positional arguments that are not its field
-names, and `Contents()` takes none at all -- there is no signature a
-loader could call in general. So a component comes back as
-`object.__new__(cls)` with its `__dict__` restored: the same fields it
-was saved with, whatever its constructor happens to want. A domain is
-free to write any `__init__` it likes and this keeps working.
-
-The cost is that `__init__`'s own coercions do not run on the way back.
-`Size(num_bytes="17")` stores `17` because its constructor says
-`int(...)`; a `Size` restored from a file gets exactly what was written,
-which is the `17` that was stored. Save what you mean.
+A dataclass's constructor takes its fields in declaration order, but
+`object.__new__(cls)` plus setting each field straight into `__dict__` (or,
+for a frozen one, via `object.__setattr__`) does not need to know that
+order, or call `__init__` at all -- which also means a component saved
+before a field was renamed comes back with exactly the fields it was saved
+with, not a `TypeError` from a constructor that no longer matches.
 
 ## What a field may hold
 
-`None`, `bool`, `int`, `float`, `str`, `list`, `tuple`, `dict` with
-string keys, and an `Entity` -- nested however deep. An entity is written
-`{"$entity": 3}` and comes back as a handle on the world being loaded
-into, which is what makes `Entry(folder=#3)` and `Contents.by_name` mean
-the same thing after a restart as before it. A tuple is written
-`{"$tuple": [...]}` rather than as a bare list, because a field that goes
-in a tuple and comes out a list is the kind of change nothing notices
-until something compares them.
+`None`, `bool`, `int`, `float`, `str`, `list`, `tuple`, `dict` with string
+keys -- nested however deep -- and nothing else. There is no `$entity`
+wrapper here any more: `World.attach` already guarantees a component field
+never holds a live `Entity`, only its plain id, so a reference to another
+entity is already exactly the JSON-native int this format wants, with no
+translation at either end. A tuple still needs `{"$tuple": [...]}`, because
+JSON itself cannot tell a tuple from a list.
 
-Anything else -- a set, an open file, a domain's own class -- is refused
-by name when saving, rather than written as something it is not.
-
-## A class that was never written down: `module:factory(argument)`
-
-`module:ClassName` finds a class with `getattr`, which is every class a
-domain declared in a file. It cannot find one a domain MADE -- and
-`facts.relation("for_stmt")` makes one per relation name, with `type()`.
-Such a class serialises perfectly well and then resolves to nothing on
-the way back.
-
-So a class may say how it wants to be named, by answering
-`__ugm_save__()` with a string. `Relation` answers
-`"ugm.facts:relation(for_stmt)"`, and the trailing `(...)` is this
-format's spelling for *call what that name resolves to, with this one
-string, to get the class*. `relation` interns, so what comes back IS the
-class the live world is using -- not a copy of it, which would be a twin
-that nothing matches.
-
-⚠ The parentheses are not decoration. `getattr` alone is not just
-incomplete here, it is UNSAFE: a domain is free to call a relation
-`spawn` or `attach`, `ugm.facts` happens to have both at module level,
-and resolving `ugm.facts:spawn` by name gets a function that
-`object.__new__` then dies on -- taking the session down rather than
-costing one component. A name written this way cannot collide with a
-module's own attributes, because no `__qualname__` contains a paren.
-
-⚠ `VERSION` is deliberately NOT bumped. A reader too old for this
-spelling reports the component as a problem and drops it, which is
-exactly what this module already promises for a class it cannot find;
-bumping would make it refuse the whole file, including every
-`module:ClassName` in it that it reads perfectly well.
+Anything else -- a set, an open file, a domain's own class instance -- is
+refused by name when saving, rather than written as something it is not.
+`World.attach` should have refused it long before it got this far; this is
+the second, cheaper line of defence, not the first.
 
 ## Ids are preserved, and so is the counter
 
@@ -79,14 +48,20 @@ still pointing at, and the two would silently become one thing.
 ## What is NOT saved
 
 The SYSTEMS: a domain registers those in `install()`, from code, every
-time. ⚠ Not to be confused with the words a domain has interned — those
-are components (`facts.Interned`) and they do come back, because an
-identity kept in a dict beside the world is an identity that turns into a
-twin on the next restart. Anything a domain would rather recompute than restore is its own
-business to reconcile -- see `fs.install`, which attaches a fresh
-`Session` over the restored one so that the clock and the working
-directory are this process's, while every folder and entry it had
-already learned stays exactly where it was.
+time. Anything a domain would rather recompute than restore is its own
+business to reconcile -- see `fs.install`, which attaches a fresh `Session`
+over the restored one so that the clock and the working directory are this
+process's, while every folder and entry it had already learned stays
+exactly where it was.
+
+## Version 2, deliberately not silent about it
+
+Version 1 was one JSON document holding a nested tree; this is one JSON
+object per line. A version-1 file cannot be read a line at a time and a
+version-2 file is not one `json.load` -- there is no way to mis-read one as
+the other by accident, so a version that does not match is refused by name
+rather than guessed at, the same policy version 1 already had for its own
+future.
 """
 
 from __future__ import annotations
@@ -94,9 +69,7 @@ from __future__ import annotations
 import json
 import os
 
-from .world import Entity
-
-VERSION = 1
+VERSION = 2
 
 
 class SaveError(ValueError):
@@ -108,8 +81,6 @@ class SaveError(ValueError):
 def _field(value, where: str):
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
-    if isinstance(value, Entity):
-        return {"$entity": value.id}
     if isinstance(value, list):
         return [_field(v, where) for v in value]
     if isinstance(value, tuple):
@@ -120,8 +91,8 @@ def _field(value, where: str):
                 raise SaveError("%s: a dict key must be a string, not %s"
                                 % (where, type(key).__name__))
             if key.startswith("$"):
-                # `{"$entity": ...}` is this format's own spelling for a
-                # reference; a field holding that key would come back as
+                # `{"$tuple": ...}` is this format's own spelling for a
+                # tuple; a field holding that key would come back as
                 # something it never was.
                 raise SaveError("%s: a dict key may not start with '$' (%r)"
                                 % (where, key))
@@ -130,32 +101,32 @@ def _field(value, where: str):
 
 
 def _name_of(kind) -> str:
-    """What to write in `type`. A class that can be found by `getattr` is
-    written `module:ClassName`; one that has to be MADE says so itself,
-    by answering `__ugm_save__()`. Answering `None` means "the ordinary
-    way" -- `Relation` itself does, since only its subclasses are minted.
-    """
-    how = getattr(kind, "__ugm_save__", None)
-    if how is not None:
-        name = how()
-        if name is not None:
-            return name
     return "%s:%s" % (kind.__module__, kind.__qualname__)
 
 
-def dump(world) -> dict:
-    """The whole world, as plain data. Raises `SaveError` naming the
-    component and field if anything in it will not go."""
-    entities = []
+def dump(world) -> "list[dict]":
+    """The whole world, as a list of records -- a header first, then one
+    per component instance, then a bare `{"entity": id}` for any entity
+    that carries none. `write`/`read` are this, one record per line;
+    `dump`/`load` are the pure, file-free form, for a caller (or a test)
+    that wants the records themselves. Raises `SaveError` naming the
+    component and field if anything in it will not go.
+    """
+    records = [{"version": VERSION, "next": world._next}]
     for entity in world.entities():
-        components = []
-        for component in world.components(entity):
+        components = world.components(entity)
+        if not components:
+            records.append({"entity": entity.id})
+            continue
+        for component in components:
             kind = type(component)
-            components.append({"type": _name_of(kind), "fields": {
-                field: _field(value, "%s %s.%s" % (entity, kind.__name__, field))
-                for field, value in vars(component).items()}})
-        entities.append({"id": entity.id, "components": components})
-    return {"version": VERSION, "next": world._next, "entities": entities}
+            fields = {}
+            for f in component.__dataclass_fields__:
+                value = getattr(component, f)
+                fields[f] = _field(value, "%s %s.%s" % (entity, kind.__name__, f))
+            records.append({"entity": entity.id, "type": _name_of(kind),
+                            "fields": fields})
+    return records
 
 
 def write(world, path: str) -> None:
@@ -167,7 +138,7 @@ def write(world, path: str) -> None:
     one.
     """
     path = os.path.abspath(os.path.expanduser(path))
-    data = dump(world)
+    records = dump(world)
     folder = os.path.dirname(path)
     if folder:
         os.makedirs(folder, exist_ok=True)
@@ -177,8 +148,9 @@ def write(world, path: str) -> None:
     # bytes depending on which machine wrote it is a file you cannot
     # compare, and this one is meant to be readable.
     with open(temporary, "w", encoding="utf-8", newline="") as fh:
-        json.dump(data, fh, indent=1, sort_keys=False)
-        fh.write("\n")
+        for record in records:
+            fh.write(json.dumps(record, sort_keys=False))
+            fh.write("\n")
     os.replace(temporary, path)
 
 
@@ -186,8 +158,6 @@ def write(world, path: str) -> None:
 
 def _rebuild(value, world):
     if isinstance(value, dict):
-        if "$entity" in value:
-            return world._adopt(int(value["$entity"]))
         if "$tuple" in value:
             return tuple(_rebuild(v, world) for v in value["$tuple"])
         return {k: _rebuild(v, world) for k, v in value.items()}
@@ -197,77 +167,67 @@ def _rebuild(value, world):
 
 
 def _kind(name: str):
-    """`module:ClassName` -> the class; `module:factory(argument)` -> what
-    calling it with that one string returns. Imported here and nowhere
-    else -- a state file names a domain's classes, and reading one is what
-    makes that domain's module load.
+    """`module:ClassName` -> the class.
 
-    ⚠ The result is checked to BE a class. It used to be trusted, and an
-    attribute that resolved to something else (a function of the same name
-    as a relation -- see the module note) reached `object.__new__` and
-    raised `TypeError` out of `load`, which costs the session rather than
-    the component `load` promises to cost.
+    ⚠ The result is checked to BE a class. An attribute that resolves to
+    something else reaches `object.__new__` and raises `TypeError` out of
+    `load`, which costs the session rather than the component `load`
+    promises to cost.
     """
     import importlib
     module_name, _, attr = name.partition(":")
-    argument = None
-    if attr.endswith(")") and "(" in attr:
-        attr, _, rest = attr.partition("(")
-        argument = rest[:-1]
     kind = importlib.import_module(module_name)
     for part in attr.split("."):
         kind = getattr(kind, part)
-    if argument is not None:
-        kind = kind(argument)
     if not isinstance(kind, type):
         raise ValueError("names a %s, not a class" % type(kind).__name__)
     return kind
 
 
-def load(world, data) -> "list[str]":
-    """Put it all back, into a world that is empty. Returns problems.
+def load(world, records: "list[dict]") -> "list[str]":
+    """Put it all back, into a world that is empty. `records` is `dump`'s
+    own shape: a header first, then one record per component or bare
+    entity. Returns problems.
 
     A component whose class no longer exists -- a domain renamed, a
     version behind -- is SKIPPED and named, not raised: the entity keeps
     everything else it carried, and a state file outliving one refactor
     should cost you that component, not the session.
-
-    ⚠ That promise now covers a `module:factory(argument)` whose factory
-    raises, or resolves to something that is not a class. It did not
-    before, and the gap was reachable from an ordinary domain -- a
-    relation named after anything `ugm.facts` imports.
     """
     if len(world) or world._next:
         raise ValueError("load() wants an empty world")
-    if data.get("version") != VERSION:
-        return ["state file is version %r, this is version %d"
-                % (data.get("version"), VERSION)]
-    problems, classes = [], {}
+    if not records or records[0].get("version") != VERSION:
+        got = records[0].get("version") if records else None
+        return ["state file is version %r, this is version %d" % (got, VERSION)]
+    header, body = records[0], records[1:]
+    problems: "list[str]" = []
+    classes: dict = {}
     # Adopt every id FIRST: a component may hold a reference to an entity
     # that appears later in the file, and a handle has to be to something.
-    for record in data.get("entities", ()):
-        world._adopt(int(record["id"]))
-    for record in data.get("entities", ()):
-        entity = world._adopt(int(record["id"]))
-        for saved in record.get("components", ()):
-            name = saved["type"]
-            if name not in classes:
-                try:
-                    classes[name] = _kind(name)
-                except (ImportError, AttributeError, ValueError, TypeError) as e:
-                    classes[name] = None
-                    problems.append("%s: %s" % (name, e))
-            kind = classes[name]
-            if kind is None:
-                continue
-            component = object.__new__(kind)
-            component.__dict__.update(
-                {k: _rebuild(v, world) for k, v in saved.get("fields", {}).items()})
-            world.attach(entity, component)
+    for record in body:
+        world._adopt(int(record["entity"]))
+    for record in body:
+        entity = world._adopt(int(record["entity"]))
+        if "type" not in record:
+            continue        # a bare entity -- nothing further to rebuild
+        name = record["type"]
+        if name not in classes:
+            try:
+                classes[name] = _kind(name)
+            except (ImportError, AttributeError, ValueError, TypeError) as e:
+                classes[name] = None
+                problems.append("%s: %s" % (name, e))
+        kind = classes[name]
+        if kind is None:
+            continue
+        component = object.__new__(kind)
+        for field_name, value in record.get("fields", {}).items():
+            object.__setattr__(component, field_name, _rebuild(value, world))
+        world.attach(entity, component)
     # After the entities, never before: `_adopt` keeps the counter above
     # every id it has seen, and the file's own `next` is what a world that
     # destroyed its highest entity before saving needs to come back to.
-    world._next = max(world._next, int(data.get("next", 0)))
+    world._next = max(world._next, int(header.get("next", 0)))
     return problems
 
 
@@ -278,11 +238,15 @@ def read(world, path: str) -> "list[str]":
     path = os.path.abspath(os.path.expanduser(path))
     try:
         with open(path, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
+            lines = fh.readlines()
     except FileNotFoundError:
         return []
-    except (OSError, ValueError) as e:
+    except OSError as e:
+        return ["%s: %s" % (path, e)]
+    try:
+        records = [json.loads(line) for line in lines if line.strip()]
+    except ValueError as e:
         # Corrupt, truncated, unreadable. An empty world and a message
         # beats refusing to start -- the file is still there to look at.
         return ["%s: %s" % (path, e)]
-    return load(world, data)
+    return load(world, records)
