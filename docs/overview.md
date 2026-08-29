@@ -22,14 +22,24 @@
   `__ugm_save__`/`module:factory(arg)` mechanism (for a class minted at
   runtime, like `facts.relation()`'s) was dropped along with `facts.py`'s
   quarantine below; nothing else needed it.
+- **A rule writes to the world directly** — `spawn`/`attach`/`replace`/
+  `detach`/`remove`/`destroy` — same as `install()` always did.
+  `ugm.delta` (`Pending`, the six delta classes) is deleted, not
+  deprecated; `Loop.tick` no longer applies anything after calling a
+  rule because there is nothing left to apply. A "proposed" action is a
+  component in the world (`fs.py`'s `RenameWish` + `NeedsApproval`), not
+  a lower-level notion of "not yet real" underneath every write — see
+  `engine/README.md`'s "Deltas removed" History entry for the argument in
+  full, including a live example of the old contract silently not
+  holding in this repo's own test suite.
 
 `facts.py` / `arbitration.py` / `request.py` are **on hold, not deleted**:
 they do not currently import (`Relation` subclassed the removed
-`Component`), `ugm/__init__.py` no longer imports them, and their tests
-are `pytest.importorskip`'d rather than fixed. `harneskills.examples.fs`
-— the one real domain on this engine — was ported to the new core and its
-own suite is green, which is the case for "the five core files are
-enough" that this rewrite was making.
+`Component`, and `ugm.delta` itself is gone now too), `ugm/__init__.py`
+no longer imports them, and their tests are `pytest.importorskip`'d
+rather than fixed. `harneskills.examples.fs` — the one real domain on
+this engine — was ported to both rewrites and its own suite is green,
+which is the case for "the core files are enough" that both were making.
 
 ## Open
 

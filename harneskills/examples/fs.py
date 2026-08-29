@@ -24,12 +24,12 @@ one, which is what puts "2 of 5 older than 7 day(s)" on screen before the
 question about the first of them. Rule order is the schedule, and a
 tick boundary is the only thing there is to schedule against.
 
-Every rule here RETURNS a list of deltas instead of touching the world
--- see `ugm.delta` -- and `Loop.tick` applies one rule's own deltas
-right after calling it, before the next rule runs. That is what makes
-the schedule above still mean what it says: `list_dir` returning what
-makes a folder's listing real is applied before `reply_listing` runs, in
-the SAME tick, the same as if `list_dir` had spawned it directly.
+Every rule here writes to the world directly -- `w.spawn`, `w.attach`,
+`w.detach`, `w.destroy` -- and `Loop.tick` calls one rule fully before the
+next, so a write it makes is already there for the next rule in the SAME
+tick to see: `list_dir` making a folder's listing real happens before
+`reply_listing` runs, in the same tick, because that write already
+happened by the time `list_dir` returns.
 
 ## The compounding step is `propose_rename`, and it is one line
 
@@ -50,12 +50,14 @@ the tag, and `do_rename` asks for exactly that::
 So nothing holds your own renames, one rule asks about everything held,
 and approving is `detach(entity, NeedsApproval)` -- the same wish, no
 longer waiting. Wanting your own renames held too is one more `attach`,
-not a different design.
+not a different design. This is what "proposed" means in this domain --
+an entity, sitting there to be queried, approved, or left alone -- not a
+lower-level notion the engine has to know about.
 
 Asking is a component too. `approve` cannot call a function and wait for
 your answer -- the world may have other channels attached, and nothing
 here is allowed to stop for one of them (see `ugm.engine`) -- so
-it returns the question as an ordinary `Reply` and marks the wish `Asked`.
+it spawns the question as an ordinary `Reply` and marks the wish `Asked`.
 `hear_answer` is the other half: a bare "y" or "n", on whichever channel
 it arrives, resolves whichever wish is currently `Asked`. The suspension
 IS the state; there is no callback held anywhere waiting to be called.
@@ -73,7 +75,6 @@ from __future__ import annotations
 import os
 import time
 
-from ugm.delta import attach, destroy, detach, spawn
 from ugm.world import Reply, Said
 
 from . import fs_tools
@@ -96,11 +97,10 @@ WORDS = ("show", "file", "files", "big", "in", "stale", "after", "day",
 # -- getting hold of things ----------------------------------------------
 
 def folder_at(w, path: str):
-    r"""`(deltas, entity)` -- the entity for this directory: the one that
-    already exists, or a new one this call's own `deltas` describe. The
-    only place a `Folder` is described, so two rules asking about the
-    same directory are asking about the same entity -- once the `Spawn`
-    that names it has actually been applied.
+    r"""The entity for this directory: the one that already exists, or a
+    fresh one this call spawns. The only place a `Folder` is spawned, so
+    two rules asking about the same directory -- even in the same call --
+    are asking about the same entity.
 
     Matched through `os.path.normcase`, which is what makes `C:\Notes`
     and `c:\notes` one folder on a filesystem that thinks they are one
@@ -119,29 +119,28 @@ def folder_at(w, path: str):
     wanted = os.path.normcase(path)
     for entity, folder in w.each(Folder):
         if os.path.normcase(folder.path) == wanted:
-            return [], entity
-    made = spawn(Folder(path), Contents())
-    return [made], made.entity
+            return entity
+    return w.spawn(Folder(path), Contents())
 
 
 def here(w):
-    """`(deltas, entity)` -- the folder the conversation is about: the
-    one you last looked at, or the one the session started in."""
+    """The folder the conversation is about: the one you last looked at,
+    or the one the session started in."""
     focused = w.first(Folder, Focus)
     if focused is not None:
-        return [], focused[0]
+        return focused[0]
     return folder_at(w, w.the(Session).cwd)
 
 
 def _known_here(w):
     """The folder the conversation is about, IF the world already has
-    one -- `None` otherwise, and nothing is described to find out.
+    one -- `None` otherwise, and nothing is spawned to find out.
 
     What `_understand`'s rename branch needs: it must read `Contents`
-    back THIS SAME CALL to look a name up, which only a REAL, already
-    -applied folder has. A folder nobody has listed answers every name
-    the same way `here`/`folder_at` creating one fresh would -- an empty
-    `Contents` -- so there is nothing to create only to find that out.
+    back THIS SAME CALL to look a name up, which only an already-real
+    folder has. A folder nobody has listed answers every name the same
+    way `here`/`folder_at` spawning one fresh would -- an empty
+    `Contents` -- so there is nothing to spawn only to find that out.
     """
     focused = w.first(Folder, Focus)
     if focused is not None:
@@ -155,15 +154,15 @@ def _known_here(w):
 
 def _focus(w, folder):
     """You are looking at this folder now, and at no other."""
-    return [detach(e, Focus) for e, _ in w.each(Focus)] + [attach(folder, Focus())]
+    for e, _ in w.each(Focus):
+        w.detach(e, Focus)
+    w.attach(folder, Focus())
 
 
 def _listed(w, folder):
-    """`(deltas, entries)` -- `entries` as `(entity, name, size, modified,
-    is_dir)`, either read straight off the world (already listed --
-    `deltas` is empty) or freshly found by `fs_tools.ls` THIS TURN if
-    nobody had looked yet, in which case `entries` is what `ls` itself
-    just found and `deltas` is what makes that listing durable.
+    """`entries` as `(entity, name, size, modified, is_dir)`, either read
+    straight off the world (already listed) or freshly found by
+    `fs_tools.ls` THIS TURN if nobody had looked yet.
 
     A question about a folder nobody listed is a question about nothing,
     and answering `0 files` would be a lie about the disk rather than a
@@ -180,9 +179,9 @@ def _listed(w, folder):
             entries.append((child, name, size.bytes if size else None,
                            modified.when if modified else None,
                            w.has(child, IsDir)))
-        return [], entries
-    deltas, entries, _count = fs_tools.ls(w, folder)
-    return deltas, entries
+        return entries
+    entries, _count = fs_tools.ls(w, folder)
+    return entries
 
 
 def _entries(w, folder) -> "list":
@@ -203,8 +202,8 @@ def _describe(w, entity) -> str:
     return "%s (%d bytes)" % (name, size.bytes) if size else "%s (unreadable)" % name
 
 
-def _say(text: str):
-    return spawn(Reply("user", text))
+def _say(w, text: str) -> None:
+    w.spawn(Reply("user", text))
 
 
 # -- what a typed line means ---------------------------------------------
@@ -223,26 +222,29 @@ def _path(text: str) -> str:
     return os.path.abspath(os.path.expanduser(text.strip().strip('"').strip("'")))
 
 
-def _understand(w, line: str):
-    """The deltas this line asks for, if this domain has a reading of it
-    -- `None` if it does not. Plain Python over plain words, no grammar
-    and no parser, and every case here is one a person actually types."""
+def _understand(w, line: str) -> bool:
+    """Whether this line asks for something this domain has a reading
+    of -- spawning whatever it asks for directly. Plain Python over plain
+    words, no grammar and no parser, and every case here is one a person
+    actually types."""
     words = line.split()
     low = [word.lower() for word in words]
     if not words:
-        return None
+        return False
 
     if low[0] == "show" and len(words) >= 2:
         rest = words[2:]
         where = _path(" ".join(rest[1:])) if low[2:3] == ["in"] and rest[1:] else None
         if low[1] in ("file", "files"):
-            deltas, folder = folder_at(w, where or w.the(Session).cwd)
-            return deltas + [spawn(ListWanted(folder))]
+            folder = folder_at(w, where or w.the(Session).cwd)
+            w.spawn(ListWanted(folder))
+            return True
         if low[1] == "big":
             if where is None:
-                return [spawn(HuntHere())]
-            deltas, folder = folder_at(w, where)
-            return deltas + [spawn(BigHunt(folder))]
+                w.spawn(HuntHere())
+            else:
+                w.spawn(BigHunt(folder_at(w, where)))
+            return True
 
     if low[0] == "stale" and "after" in low:
         at = low.index("after")
@@ -251,8 +253,9 @@ def _understand(w, line: str):
         # `after` is the folder; `stale after N days` means where you are.
         where = _path(" ".join(words[2:at])) if low[1:2] == ["in"] and at > 2 else None
         if days is not None:
-            deltas, folder = folder_at(w, where) if where else here(w)
-            return deltas + [spawn(StaleHunt(folder, int(days)))]
+            folder = folder_at(w, where) if where else here(w)
+            w.spawn(StaleHunt(folder, int(days)))
+            return True
 
     if low[0] == "rename" and "to" in low:
         at = low.index("to")
@@ -262,10 +265,12 @@ def _understand(w, line: str):
         if old and new and old in by_name:
             # No `NeedsApproval`: you are not an automation, and nothing
             # holds what you asked for yourself.
-            return [spawn(RenameWish(by_name[old], new))]
+            w.spawn(RenameWish(by_name[old], new))
+            return True
         if old and new:
-            return [spawn(Failed("rename %s" % old, "no such file here"))]
-    return None
+            w.spawn(Failed("rename %s" % old, "no such file here"))
+            return True
+    return False
 
 
 # -- the rules ----------------------------------------------------------
@@ -281,14 +286,10 @@ def hear(w):
     connected, which is the ordinary MUD answer for a world nobody has
     taught to whisper.
     """
-    deltas = []
     for entity, said in w.each(Said):
-        understood = _understand(w, said.text)
-        if understood is not None:
-            deltas.extend(understood)
-            deltas.append(destroy(entity))
+        if _understand(w, said.text):
+            w.destroy(entity)
         # Left standing otherwise: the prompt says nobody understood it.
-    return deltas
 
 
 def hear_answer(w):
@@ -303,83 +304,73 @@ def hear_answer(w):
     """
     held = w.first(RenameWish, NeedsApproval, Asked)
     if held is None:
-        return None
+        return
     entity, wish, _, _ = held
     for said_entity, said in w.each(Said):
         answer = said.text.strip().lower()
         if answer not in ("y", "yes", "n", "no"):
             continue
         entry = w.get(wish.entry, Entry)
+        w.destroy(said_entity)
         if answer in ("y", "yes"):
             # The same wish, no longer waiting. `do_rename` asks for
             # exactly this and will pick it up this same tick.
-            return [destroy(said_entity), detach(entity, NeedsApproval),
-                   detach(entity, Asked)]
-        return [destroy(said_entity), destroy(entity),
-               _say("left %s alone" % entry.name)]
-    return None
+            w.detach(entity, NeedsApproval)
+            w.detach(entity, Asked)
+        else:
+            w.destroy(entity)
+            _say(w, "left %s alone" % entry.name)
+        return
 
 
 def list_dir(w):
     """ListWanted -> the `ls` tool, and the folder you are now in."""
-    deltas = []
     for entity, want in w.each(ListWanted):
-        deltas.append(destroy(entity))
-        ls_deltas, _entries, count = fs_tools.ls(w, want.folder)
-        deltas.extend(ls_deltas)
+        w.destroy(entity)
+        _entries, count = fs_tools.ls(w, want.folder)
         if count is None:
-            continue   # `Failed` is already in ls_deltas; reply_failed says it
-        deltas.extend(_focus(w, want.folder))
-        deltas.append(spawn(Listed(want.folder, count)))
-    return deltas
+            continue   # `Failed` already spawned; reply_failed says it
+        _focus(w, want.folder)
+        w.spawn(Listed(want.folder, count))
 
 
 def reply_listing(w):
     """One line per entry, then the count -- in that order, because this
-    rule returns them in that order and nothing reorders replies."""
-    deltas = []
+    rule says them in that order and nothing reorders replies."""
     for entity, listed in w.each(Listed):
-        deltas.append(destroy(entity))
+        w.destroy(entity)
         for child in _entries(w, listed.folder):
-            deltas.append(_say(_describe(w, child)))
-        deltas.append(_say("%d item(s) in %s"
-                          % (listed.count, w.get(listed.folder, Folder).path)))
-    return deltas
+            _say(w, _describe(w, child))
+        _say(w, "%d item(s) in %s"
+            % (listed.count, w.get(listed.folder, Folder).path))
 
 
 def flag_stale(w):
     """StaleHunt -> `Stale` on every entry older than it asked about."""
-    deltas = []
     for entity, hunt in w.each(StaleHunt):
-        deltas.append(destroy(entity))
-        listed_deltas, entries = _listed(w, hunt.folder)
-        deltas.extend(listed_deltas)
+        w.destroy(entity)
+        entries = _listed(w, hunt.folder)
         now, found = w.the(Session).now, 0
         for child, _name, _size, modified, is_dir in entries:
             if modified is None or is_dir:
                 continue
             if (now - modified) // DAY >= hunt.days:
-                deltas.append(attach(child, Stale()))
-                deltas.append(spawn(FoundStale(child)))
+                w.attach(child, Stale())
+                w.spawn(FoundStale(child))
                 found += 1
-        deltas.append(_say("%d of %d older than %d day(s) in %s"
-                          % (found, len(entries), hunt.days,
-                             w.get(hunt.folder, Folder).path)))
-    return deltas
+        _say(w, "%d of %d older than %d day(s) in %s"
+            % (found, len(entries), hunt.days, w.get(hunt.folder, Folder).path))
 
 
 def propose_rename(w):
     """FoundStale -> a PROPOSAL to rename it. The compounding step: a
     finding becomes a plan, and a plan is not an act."""
-    deltas = []
     for entity, found in w.each(FoundStale):
-        deltas.append(destroy(entity))
+        w.destroy(entity)
         entry = w.get(found.entry, Entry)
         if entry is None or entry.name.startswith(STALE_PREFIX):
             continue   # already carries the mark; renaming it again is noise
-        deltas.append(spawn(RenameWish(found.entry, STALE_PREFIX + entry.name),
-                            NeedsApproval()))
-    return deltas
+        w.spawn(RenameWish(found.entry, STALE_PREFIX + entry.name), NeedsApproval())
 
 
 def do_rename(w):
@@ -387,77 +378,59 @@ def do_rename(w):
     detaching the tag, or straight from a person typing `rename a to b`,
     and this rule cannot tell which -- which is the point: holding is
     the proposer's business, not the act's."""
-    deltas = []
     for entity, wish in w.each(RenameWish, without=NeedsApproval):
-        deltas.append(destroy(entity))
-        rename_deltas, ok = fs_tools.rename(w, wish.entry, wish.new_name)
-        deltas.extend(rename_deltas)
-        if ok:
-            deltas.append(detach(wish.entry, Stale))   # dealt with: the claim is unmade
-    return deltas
+        w.destroy(entity)
+        if fs_tools.rename(w, wish.entry, wish.new_name):
+            w.detach(wish.entry, Stale)   # dealt with: the claim is unmade
 
 
 def focus_big(w):
     """HuntHere -> the same entity, now a BigHunt aimed at the folder you
     last looked at."""
-    deltas = []
     for entity, _tag in w.each(HuntHere):
-        deltas.append(detach(entity, HuntHere))
-        here_deltas, folder = here(w)
-        deltas.extend(here_deltas)
-        deltas.append(attach(entity, BigHunt(folder)))
-    return deltas
+        w.detach(entity, HuntHere)
+        w.attach(entity, BigHunt(here(w)))
 
 
 def flag_big(w):
     """BigHunt -> `Big` on every entry over the session's floor. One call,
     one `for`, no per-file bookkeeping."""
-    deltas = []
     for entity, hunt in w.each(BigHunt):
-        deltas.append(destroy(entity))
-        listed_deltas, entries = _listed(w, hunt.folder)
-        deltas.extend(listed_deltas)
+        w.destroy(entity)
+        entries = _listed(w, hunt.folder)
         floor, found = w.the(Session).big_floor, 0
         for child, _name, size, _modified, is_dir in entries:
             if size is None or is_dir or size < floor:
                 continue
-            deltas.append(attach(child, Big()))
-            deltas.append(spawn(FoundBig(child)))
+            w.attach(child, Big())
+            w.spawn(FoundBig(child))
             found += 1
         if not found:
-            deltas.append(_say("nothing over %d bytes in %s"
-                              % (floor, w.get(hunt.folder, Folder).path)))
-    return deltas
+            _say(w, "nothing over %d bytes in %s"
+                % (floor, w.get(hunt.folder, Folder).path))
 
 
 # -- what you are told ----------------------------------------------------
 # Every rule above decides what HAPPENED. These decide what a person
 # reading the prompt hears about it, and they are the ones to edit for a
-# quieter or louder session -- nothing above this line returns a reply.
+# quieter or louder session -- nothing above this line spawns a reply.
 
 def reply_big(w):
-    deltas = []
     for entity, found in w.each(FoundBig):
-        deltas.append(destroy(entity))
-        deltas.append(_say(_describe(w, found.entry)))
-    return deltas
+        w.destroy(entity)
+        _say(w, _describe(w, found.entry))
 
 
 def reply_renamed(w):
-    deltas = []
     for entity, renamed in w.each(Renamed):
-        deltas.append(destroy(entity))
-        deltas.append(_say("renamed %s -> %s"
-                          % (renamed.was, w.get(renamed.entry, Entry).name)))
-    return deltas
+        w.destroy(entity)
+        _say(w, "renamed %s -> %s" % (renamed.was, w.get(renamed.entry, Entry).name))
 
 
 def reply_failed(w):
-    deltas = []
     for entity, failed in w.each(Failed):
-        deltas.append(destroy(entity))
-        deltas.append(_say("! could not %s: %s" % (failed.what, failed.why)))
-    return deltas
+        w.destroy(entity)
+        _say(w, "! could not %s: %s" % (failed.what, failed.why))
 
 
 # -- installing -----------------------------------------------------------
@@ -487,16 +460,15 @@ def approve(w):
     an ordinary line whenever it does.
     """
     if w.first(RenameWish, NeedsApproval, Asked) is not None:
-        return None   # a question is already outstanding; wait for its answer
+        return   # a question is already outstanding; wait for its answer
     held = w.first(RenameWish, NeedsApproval, without=Asked)
     if held is None:
-        return None
+        return
     entity, wish, _tag = held
     entry = w.get(wish.entry, Entry)
     folder = w.get(entry.folder, Folder).path
-    return [attach(entity, Asked()),
-           _say("approve rename %s -> %s in %s? [y/n]"
-               % (entry.name, wish.new_name, folder))]
+    w.attach(entity, Asked())
+    _say(w, "approve rename %s -> %s in %s? [y/n]" % (entry.name, wish.new_name, folder))
 
 
 RULES = (hear, hear_answer, list_dir, reply_listing, approve,
@@ -522,10 +494,8 @@ def install(loop, clock=time.time, cwd=os.getcwd) -> None:
     component, and the OLD one gone rather than standing alongside it
     (`Session` is not a kind an entity should ever carry two of).
 
-    ⚠ This function, unlike every rule above it, calls `world.spawn`
-    and `world.replace` directly -- and correctly. It runs once, before
-    the loop is running at all, not on every tick over a query; there is
-    no "turn" for it to return deltas from, only a world to seed.
+    This function runs once, before the loop is running at all -- there
+    is no tick for it to be a rule's own turn in, only a world to seed.
     """
     for rule in RULES:
         loop.rule(rule)

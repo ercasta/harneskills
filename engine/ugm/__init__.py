@@ -8,11 +8,10 @@ runs rules over it, and one thread to run a session on.
   `None`/`bool`/`int`/`float`/`str` and `list`/`dict`/`tuple` of those --
   another entity is referenced by its plain id, never a live handle. An
   entity may carry SEVERAL components of one type.
-* `ugm.delta` -- what a rule RETURNS instead of touching the world:
-  `spawn`, `attach`, `replace`, `detach`, `remove`, `destroy`, as data.
 * `ugm.loop` -- call every rule, in order, until a whole pass changes
-  nothing. A rule is a function of one `World` that returns a list of
-  deltas; `Loop.tick` is what applies them. A rule may declare
+  nothing. A rule is a function of one `World` that writes to it directly
+  -- `spawn`/`attach`/`replace`/`detach`/`remove`/`destroy` -- and
+  `Loop.tick` is the only thing that ever calls one. A rule may declare
   `watches=` -- the component types it could possibly do anything with --
   and stay uncalled on any tick where none of them exist yet; it may also
   declare `priority=` to run ahead of another rule, regardless of which
@@ -35,17 +34,17 @@ type, primitives-only fields) and do not currently work against it --
 `facts.Relation` subclassed a `Component` base class this package no
 longer has. They are ON HOLD, not deleted, pending a decision on whether a
 `fact`/`state`/`deny` vocabulary belongs in this package at all, or only as
-an optional, clearly-separate pattern library -- see `docs/TODO.md`.
+an optional, clearly-separate pattern library -- see `docs/overview.md`.
 """
 
 from __future__ import annotations
 
-from . import delta, engine, loop, save, world
+from . import engine, loop, save, world
 from .engine import Engine
 from .loop import Loop
 from .world import World
 
 __version__ = "0.1.0"
 
-__all__ = ["Engine", "Loop", "World", "delta", "engine", "loop", "save",
+__all__ = ["Engine", "Loop", "World", "engine", "loop", "save",
           "world", "__version__"]

@@ -1,42 +1,47 @@
 """The game loop: call every rule, over and over, until nothing changes.
 
 A rule is a Python function of one argument, the `World`. It QUERIES
-the world -- `each`, `get`, `has`, `first`, `the` -- and it RETURNS a
-list of deltas describing what should change, from `ugm.delta`. It does
-not spawn, attach, detach or destroy anything itself::
+the world -- `each`, `get`, `has`, `first`, `the` -- and it WRITES to it
+directly -- `spawn`, `attach`, `replace`, `detach`, `remove`, `destroy` --
+the same four-turned-six verbs `install()` already calls outside any
+rule's turn::
 
     @loop.rule
     def list_dir(w):
-        deltas = []
         for entity, want in w.each(ListWanted):
-            deltas.append(destroy(entity))
-            deltas.extend(fs_tools.ls(w, want.folder))
-        return deltas
+            w.destroy(entity)
+            fs_tools.ls(w, want.folder)
 
-`tick()` calls every registered rule once, in registration order, and
-applies each one's own deltas to the world immediately after calling it
--- before the next rule runs, so a later rule in the SAME tick still
-sees what an earlier one just did, exactly as if it had mutated directly.
-`run()` ticks until a whole pass changes nothing -- the world has
-SETTLED, a full sweep of every rule with nothing left to apply -- and
-that is the moment the REPL gets its prompt back.
+`tick()` calls every registered rule once, in tick order (see `priority`,
+below), and a rule's own writes are visible to the world -- and so to the
+next rule in the SAME tick -- the instant it makes them, because there is
+nothing in between: no list of changes to build, nothing later that
+applies it. `run()` ticks until a whole pass changes nothing -- the world
+has SETTLED -- and that is the moment the REPL gets its prompt back.
 
-## Why deltas, and not a rule calling `world.spawn` itself
+## Why a rule may touch the world directly
 
-A rule that only ever RETURNS what it wants done is a pure function of
-one `World` in the way `w.each(...)` already implies it should be: given
-the same world, it answers the same way, every time, and answering it
-does not require a running loop, a thread, or anything to clean up
-afterward -- call it, read what it handed back. `ugm.delta.spawn(...)`
-and friends are the same four verbs `World` always had, just handed back
-as data instead of acted out immediately, so porting a rule that used
-to call `w.spawn(...)` is `spawn(...)`, appended to a list.
-
-`tick()` checks this rather than trusting it: if a rule's OWN code
-moved `world.revision` (a stray `w.spawn`/`attach`/`detach`/`destroy`
-call, forgetting the new contract), that is a loud, named error on
-`loop.errors` -- not a silent bypass of the very discipline `Loop` exists
-to hold everyone to.
+A rule is already a plain function of one `World`, called once per tick
+in a known order, by the one place (`Loop.tick`) that ever calls it --
+nothing about reasoning over what it does needs its writes described
+rather than made: `world.revision` before and after the call already
+says whether it fired (see below), the same as it would if the writes
+arrived by way of a returned list first. Handing back a description of a
+change instead of making it bought exactly one thing -- a rule that
+FORGOT the contract and touched the world anyway could be caught, named,
+and refused -- and it cost real weight for that one guarantee: a second
+vocabulary for the four things `World` already does, and a `Pending`
+placeholder standing in for an entity `spawn()` had not made "real" yet
+even though nothing was stopping it from being real immediately. That
+guarantee also stopped holding well before this note did: three of this
+harness's own rules called `w.spawn`/`w.destroy` directly for a while
+before anyone noticed, and the suite stayed green throughout, because
+nothing asserted `loop.errors == []`. A rule that wants to defer or hold
+something (a proposed rename, say) still can -- the same way `fs.py`
+already does it, as a component sitting in the world (`RenameWish` +
+`NeedsApproval`) for another rule to query, approve, or leave alone. That
+is what "proposed" means here now; it never needed a second, lower-level
+notion of "not yet real" underneath every ordinary write too.
 
 ## Order is registration order, unless a rule says otherwise
 
@@ -71,12 +76,12 @@ suddenly broken by installation order it never chose.
 ## A rule fires by CHANGING something
 
 The loop cannot see inside a rule and does not try. It reads
-`world.revision` before and after applying what a rule handed back --
-a rule whose deltas spawned an entity, destroyed one, or attached a
-component that was not already there, fired; a rule whose deltas
-re-attached a component equal to the one already on the entity did not.
-That is what settling is measured in, and it is why `World.attach`
-comparing before it stores is load-bearing rather than a convenience.
+`world.revision` before and after calling it -- a rule that spawned an
+entity, destroyed one, or attached a component that was not already
+there, fired; a rule that re-attached a component equal to the one
+already on the entity did not. That is what settling is measured in, and
+it is why `World.attach` comparing before it stores is load-bearing
+rather than a convenience.
 
 ## A rule may declare what would ever wake it
 
@@ -119,20 +124,17 @@ no hot rules, and that is how a caller tells the two apart.
 
 The exception is caught, recorded on `loop.errors` (once per rule and
 message, however many ticks it raises on), and the loop goes on to the
-next rule. Nothing it returned is applied -- a rule that raises
-building its list of deltas has made none of them yet, and a rule that
-raises applying one (an entity a delta names that got destroyed by
-another rule first, say) may have applied the ones before it; either
-way the world still settles, and the person at the prompt gets both
-their prompt and the traceback's message, which is better than a REPL
-that dies on a typo in a domain nobody is editing right now.
+next rule. Whatever the rule already wrote before it raised stands --
+there is nothing to roll back to, the same as any ordinary function that
+mutates something and then throws -- but the world still settles, and the
+person at the prompt gets both their prompt and the traceback's message,
+which is better than a REPL that dies on a typo in a domain nobody is
+editing right now.
 """
 
 from __future__ import annotations
 
 import collections
-
-from .delta import Delta
 
 Settled = collections.namedtuple("Settled", "ticks hot")
 
@@ -226,9 +228,9 @@ class Loop:
             -getattr(self.rules[i][1], "_ugm_priority", 0), i))
 
     def tick(self) -> "list[str]":
-        """One pass over every rule, in priority order: call it, apply
-        what it returned, move on. Returns the names of the ones that
-        changed something, in the order they ran."""
+        """One pass over every rule, in tick order: call it, done. Returns
+        the names of the ones that changed something, in the order they
+        ran."""
         fired = []
         for i in self._tick_order():
             name, fn = self.rules[i]
@@ -237,27 +239,7 @@ class Loop:
                 continue    # dormant -- not even called, see the module note
             before = self.world.revision
             try:
-                deltas = fn(self.world)
-            except Exception as e:  # noqa: BLE001 -- see the module docstring
-                self._record(name, e)
-                continue
-            if self.world.revision != before:
-                self._record(name, RuntimeError(
-                    "touched the world directly -- a rule returns a "
-                    "list of ugm.delta.spawn/attach/detach/destroy, it "
-                    "does not call world.spawn/attach/detach/destroy "
-                    "itself"))
-                continue
-            if not deltas:
-                continue
-            try:
-                resolved: "dict" = {}
-                for d in deltas:
-                    if not isinstance(d, Delta):
-                        raise TypeError(
-                            "%r is not a delta -- see ugm.delta for the "
-                            "four kinds a rule may return" % (d,))
-                    d._apply(self.world, resolved)
+                fn(self.world)
             except Exception as e:  # noqa: BLE001 -- see the module docstring
                 self._record(name, e)
                 continue

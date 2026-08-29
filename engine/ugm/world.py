@@ -18,19 +18,16 @@ entity, and it can stop being that kind of thing by losing one::
     w.detach(entry, Stale)            # now it is not
 
 A **rule** -- `ugm.loop`'s own name for it -- is a function that asks
-for the entities carrying a set of components, walks them, and RETURNS
-what should change -- see `ugm.delta`. It does not call `spawn`,
-`attach`, `detach` or `destroy` on this class itself; `Loop.tick` does,
-from what a rule hands back::
+for the entities carrying a set of components, walks them, and WRITES
+directly through the four methods below -- `Loop.tick` calls it once a
+tick and nothing stands between the call and the write::
 
     def flag_big(w):
-        deltas = []
         for entity, hunt in w.each(BigHunt):
-            deltas.append(destroy(entity))
+            w.destroy(entity)
             for e, entry, size in w.each(Entry, Size):
                 if entry.folder == hunt.folder and size.bytes >= hunt.floor:
-                    deltas.append(attach(e, Big()))
-        return deltas
+                    w.attach(e, Big())
 
 ## Why a component and not an attribute
 

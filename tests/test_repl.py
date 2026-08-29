@@ -8,7 +8,6 @@ import time
 
 import pytest
 
-from ugm.delta import spawn
 from ugm.engine import Engine
 from ugm.loop import Loop
 from ugm.world import Reply, Said
@@ -188,7 +187,7 @@ def test_a_rule_that_blew_up_is_named_at_the_prompt(loop):
 
 
 def test_a_rule_that_never_settles_is_stopped_and_named(loop):
-    loop.rule(lambda w: [spawn(Secret())], name="ping")   # spawn is never idempotent
+    loop.rule(lambda w: w.spawn(Secret()), name="ping")   # spawn is never idempotent
     printed = drive(loop, ["/quit"])
     assert any("still firing: ping" in l for l in printed)
 

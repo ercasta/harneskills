@@ -1,12 +1,11 @@
 """What the loop promises: every rule, in order, until nothing changes
--- and every change made through the deltas a rule returns, never by a
-rule touching the world itself."""
+-- called once a tick, writing to the world directly, with nothing in
+between the write and the next rule seeing it."""
 
 import dataclasses
 
 import pytest
 
-from ugm.delta import attach, destroy, spawn
 from ugm.loop import Loop
 
 
@@ -59,19 +58,19 @@ def test_a_rule_is_named_for_its_module_and_function(loop):
 def test_a_rule_fires_by_changing_something(loop):
     @loop.rule
     def marks(w):
-        return [attach(e, Seen())            # news once, and then never again
-               for e, _ in w.each(Step)]
+        for e, _ in w.each(Step):
+            w.attach(e, Seen())          # news once, and then never again
 
     loop.world.spawn(Step(0))
     assert loop.tick() == ["test_loop.marks"]
     assert loop.tick() == []
 
 
-def test_a_rule_may_return_none_for_nothing_to_do(loop):
+def test_a_rule_that_writes_nothing_does_not_fire(loop):
     @loop.rule
     def idle(w):
         for entity, step in w.each(Step):
-            pass   # no return statement -- None, same as an empty list
+            pass   # reads, writes nothing
 
     loop.world.spawn(Step(0))
     assert loop.tick() == []
@@ -80,12 +79,10 @@ def test_a_rule_may_return_none_for_nothing_to_do(loop):
 def test_run_settles_when_a_whole_pass_changes_nothing(loop):
     @loop.rule
     def chain(w):
-        deltas = []
         for entity, step in w.each(Step):
-            deltas.append(destroy(entity))
+            w.destroy(entity)
             if step.n < 3:
-                deltas.append(spawn(Step(step.n + 1)))
-        return deltas
+                w.spawn(Step(step.n + 1))
 
     loop.world.spawn(Step(0))
     settled = loop.run()
@@ -94,14 +91,14 @@ def test_run_settles_when_a_whole_pass_changes_nothing(loop):
     assert len(loop.world) == 0
 
 
-def test_a_spawn_s_pending_entity_is_usable_the_same_list(loop):
-    """`spawn(...)` hands back the delta; `.entity` on it is a `Pending`
-    that later deltas in the SAME returned list may already attach to or
-    embed inside another component's own field."""
+def test_a_spawn_is_a_real_entity_usable_the_same_call(loop):
+    """`w.spawn(...)` hands back the real entity, not a placeholder --
+    usable immediately, in the rest of the SAME rule, for a further
+    `w.attach`/`w.get`/anything else."""
     @loop.rule
     def make_and_mark(w):
-        made = spawn(Step(1))
-        return [made, attach(made.entity, Seen())]
+        made = w.spawn(Step(1))
+        w.attach(made, Seen())
 
     loop.tick()
     entity, step = loop.world.each(Step)[0]
@@ -109,7 +106,7 @@ def test_a_spawn_s_pending_entity_is_usable_the_same_list(loop):
     assert loop.world.has(entity, Seen)
 
 
-def test_a_pending_nested_in_a_component_field_resolves_too(loop):
+def test_a_freshly_spawned_entity_s_id_is_usable_in_another_component_field(loop):
     @dataclasses.dataclass(frozen=True)
     class Holder:
         ref: object
@@ -120,10 +117,9 @@ def test_a_pending_nested_in_a_component_field_resolves_too(loop):
 
     @loop.rule
     def make(w):
-        made = spawn(Step(1))
-        return [made,
-               spawn(Holder(made.entity)),
-               spawn(Index({"a": made.entity}))]
+        made = w.spawn(Step(1))
+        w.spawn(Holder(made))
+        w.spawn(Index({"a": made}))
 
     loop.tick()
     w = loop.world
@@ -131,54 +127,23 @@ def test_a_pending_nested_in_a_component_field_resolves_too(loop):
     holder = w.each(Holder)[0][1]
     index = w.each(Index)[0][1]
     # A component field never holds a live handle -- see ugm.world's own
-    # note -- so a Pending resolved mid-apply still comes out as a plain id.
+    # note -- so the entity is lowered to its plain id on the way in.
     assert holder.ref == target.id
     assert index.by_name == {"a": target.id}
-
-
-def test_a_rule_that_touches_the_world_directly_is_a_named_error(loop):
-    @loop.rule
-    def cheats(w):
-        w.spawn(Step(0))          # forbidden: a rule returns deltas
-        return []
-
-    settled = loop.run()
-    assert settled.hot == []      # the cheat itself was not applied again
-    assert len(loop.errors) == 1
-    name, error = loop.errors[0]
-    assert name == "test_loop.cheats"
-    assert "touched the world directly" in str(error)
-    # It DID spawn one `Step` -- Python does not undo that -- but nothing
-    # else about the contract violation is silently accepted.
-    assert len(loop.world) == 1
-
-
-def test_returning_something_that_is_not_a_delta_is_a_named_error(loop):
-    @loop.rule
-    def bogus(w):
-        return [object()]
-
-    loop.run()
-    assert [name for name, _ in loop.errors] == ["test_loop.bogus"]
-    assert "not a delta" in str(loop.errors[0][1])
 
 
 def test_two_rules_feeding_each_other_stop_at_the_budget_and_are_named(loop):
     @loop.rule
     def ping(w):
-        deltas = []
         for entity, _ in w.each(Pong):
-            deltas.append(destroy(entity))
-            deltas.append(spawn(Ping()))
-        return deltas
+            w.destroy(entity)
+            w.spawn(Ping())
 
     @loop.rule
     def pong(w):
-        deltas = []
         for entity, _ in w.each(Ping):
-            deltas.append(destroy(entity))
-            deltas.append(spawn(Pong()))
-        return deltas
+            w.destroy(entity)
+            w.spawn(Pong())
 
     loop.world.spawn(Ping())
     settled = loop.run(budget=20)
@@ -196,7 +161,8 @@ def test_a_rule_that_raises_is_recorded_and_the_others_still_run(loop):
         # `attach`, not `spawn`: spawning is never idempotent, so a rule
         # that spawned every tick would keep the world awake by itself and
         # tell us nothing about the one that raises.
-        return [attach(e, Seen()) for e, _ in w.each(Step)]
+        for e, _ in w.each(Step):
+            w.attach(e, Seen())
 
     loop.world.spawn(Step(0))
     settled = loop.run()
@@ -318,12 +284,10 @@ def test_after_tick_runs_between_ticks_not_at_the_end(loop):
 
     @loop.rule
     def countdown(w):
-        deltas = []
         for entity, step in w.each(Step):
-            deltas.append(destroy(entity))
+            w.destroy(entity)
             if step.n > 0:
-                deltas.append(spawn(Step(step.n - 1)))
-        return deltas
+                w.spawn(Step(step.n - 1))
 
     loop.world.spawn(Step(3))
     loop.run(after_tick=lambda: seen.append(

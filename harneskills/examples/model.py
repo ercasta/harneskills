@@ -65,9 +65,8 @@ class Contents:
     in place -- and put on with `world.replace`, which is what makes
     re-listing an unchanged folder cost a dict comparison rather than a
     revision: this used to be the one hand-kept structure in the domain,
-    mutated by hand and reported with `world.changed()`, until a rule
-    stopped being the thing allowed to touch a world at all -- see
-    `ugm.delta`.
+    mutated by hand and reported with `world.changed()`, until it moved
+    onto the world as an ordinary component instead.
     """
 
     by_name: dict = field(default_factory=dict)

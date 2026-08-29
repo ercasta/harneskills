@@ -59,11 +59,7 @@ def named(w, folder, name):
 
 
 def folder_of(w, path):
-    # `folder_at` now returns `(deltas, entity)` -- a rule's own shape,
-    # since it may need to describe a fresh `Folder` rather than touch
-    # the world to make one. This helper only ever looks one up after a
-    # test has already listed it, so the entity is what it wants.
-    return fs.folder_at(w, path)[1]
+    return fs.folder_at(w, path)
 
 
 # --- listing ----------------------------------------------------------

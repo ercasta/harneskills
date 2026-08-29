@@ -1,11 +1,11 @@
 # UGM
 
 ⚠⚠ **`facts.py`/`arbitration.py`/`request.py` are ON HOLD, 2026-08-29.**
-The core (`world.py`/`delta.py`/`loop.py`/`engine.py`/`save.py`) was
-rewritten to plain dataclass components, several per entity, and
-primitives-only fields — see `docs/TODO.md`. The three files below do not
-currently import against that core, are not imported by `ugm/__init__.py`,
-and their tests are skipped (`pytest.importorskip`) rather than fixed,
+The core (`world.py`/`loop.py`/`engine.py`/`save.py`) was rewritten to
+plain dataclass components, several per entity, and primitives-only
+fields — see `docs/overview.md`. The three files below do not currently
+import against that core, are not imported by `ugm/__init__.py`, and
+their tests are skipped (`pytest.importorskip`) rather than fixed,
 pending a decision on whether a `fact`/`state`/`deny` vocabulary belongs in
 this package at all, or only as a separate, optional pattern library. Read
 what follows as history until that decision lands.
@@ -16,27 +16,23 @@ thread to run a session on.**
 An *entity* is an identity with no data — `#7`. A *component* is data
 with no identity — `Size(bytes=4300)`. A *rule* is a Python function of
 one `World` that asks for the entities carrying a set of components,
-walks them, and RETURNS what should change, as a list of deltas —
-`ugm.delta.spawn`/`attach`/`detach`/`destroy` — rather than touching the
-world itself. The *loop* calls every rule, applies what it returned,
-and moves to the next, over and over, until a whole pass changes
-nothing, and that is when the world has something to say. The *engine*
-is one thread that owns that loop and routes what it says to however
-many channels are attached to it.
+walks them, and WRITES to it directly — `spawn`/`attach`/`replace`/
+`detach`/`remove`/`destroy`. The *loop* calls every rule, once a tick,
+over and over, until a whole pass changes nothing, and that is when the
+world has something to say. The *engine* is one thread that owns that
+loop and routes what it says to however many channels are attached to it.
 
 ```
 ugm/
   world.py        entities, components, and the queries rules ask
-  delta.py        what a rule RETURNS instead of touching the world
   loop.py         every rule, in order, until nothing changes
   engine.py       one thread, the world, and the channels attached to it
-  save.py         the world as JSON: entities are ints, components are values
+  save.py         the world as JSONL: entities are ints, components are values
   facts.py        the vocabulary rules say things in: relations as components
   arbitration.py  several rules, one contested decision, one generic reader
   request.py      one request, any number of oblivious responders, a watchdog
 tests/
   test_world.py        identity, values, and the intersection of the two
-  test_delta.py        a Pending resolves to what its own Spawn became
   test_loop.py         order, settling, the budget, a rule that raises
   test_engine.py       one world, several channels, a broadcast reply
   test_save.py         the same world, ids and all, next time
@@ -51,15 +47,15 @@ DECISION_PATTERNS.md   why arbitration.py is shaped the way it is
 pip install -e .
 python3 -c "
 from ugm import Loop
-from ugm.delta import destroy, spawn
 from ugm.world import Reply, Said
 
 loop = Loop()
 
 @loop.rule
 def greet(w):
-    return [d for e, said in w.each(Said)
-           for d in (destroy(e), spawn(Reply('user', 'hi, %s' % said.text)))]
+    for e, said in w.each(Said):
+        w.destroy(e)
+        w.spawn(Reply('user', 'hi, %s' % said.text))
 
 loop.world.spawn(Said('user', 'world'))
 loop.run()
@@ -70,8 +66,8 @@ for e, r in loop.world.each(Reply):
 
 ## Scope
 
-**No domain, no channel, no transport.** `world.py`, `delta.py`,
-`loop.py`, `engine.py` and `save.py` ship no rules, no components
+**No domain, no channel, no transport.** `world.py`, `loop.py`,
+`engine.py` and `save.py` ship no rules, no components
 beyond `Said` and `Reply` (the shapes `Engine.drain` and `Engine._do`
 route by), and no knowledge of files, sockets, or terminals. `Engine`
 wants anything with `.name`, `.deliver(message)`, and optionally
@@ -112,6 +108,25 @@ domain built on `World` and `Loop` alone. None of that is imported here;
 this package does not know `harneskills` exists.
 
 ## History
+
+**Deltas removed, 2026-08-30.** A rule calls `world.spawn`/`attach`/
+`replace`/`detach`/`remove`/`destroy` directly again, the same as
+`install()` always did — see "Deltas, 2026-08-27" below for what this
+undoes. The guarantee deltas bought (a rule that forgot the contract and
+touched the world anyway got caught, named, on `loop.errors`) had already
+stopped holding in practice: three rules in `harneskills`'s own test suite
+called `w.spawn`/`w.destroy` directly, `loop.errors` recorded the
+violation every tick, and the suite stayed green throughout because
+nothing asserted it was empty. The other half of the argument for
+removing it: a "proposed" action that matters to a domain is better
+modelled as an explicit component sitting in the world for another rule
+to query (`fs.py`'s `RenameWish` + `NeedsApproval` already does exactly
+this) than as a second, lower-level notion of "not yet real" underneath
+every write, including the ones no domain ever treats as provisional at
+all. `ugm.delta` — `Pending`, the six delta classes, the two `_resolve_*`
+functions — is deleted outright, not deprecated; `Loop.tick` is
+correspondingly a few lines shorter, with nothing left to apply after
+calling a rule and nothing left to check for a rule having "cheated."
 
 **A request/response protocol, 2026-08-29.** `request.py` extracted the
 other pattern `docs/TODO.md` had been asking for since before this package's

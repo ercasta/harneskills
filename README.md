@@ -106,7 +106,7 @@ w.each(RenameWish, NeedsApproval)             # ask about these
 w.each(RenameWish, without=NeedsApproval)     # do these
 ```
 
-Approving is `detach(entity, NeedsApproval)`, one delta a rule returns
+Approving is `w.detach(entity, NeedsApproval)`, one call a rule makes
 — the same wish, no longer waiting. Nothing is copied from a held queue
 to a live one. Holding your own renames too would be one more `attach`,
 not a different design.
@@ -158,8 +158,9 @@ installed at once will both have one called `hear`.
 
 ## The world
 
-`World`'s own four writing methods -- what `ugm.engine` and a domain's
-own `install()` call directly, outside any rule's turn:
+`World`'s own writing methods -- what a rule calls directly, the same as
+`ugm.engine` and a domain's own `install()` already do outside any rule's
+turn:
 
 ```python
 entry = w.spawn(Entry(folder, "notes.txt"), Size(2048))   # a new entity
@@ -169,8 +170,7 @@ w.each(Entry, Size, without=IsDir)                        # [(entity, entry, siz
 w.destroy(entity)                                         # finished with it
 ```
 
-A RULE never calls these four -- see "Writing a domain", below, for
-what it calls instead.
+See "Writing a domain", below, for a rule using them.
 
 **A component is a value.** `Size(17) == Size(17)`, so re-attaching one
 that is already there changes nothing and the world still settles. It also
@@ -199,14 +199,20 @@ entities — a folder, an entry, the session — are not.
 ## Writing a domain
 
 ```python
-from ugm.delta import attach, destroy, detach, spawn
-from ugm.world import Component, Reply, Said
+import dataclasses
+from ugm.world import Reply, Said
 
-class Kettle(Component):
-    def __init__(self, name): self.name = name
+@dataclasses.dataclass(frozen=True)
+class Kettle:
+    name: str
 
-class WantBoiled(Component): pass      # a tag: asked for, not yet done
-class Boiling(Component): pass
+@dataclasses.dataclass(frozen=True)
+class WantBoiled:               # a tag: asked for, not yet done
+    pass
+
+@dataclasses.dataclass(frozen=True)
+class Boiling:
+    pass
 
 def install(loop):
     loop.rule(hear)
@@ -216,29 +222,24 @@ def install(loop):
                                               # before any rule's own turn.
 
 def hear(w):
-    deltas = []
     for entity, said in w.each(Said):
         if said.text == "boil the kettle":
-            deltas.append(destroy(entity))
+            w.destroy(entity)
             for kettle, _ in w.each(Kettle):
-                deltas.append(attach(kettle, WantBoiled()))
-    return deltas
+                w.attach(kettle, WantBoiled())
 
 def boil(w):
-    deltas = []
     for entity, kettle, _ in w.each(Kettle, WantBoiled):
-        deltas.append(detach(entity, WantBoiled))
-        deltas.append(attach(entity, Boiling()))
-        deltas.append(spawn(Reply("user", "the %s is boiling" % kettle.name)))
-    return deltas
+        w.detach(entity, WantBoiled)
+        w.attach(entity, Boiling())
+        w.spawn(Reply("user", "the %s is boiling" % kettle.name))
 ```
 
 A rule READS the world (`w.each`, `w.get`, `w.has`, `w.first`, `w.the`)
-and RETURNS what should change, as a list of deltas from `ugm.delta` --
-it never calls `w.spawn`/`w.attach`/`w.detach`/`w.destroy` itself.
-`Loop.tick` applies one rule's own deltas right after calling it,
-before the next rule runs, so `boil` still sees what `hear` just did,
-in the same tick, exactly as if `hear` had mutated directly.
+and WRITES to it directly (`w.spawn`/`w.attach`/`w.detach`/`w.destroy`) --
+`Loop.tick` calls one rule fully before the next, so `boil` sees what
+`hear` just did, in the same tick, because that write already happened
+by the time `hear` returns.
 
 ```
 $ python -m harneskills --no-config mykitchen:install
@@ -660,3 +661,23 @@ behaviorally, one test helper's one-line signature fixed
 (`fs.folder_at` now returns `(deltas, entity)`) and nothing else, which
 is the whole of what a change to the mutation mechanism should cost the
 domain's own tests.
+
+**Deltas removed, 2026-08-30.** The entry above is history now, not the
+rule: `world.spawn`/`attach`/`replace`/`detach`/`remove`/`destroy` (the
+last two joined the four above it in a separate rewrite of `ugm.world`
+itself -- see `engine/README.md`'s own History for that one) are called
+directly again, the same as `install()` always did. The one thing
+returning deltas bought -- a rule that forgot the contract and touched
+the world anyway got caught and named on `loop.errors` -- had quietly
+stopped holding: three rules in this repo's own `tests/test_repl.py`
+(`greet`, `gauge`, `quiet`) called `w.spawn`/`w.destroy` directly, the
+violation was recorded every tick, and the suite stayed green throughout
+because nothing asserted `loop.errors == []`. `fs.folder_at` goes back
+to returning the entity alone, no tuple -- a fresh `Folder` is just
+`w.spawn(...)`, real the instant it is called. `_understand`'s rename
+branch keeps `_known_here`'s "only if already known" reading rather than
+reverting to the pre-delta one, though: spawning is immediate again, but
+a FRESHLY spawned folder's `Contents` is still empty until something
+actually lists it -- that was never the delta model's own doing, and
+restoring the eager list-on-first-mention behavior the entry above
+describes is a separate change this one does not make.
