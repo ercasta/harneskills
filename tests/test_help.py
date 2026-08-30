@@ -57,11 +57,24 @@ def test_help_files_never_costs_fs_its_own_parse_request(tmp_path):
     assert w.each(fs.ParseRequest) == []
 
 
-def test_bare_help_still_works_with_fs_installed(tmp_path):
-    # The THIRD responder -- propose_default -- must still win a bare
-    # `help` even with a real domain's own propose_help_files present
-    # and recognizing nothing about an empty topic.
+def test_bare_help_lists_files_once_fs_is_installed(tmp_path):
+    # `fs` registers its own `propose_help_census_files` alongside
+    # `propose_help_files` -- a bare `help` now names "files" because a
+    # real domain offered it to the census, not because `loopingrules.help`
+    # hard-coded it. `pystrider` is not installed here, so "python" never
+    # appears -- this is `loopingrules`'s own `tests/test_help.py` pinning
+    # the shape with synthetic responders; this is one real domain.
     loop = Loop()
     fs.install(loop, clock=lambda: 0, cwd=lambda: str(tmp_path))
     help_.install(loop)
-    assert say(loop, "help") == ["try: help files, help python"]
+    assert say(loop, "help") == ["try: help files"]
+
+
+def test_bare_help_settling_leaves_nothing_behind(tmp_path):
+    loop = Loop()
+    fs.install(loop, clock=lambda: 0, cwd=lambda: str(tmp_path))
+    help_.install(loop)
+    say(loop, "help")
+    w = loop.world
+    assert w.each(help_.HelpCommandCensus) == []
+    assert w.each(help_.HelpTopicName) == []

@@ -2,7 +2,7 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Twenty-one rules over `model.py`'s components and `fs_tools.py`'s three
+Twenty-two rules over `model.py`'s components and `fs_tools.py`'s three
 tools. Read top to bottom, they are the order they run in each tick, and
 that order is the whole of the plan::
 
@@ -11,6 +11,7 @@ that order is the whole of the plan::
     propose_*           ParseRequest                -> a candidate: Proposal + a goal
     arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
     propose_help_files   HelpTopic                   -> a candidate, on a DIFFERENT occasion
+    propose_help_census_files  HelpCommandCensus     -> "files" offered, not contested
     list_dir            ListWanted                  -> the tools, and Listed
     reply_listing       Listed                      -> one line per entry, then a count
     approve             RenameWish+NeedsApproval, not yet Asked  -> a question
@@ -30,6 +31,14 @@ is a sixth, but not one of them: it proposes against
 that module's own docstring for why `help` needed a shared occasion
 `pystrider` could also propose against, where "show"/"stale"/"rename"/
 "big" never have.
+
+`propose_help_census_files` is a SEVENTH occasion this domain answers,
+against `loopingrules.help.HelpCommandCensus` -- what a bare `help`
+becomes now, not a topic anyone typed. It is not `propose_help_files`
+under another name: `arbitrate_help` picks ONE winner among
+`HelpTopic`'s candidates, but a census has no winner to pick, only an
+inventory to add "files" to -- see `loopingrules.help`'s own docstring,
+"The shape, for a bare help."
 
 `approve` sits ABOVE the rule that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
@@ -125,8 +134,8 @@ from __future__ import annotations
 import os
 import time
 
-from loopingrules.help import HelpAnswer, HelpTopic
-from loopingrules.world import Proposal, Reply, Said
+from loopingrules.help import HelpAnswer, HelpCommandCensus, HelpTopic, HelpTopicName
+from loopingrules.world import Proposal, Reply, Said, propose
 
 from . import fs_tools
 from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
@@ -510,6 +519,15 @@ def propose_help_files(w):
                 "big over N bytes"))
 
 
+def propose_help_census_files(w):
+    """A bare `help` -> this domain offers `files` for the list, not a
+    candidate to win anything -- see this module's own docstring,
+    "SEVENTH occasion." `propose`, not `w.spawn(Proposal(...), ...)`
+    by hand: `loopingrules.world`'s own one-line spelling of it."""
+    for occasion, _census in w.each(HelpCommandCensus):
+        propose(w, occasion, HelpTopicName("files"))
+
+
 def list_dir(w):
     """ListWanted -> the `ls` tool, and the folder you are now in."""
     for entity, want in w.each(ListWanted, without=Proposal):
@@ -675,7 +693,7 @@ RULES = (hear, hear_answer,
            propose_list, propose_big, propose_stale, propose_typed_rename,
            propose_set_big_floor,
            arbitrate_parse,
-           propose_help_files,
+           propose_help_files, propose_help_census_files,
            list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            apply_big_floor,
