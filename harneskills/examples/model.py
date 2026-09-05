@@ -31,6 +31,13 @@ rest, detach `Proposal` so whatever consumes that goal (`list_dir`,
 processing.md` for the pattern this is one instance of, and `fs.py`'s
 own rules for the worked example.
 
+**What a typed line's OWN tokens look like, mid-recognition.** `Token`,
+`Marker`, `Number`, `AfterThreshold`, `Located` -- a `propose_*` rule need
+not read `ParseRequest.text` and its own index arithmetic directly; it can
+read an already-COMPOSED claim instead. See each class's own docstring,
+below, for why it exists, and `fs.propose_stale` for the one rule
+migrated onto this so far.
+
 `NeedsApproval` is the one worth pausing on. A rename waiting for a person
 and a rename about to happen are the same entity, and the only difference
 is that tag::
@@ -241,6 +248,84 @@ class ParseRequest:
     doing that."""
 
     said: int
+    text: str
+
+
+# -- a typed line's OWN tokens, mid-recognition --------------------------
+#
+# `Token` through `Located` are `fs.py`'s first instance of `loopingrules`'s
+# `DECISION_PATTERNS.md` chart-parsing note ("the winner is a whole
+# interpretation"): a bigger claim about a `ParseRequest` (`AfterThreshold`,
+# `Located`) is built by COMPOSING smaller, independently-recognized claims
+# about individual tokens (`Marker`, `Number`), never generated whole by one
+# rule reading the line's text directly. `fs.propose_stale` is the one
+# `propose_*` rule migrated onto this so far -- see that rule's own
+# docstring for what it used to do instead.
+
+
+@dataclass(frozen=True)
+class Tokenized:
+    """A `ParseRequest` `fs.tokenize` has already minted `Token`s for --
+    without this, `tokenize` would spawn a fresh, duplicate batch every
+    tick the request sits there, the same reason `Said` needs `Parsing`.
+    Nothing depends on some OTHER rule (`fs.arbitrate_parse`) happening to
+    destroy the request promptly -- this guard holds on its own."""
+
+
+@dataclass(frozen=True)
+class Token:
+    """One word of a `ParseRequest`'s text, in its ORIGINAL case -- `index`
+    is what makes position askable at all ("the token right after this
+    one"), the same reason `pystrider.intake`'s nodes carry an ordering.
+    Minted by `fs.tokenize`, one per word, and destroyed alongside the
+    `ParseRequest` it came from (`fs.arbitrate_parse`) -- nothing here
+    outlives the occasion it was recognized for.
+    """
+
+    request: int
+    index: int
+    word: str
+
+
+@dataclass(frozen=True)
+class Marker:
+    """A `Token` spelling one of this domain's fixed control words ("in",
+    "after") -- lower-cased, since a marker is recognized regardless of
+    how it was typed. Rides on the SAME entity as the `Token` it
+    describes, the way `pystrider.patterns.Iteration` rides on the
+    `ForStmt` it describes -- a derived claim, re-entering as an ordinary
+    component, not a distinguishable wrapper.
+    """
+
+    word: str
+
+
+@dataclass(frozen=True)
+class Number:
+    """A `Token` spelling a bare integer, already parsed -- rides on the
+    same token entity as `Marker` does, for the same reason."""
+
+    value: int
+
+
+@dataclass(frozen=True)
+class AfterThreshold:
+    """A `Marker("after")` token immediately followed by a `Number` token,
+    composed into one claim about the `ParseRequest` itself: "after N
+    days" as a whole, not two separate token facts a reader would have to
+    re-associate by position every time. Its ABSENCE is not a missing
+    fact to fill in -- see `fs.after_threshold`'s own docstring."""
+
+    days: int
+
+
+@dataclass(frozen=True)
+class Located:
+    """A `Marker("in")` token plus every token up to the next `Marker` (or
+    the end of the line), joined back into the (possibly multi-word) text
+    that followed "in" -- composed the same way `AfterThreshold` is, onto
+    the `ParseRequest` itself."""
+
     text: str
 
 

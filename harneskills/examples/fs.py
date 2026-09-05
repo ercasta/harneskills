@@ -8,6 +8,11 @@ that order is the whole of the plan::
 
     hear                Said                        -> a ParseRequest, once
     hear_answer         Said ("y"/"n")              -> resolves the wish being Asked
+    tokenize            ParseRequest                -> one Token per word
+    mark_keyword        Token                       -> Marker, on control words
+    mark_number         Token                       -> Number, on digit tokens
+    after_threshold     Marker("after") + Number     -> AfterThreshold, composed
+    located             Marker("in") + Token(s)      -> Located, composed
     propose_*           ParseRequest                -> a candidate: Proposal + a goal
     arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
     propose_help_files   HelpTopic                   -> a candidate, on a DIFFERENT occasion
@@ -70,6 +75,23 @@ collide -- each recognizes a disjoint shape of line -- so nothing here
 has needed more than that yet. The day two of them legitimately
 compete for the same line, THAT is what grows real judge machinery
 (a priority, a real ranking) -- not before.
+
+## Recognizing ONE line is itself sometimes a small chart parse
+
+`propose_stale` no longer reads `ParseRequest.text` and slices it by hand
+the way its four siblings still do -- it reads `AfterThreshold`/`Located`,
+two facts a swarm of small, oblivious rules (`tokenize`, `mark_keyword`,
+`mark_number`, `after_threshold`, `located`, just above `propose_list`)
+composed from individual `Token`s first. This is `loopingrules`'s
+`DECISION_PATTERNS.md` chart-parsing note, built: "the winner is a whole
+interpretation," never generated whole by one rule reading a line
+directly, always assembled from smaller claims about adjacent spans. A
+shape none of those small rules recognizes ("stale after a while," no
+digit token where a threshold needs one) just never composes -- no veto
+written anywhere says so, the same fade-out that note's own 2026-08-31
+follow-up argues is parsing's right base case. The other four
+`propose_*` rules are UNCHANGED, on purpose -- migrating them is future
+work, not required for this one to be correct.
 
 Every rule here writes to the world directly -- `w.spawn`, `w.attach`,
 `w.detach`, `w.destroy` -- and `Loop.tick` calls one rule fully before the
@@ -138,11 +160,12 @@ from loopingrules.help import HelpAnswer, HelpCommandCensus, HelpTopic, HelpTopi
 from loopingrules.world import Proposal, Reply, Said, propose
 
 from . import fs_tools
-from .model import (Asked, Big, BigFloor, BigHunt, Contents, Entry, Failed,
-                    Focus, Folder, FoundBig, FoundStale, HuntHere, IsDir,
-                    ListWanted, Listed, Modified, NeedsApproval, Parsing,
-                    ParseRequest, RenameWish, Renamed, Session,
-                    SetBigFloor, Size, Stale, StaleHunt)
+from .model import (AfterThreshold, Asked, Big, BigFloor, BigHunt, Contents,
+                    Entry, Failed, Focus, Folder, FoundBig, FoundStale,
+                    HuntHere, IsDir, ListWanted, Listed, Located, Marker,
+                    Modified, NeedsApproval, Number, Parsing, ParseRequest,
+                    RenameWish, Renamed, Session, SetBigFloor, Size, Stale,
+                    StaleHunt, Token, Tokenized)
 
 BIG_BYTES = 1000
 STALE_PREFIX = "stale-"
@@ -349,6 +372,129 @@ def hear_answer(w):
         return
 
 
+# -- a swarm of small, oblivious token rules -----------------------------
+#
+# `tokenize` through `located` are one `ParseRequest`'s worth of chart
+# parsing, `loopingrules`'s `DECISION_PATTERNS.md` chart-parsing note built
+# for real: no rule below reads `ParseRequest.text` as a whole line and
+# does its own index arithmetic on it (the way every OTHER `propose_*`
+# rule in this file still does) -- each recognizes one small, relative-
+# position shape over individually-minted `Token` entities, and a
+# composing rule builds a bigger claim only by reading what smaller rules
+# already deposited. `propose_stale`, below, is the one rule migrated onto
+# this so far; a shape none of these rules recognizes just produces
+# nothing -- no veto, no guess, the fade-out this note's own 2026-08-31
+# follow-up argues is parsing's right base case.
+
+#: The control words this swarm knows how to mark. Deliberately NOT
+#: `fs.WORDS` (autocorrect's whole vocabulary) -- "to" and "over" are
+#: `propose_typed_rename`'s and `propose_set_big_floor`'s own, and neither
+#: rule has been migrated onto token composition yet. Grow this set only
+#: when a second rule actually migrates, per this project's own "do one
+#: concretely first."
+KEYWORDS = ("in", "after")
+
+
+def tokenize(w):
+    """One `Token` entity per word of a `ParseRequest`'s text, in order.
+
+    `without=Tokenized` is load-bearing the same way `hear`'s `without=
+    Parsing` is: without it this rule would spawn a fresh, duplicate
+    batch of tokens for the same request every tick it sits there. In
+    THIS domain's normal wiring a `ParseRequest` lives one tick regardless
+    (`arbitrate_parse` always destroys it), but this guard does not lean
+    on that -- a rule should not need a DIFFERENT rule's cooperation to
+    avoid spinning forever, and a test driving `tokenize` on its own,
+    without `arbitrate_parse` installed, is exactly the case that would
+    have exposed the gap silently otherwise.
+    """
+    for request, req in w.each(ParseRequest, without=Tokenized):
+        w.attach(request, Tokenized())
+        for index, word in enumerate(req.text.split()):
+            w.spawn(Token(request.id, index, word))
+
+
+def mark_keyword(w):
+    """A `Token` spelling one of `KEYWORDS` -> `Marker` on that SAME token
+    entity -- oblivious of which compose rule, if any, ever reads it.
+    """
+    for entity, tok in w.each(Token, without=Marker):
+        if tok.word.lower() in KEYWORDS:
+            w.attach(entity, Marker(tok.word.lower()))
+
+
+def mark_number(w):
+    """A `Token` spelling a bare integer -> `Number` on that token entity."""
+    for entity, tok in w.each(Token, without=Number):
+        if tok.word.isdigit():
+            w.attach(entity, Number(int(tok.word)))
+
+
+def _tokens_of(w, request_id):
+    """Every `Token` for one request, in position order. No reverse index
+    kept -- recompute fresh, the same posture `pystrider.symbolic`'s own
+    token-like walks (`_parent_of`/`_reachable`) already use, correct at
+    today's one-line-at-a-time scale."""
+    return sorted((tok.index, entity, tok) for entity, tok in w.each(Token)
+                  if tok.request == request_id)
+
+
+def after_threshold(w):
+    """A `Marker("after")` token immediately followed, one position later,
+    by a `Number` token -> `AfterThreshold(days)` on the `ParseRequest`
+    itself -- the smallest possible instance of "the winner is a whole
+    interpretation": neither token means a day threshold alone, only the
+    two of them, adjacent, in this order, do.
+
+    No `Marker("after")` immediately followed by a `Number` -> nothing
+    composes. That is the exact shape
+    `test_stale_without_a_number_of_days_is_not_a_guess` already pins
+    ("stale after a while"): the `Marker` exists, the token after it is
+    not a `Number`, so `AfterThreshold` never appears and `propose_stale`
+    never fires -- an honest gap, not a guessed default.
+    """
+    for request, req in w.each(ParseRequest, without=AfterThreshold):
+        tokens = _tokens_of(w, request.id)
+        by_index = {index: (entity, tok) for index, entity, tok in tokens}
+        for index, entity, tok in tokens:
+            marker = w.get(entity, Marker)
+            if marker is None or marker.word != "after":
+                continue
+            after = by_index.get(index + 1)
+            if after is None or not w.has(after[0], Number):
+                continue
+            w.attach(request, AfterThreshold(w.get(after[0], Number).value))
+            break
+
+
+def located(w):
+    """A `Marker("in")` token, plus every token up to the next `Marker` (or
+    the end of the line) -> `Located(text)` on the `ParseRequest` --
+    "in DIR" reads DIR as everything between "in" and whatever fixed word
+    comes next, however many words DIR itself is.
+
+    No `Marker("in")` at all -> no `Located`, and `propose_stale` falls
+    back to `here(w)` exactly as it always did -- "in DIR" was always
+    optional, never a shape this rule has an opinion about on its own.
+    """
+    for request, req in w.each(ParseRequest, without=Located):
+        tokens = _tokens_of(w, request.id)
+        for index, entity, tok in tokens:
+            marker = w.get(entity, Marker)
+            if marker is None or marker.word != "in":
+                continue
+            words = []
+            for other_index, other_entity, other_tok in tokens:
+                if other_index <= index:
+                    continue
+                if w.has(other_entity, Marker):
+                    break
+                words.append(other_tok.word)
+            if words:
+                w.attach(request, Located(" ".join(words)))
+            break
+
+
 def propose_list(w):
     """`show file(s) [in DIR]` -> a candidate carrying `ListWanted`."""
     for request, req in w.each(ParseRequest):
@@ -383,23 +529,24 @@ def propose_big(w):
 
 
 def propose_stale(w):
-    """`stale [in DIR] after N days` -> a candidate carrying `StaleHunt`."""
+    """`stale [in DIR] after N days` -> a candidate carrying `StaleHunt`.
+
+    Rebuilt on `AfterThreshold`/`Located` (see the token-composition swarm
+    above `propose_list`) instead of this rule's own index arithmetic --
+    what used to be `low.index("after")` and a hand-sliced `words[2:at]`
+    is now two independently-composed facts this rule only READS, neither
+    aware the other -- or this rule -- exists.
+    """
     for request, req in w.each(ParseRequest):
-        split = _split(req.text)
-        if split is None:
+        words = req.text.split()
+        if not words or words[0].lower() != "stale":
             continue
-        words, low = split
-        if low[0] != "stale" or "after" not in low:
+        threshold = w.get(request, AfterThreshold)
+        if threshold is None:
             continue
-        at = low.index("after")
-        days = low[at + 1] if low[at + 1:at + 2] and low[at + 1].isdigit() else None
-        if days is None:
-            continue
-        # `stale in DIR after N days` -- everything between `in` and
-        # `after` is the folder; `stale after N days` means where you are.
-        where = _path(" ".join(words[2:at])) if low[1:2] == ["in"] and at > 2 else None
-        folder = folder_at(w, where) if where else here(w)
-        w.spawn(Proposal(request), StaleHunt(folder, int(days)))
+        where = w.get(request, Located)
+        folder = folder_at(w, _path(where.text)) if where else here(w)
+        w.spawn(Proposal(request), StaleHunt(folder, threshold.days))
 
 
 def propose_typed_rename(w):
@@ -484,8 +631,20 @@ def arbitrate_parse(w):
     `loopingrules.help.arbitrate_help` is what that looks like once it is
     true, and `loopingrules.world.arbitrate` is the fix -- switch to it
     rather than re-deriving the same chokepoint by hand.
+
+    ⚠ Also destroys every `Token` minted for this request (`tokenize`,
+    above) regardless of which branch below runs -- intake scaffolding,
+    not `req.said`, so it never gets the "left standing to be reported
+    unheard" treatment `req.said` sometimes does. Forgetting this would
+    leak one orphaned `Token` entity (and whatever `Marker`/`Number` rides
+    on it) per typed line, forever -- the same class of bug
+    `pystrider.resolve.forget` once caught for `Block`/`Unreadable`
+    minted without `Origin`.
     """
     for request, req in w.each(ParseRequest):
+        for token, _tok in w.each(Token):
+            if _tok.request == request.id:
+                w.destroy(token)
         candidates = [entity for entity, proposal in w.each(Proposal)
                      if proposal.occasion == request.id]
         if not candidates:
@@ -690,6 +849,7 @@ def approve(w):
 
 
 RULES = (hear, hear_answer,
+           tokenize, mark_keyword, mark_number, after_threshold, located,
            propose_list, propose_big, propose_stale, propose_typed_rename,
            propose_set_big_floor,
            arbitrate_parse,
