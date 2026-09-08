@@ -13,10 +13,12 @@ change. Being stale is not a property of a file, it is a claim
 `flag_stale` made about it -- and `detach(entity, Stale)` unmakes it.
 
 **What is being asked for, and what just happened.** `ListWanted`,
-`StaleHunt`, `BigHunt`, `HuntHere`, `RenameWish`, `NeedsApproval`,
-`Asked` are goals; `Listed`, `FoundStale`, `FoundBig`, `Renamed`,
-`Failed` are occasions. A rule destroys the entity it acted on, so the
-next tick has nothing to match and the loop settles.
+`RescanWanted`, `StaleHunt`, `BigHunt`, `HuntHere`, `RenameWish`,
+`NeedsApproval`, `Asked` are goals; `Listed`, `FoundStale`, `FoundBig`,
+`Renamed`, `Failed` are occasions. A rule destroys the entity it acted
+on, so the next tick has nothing to match and the loop settles.
+`RescanWanted` is the one goal this module's own `fs.py` never reads --
+see `examples/automations.py`.
 
 **What a typed line might mean.** `ParseRequest` is the occasion, defined
 here because it is fs's own -- no other domain has a reason to know what
@@ -192,6 +194,19 @@ class SetBigFloor:
 
 @dataclass(frozen=True)
 class ListWanted:
+    folder: int
+
+
+@dataclass(frozen=True)
+class RescanWanted:
+    """Please refresh this `folder`'s real listing -- silently: unlike
+    `ListWanted`, nothing replies. This is the one occasion
+    `examples.automations`'s `Call`-dispatched circuit watches, so that a
+    DATA-authored automation (never handed Python) can still ask for a
+    fresh look at the real disk -- see that module's own docstring for
+    why `fs_tools.ls` specifically is safe to expose that way and
+    `fs_tools.rename` is not."""
+
     folder: int
 
 
