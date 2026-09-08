@@ -17,7 +17,7 @@ that order is the whole of the plan::
     arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
     propose_help_files   HelpTopic                   -> a candidate, on a DIFFERENT occasion
     propose_help_census_files  HelpCommandCensus     -> "files" offered, not contested
-    propose_big_shared   context.BigRequest          -> a candidate, keyed on `context`'s trail
+    propose_qualified    context.QualifiedRequest     -> a candidate, IFF this domain knows the word
     list_dir            ListWanted                  -> the tools, and Listed
     reply_listing       Listed                      -> one line per entry, then a count
     approve             RenameWish+NeedsApproval, not yet Asked  -> a question
@@ -46,15 +46,22 @@ under another name: `arbitrate_help` picks ONE winner among
 inventory to add "files" to -- see `loopingrules.help`'s own docstring,
 "The shape, for a bare help."
 
-`propose_big_shared` is an EIGHTH, against `harneskills.examples.context
-.BigRequest` -- someone said `"the big one"`, a phrase this domain does
-NOT own the way it owns `help` or `show`: `examples.market` proposes
-against the SAME occasion, and which of the two wins is decided by
+`propose_qualified` is an EIGHTH, against `harneskills.examples.context
+.QualifiedRequest` -- someone said `"the X one"`, a shape this domain
+does NOT own the way it owns `help` or `show`: `examples.market`
+proposes against the SAME occasion, for its own qualifiers, and which
+of the two wins (when both are eligible -- see below) is decided by
 `context.rank_by_confidence`, keyed on a trail of past turns rather than
-which domain happened to register first. See `context.py`'s own
-docstring for the shape in full -- this rule is deliberately as small as
-`propose_big`, above, reusing `HuntHere`/`focus_big`/`flag_big`/
-`reply_big` completely unmodified once it wins.
+which domain happened to register first. `FS_QUALIFIERS`, just below,
+is this domain's own vocabulary of which `X` it has a reading for --
+`"big"` only, today; `"the red one"` is never proposed against here at
+all, an honest gap rather than a guess, the same discipline
+`propose_stale`'s token swarm already uses for a threshold with no
+number. See `context.py`'s own docstring, "Domain eligibility is a hard
+gate," for why that gap is correct even mid-conversation about files.
+This rule is deliberately as small as `propose_big`, above, reusing
+`HuntHere`/`focus_big`/`flag_big`/`reply_big` completely unmodified once
+it wins.
 
 `approve` sits ABOVE the rule that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
@@ -698,18 +705,28 @@ def propose_help_census_files(w):
         propose(w, occasion, HelpTopicName("files"))
 
 
-# -- answering `the big one` -- a SHARED, cross-domain occasion ----------
-# `context.BigRequest`, not this module's own `ParseRequest` -- see this
-# module's own docstring, "EIGHTH occasion," and `context.py`'s for the
-# shape in full.
+# -- answering `the X one` -- a SHARED, cross-domain occasion ------------
+# `context.QualifiedRequest`, not this module's own `ParseRequest` -- see
+# this module's own docstring, "EIGHTH occasion," and `context.py`'s for
+# the shape in full.
 
-def propose_big_shared(w):
-    """Every `context.BigRequest` -> a candidate carrying `HuntHere`,
-    tagged with this domain's OWN confidence that "the big one" still
-    means a file. Reuses `focus_big`/`flag_big`/`reply_big` completely
-    unmodified once it wins -- a winning candidate here is
-    indistinguishable, downstream, from typing `show big` yourself."""
-    for occasion, _request in w.each(context.BigRequest):
+#: The only qualifier this domain has a reading for, today -- grown one
+#: at a time, the same restraint `KEYWORDS` (above `propose_stale`) already
+#: uses for the token-composition swarm. `"the red one"` is real English
+#: this domain will never propose against: files have no color.
+FS_QUALIFIERS = ("big",)
+
+
+def propose_qualified(w):
+    """Every `context.QualifiedRequest` this domain has a reading for
+    (`FS_QUALIFIERS`) -> a candidate carrying `HuntHere`, tagged with
+    this domain's OWN confidence that the qualifier still means a file.
+    Reuses `focus_big`/`flag_big`/`reply_big` completely unmodified once
+    it wins -- a winning candidate here is indistinguishable,
+    downstream, from typing `show big` yourself."""
+    for occasion, request in w.each(context.QualifiedRequest):
+        if request.qualifier not in FS_QUALIFIERS:
+            continue
         propose(w, occasion, HuntHere(),
                 context.Candidate("files", context.confidence(w, "files")))
 
@@ -719,7 +736,7 @@ def list_dir(w):
 
     Also `context.note(w, "files")` once the listing is real -- the
     files-side "we were just talking about this" signal
-    `propose_big_shared`'s own `context.confidence` reads back later."""
+    `propose_qualified`'s own `context.confidence` reads back later."""
     for entity, want in w.each(ListWanted, without=Proposal):
         w.destroy(entity)
         _entries, count = fs_tools.ls(w, want.folder)
@@ -886,7 +903,7 @@ RULES = (hear, hear_answer,
            propose_set_big_floor,
            arbitrate_parse,
            propose_help_files, propose_help_census_files,
-           propose_big_shared,
+           propose_qualified,
            list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            apply_big_floor,

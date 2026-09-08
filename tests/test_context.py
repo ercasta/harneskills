@@ -1,7 +1,11 @@
 """The context pilot, end to end: `fs` and `market`, two domains that
-have never heard of each other, both answering `"the big one"` --
+have never heard of each other, both answering `"the X one"` --
 `harneskills.examples.context`'s shared occasion, arbitrated by a trail
-of turns rather than by whichever domain happened to register first.
+of turns rather than by whichever domain happened to register first --
+except where only ONE domain has a reading of `X` at all, which beats
+context outright (see `test_red_one_is_only_the_market_reading...`,
+below, and `context.py`'s own docstring, "Domain eligibility is a hard
+gate").
 """
 
 import os
@@ -36,6 +40,31 @@ def say(loop, line):
     loop.run()
     return [reply.text for entity, reply in w.each(Reply)
             if w.destroy(entity) or True]
+
+
+def test_red_one_is_only_the_market_reading_even_mid_files_conversation(folder):
+    """Domain eligibility beats context: `fs` has no `Color` and never
+    proposes for `"red"` at all, so `market` wins outright even though
+    `"show files"` just made files the recent topic."""
+    loop = Loop()
+    fs.install(loop, clock=lambda: time.time(), cwd=lambda: folder)
+    market.install(loop)
+    context.install(loop)
+
+    say(loop, "show files")
+    assert say(loop, "the red one") == ["gala"]
+
+
+def test_a_qualifier_nobody_understands_gets_an_honest_reply(folder):
+    """No domain installed here has any reading of `"red"` -- `fs`'s own
+    `FS_QUALIFIERS` doesn't include it, and `market` isn't installed at
+    all -- so nobody ever proposes, and `arbitrate_ambiguous` says so
+    rather than staying silent."""
+    loop = Loop()
+    fs.install(loop, clock=lambda: time.time(), cwd=lambda: folder)
+    context.install(loop)
+
+    assert say(loop, "the red one") == ['not sure what "the red one" means']
 
 
 def test_apples_context_picks_the_market_reading(folder):
