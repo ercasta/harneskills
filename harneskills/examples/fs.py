@@ -2,7 +2,7 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Twenty-two rules over `model.py`'s components and `fs_tools.py`'s three
+Twenty-three rules over `model.py`'s components and `fs_tools.py`'s three
 tools. Read top to bottom, they are the order they run in each tick, and
 that order is the whole of the plan::
 
@@ -17,6 +17,7 @@ that order is the whole of the plan::
     arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
     propose_help_files   HelpTopic                   -> a candidate, on a DIFFERENT occasion
     propose_help_census_files  HelpCommandCensus     -> "files" offered, not contested
+    propose_big_shared   context.BigRequest          -> a candidate, keyed on `context`'s trail
     list_dir            ListWanted                  -> the tools, and Listed
     reply_listing       Listed                      -> one line per entry, then a count
     approve             RenameWish+NeedsApproval, not yet Asked  -> a question
@@ -44,6 +45,16 @@ under another name: `arbitrate_help` picks ONE winner among
 `HelpTopic`'s candidates, but a census has no winner to pick, only an
 inventory to add "files" to -- see `loopingrules.help`'s own docstring,
 "The shape, for a bare help."
+
+`propose_big_shared` is an EIGHTH, against `harneskills.examples.context
+.BigRequest` -- someone said `"the big one"`, a phrase this domain does
+NOT own the way it owns `help` or `show`: `examples.market` proposes
+against the SAME occasion, and which of the two wins is decided by
+`context.rank_by_confidence`, keyed on a trail of past turns rather than
+which domain happened to register first. See `context.py`'s own
+docstring for the shape in full -- this rule is deliberately as small as
+`propose_big`, above, reusing `HuntHere`/`focus_big`/`flag_big`/
+`reply_big` completely unmodified once it wins.
 
 `approve` sits ABOVE the rule that proposes, which reads like a mistake
 and is not: a proposal made this tick is therefore asked about on the NEXT
@@ -159,7 +170,7 @@ import time
 from loopingrules.help import HelpAnswer, HelpCommandCensus, HelpTopic, HelpTopicName
 from loopingrules.world import Proposal, Reply, Said, propose
 
-from . import fs_tools
+from . import context, fs_tools
 from .model import (AfterThreshold, Asked, Big, BigFloor, BigHunt, Contents,
                     Entry, Failed, Focus, Folder, FoundBig, FoundStale,
                     HuntHere, IsDir, ListWanted, Listed, Located, Marker,
@@ -687,14 +698,35 @@ def propose_help_census_files(w):
         propose(w, occasion, HelpTopicName("files"))
 
 
+# -- answering `the big one` -- a SHARED, cross-domain occasion ----------
+# `context.BigRequest`, not this module's own `ParseRequest` -- see this
+# module's own docstring, "EIGHTH occasion," and `context.py`'s for the
+# shape in full.
+
+def propose_big_shared(w):
+    """Every `context.BigRequest` -> a candidate carrying `HuntHere`,
+    tagged with this domain's OWN confidence that "the big one" still
+    means a file. Reuses `focus_big`/`flag_big`/`reply_big` completely
+    unmodified once it wins -- a winning candidate here is
+    indistinguishable, downstream, from typing `show big` yourself."""
+    for occasion, _request in w.each(context.BigRequest):
+        propose(w, occasion, HuntHere(),
+                context.Candidate("files", context.confidence(w, "files")))
+
+
 def list_dir(w):
-    """ListWanted -> the `ls` tool, and the folder you are now in."""
+    """ListWanted -> the `ls` tool, and the folder you are now in.
+
+    Also `context.note(w, "files")` once the listing is real -- the
+    files-side "we were just talking about this" signal
+    `propose_big_shared`'s own `context.confidence` reads back later."""
     for entity, want in w.each(ListWanted, without=Proposal):
         w.destroy(entity)
         _entries, count = fs_tools.ls(w, want.folder)
         if count is None:
             continue   # `Failed` already spawned; reply_failed says it
         _focus(w, want.folder)
+        context.note(w, "files")
         w.spawn(Listed(want.folder, count))
 
 
@@ -854,6 +886,7 @@ RULES = (hear, hear_answer,
            propose_set_big_floor,
            arbitrate_parse,
            propose_help_files, propose_help_census_files,
+           propose_big_shared,
            list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            apply_big_floor,

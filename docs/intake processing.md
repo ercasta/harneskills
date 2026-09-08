@@ -184,3 +184,40 @@ it ships rules and this repo's own engine deliberately does not --
 `pystrider` importing it from `harneskills` first, and that being the
 wrong call, is this repo's own README history now ("`harneskills.help`"
 and the entry right after it).
+
+## Contextualized: when the occasion's own text does not disambiguate it
+
+`help files` versus `help python` disambiguates itself -- the topic NAME
+is the whole of the decision, so "first proposal registered wins" was
+always going to be enough. Above, in "Recursion falls out for free," a
+nested occasion is still resolved the same content-only way: one
+sentence, read once, composing sub-claims about ITSELF.
+
+`harneskills.examples.context` (`fs`'s own worked example, above,
+"EIGHTH occasion") is the case that shape does not cover: `"the big
+one"` carries no content that says whether it means a file or an apple.
+Two domains, `fs` and `harneskills.examples.market`, each read that
+phrase as a `context.BigRequest` occasion and honestly HAVE an
+opinion -- so the winner cannot come from the text of the occasion at
+all. It comes from a TRAIL: `context.Turn`, one persistent entity per
+`Said`/`Reply`, kept (never destroyed) rather than the single mutable
+"current topic" a first draft of this reached for. A domain that
+resolves something tags the most recent turn with `Topic(domain)` --
+a trace added to the trail, not a value overwriting one -- and
+`context.confidence(w, domain)` reads that trail back as a number that
+decays with distance, the same linear cap-at-zero shape
+`examples.shopping.project_urgency` already uses for time pressure.
+
+This also gives arbitration a second level for the first time in this
+codebase. Level 1 is nothing new: a ruleset ranking its OWN rival
+readings down to one -- `fs.arbitrate_parse`'s job for a single domain's
+`ParseRequest`, made explicit here as "compute your own confidence
+before you propose," even though neither `fs` nor `market` has genuine
+internal rivalry for "the big one" yet, so the level is trivially, not
+actively, satisfied. Level 2 is `context.rank_by_confidence` --
+genuinely new: a CROSS-ruleset judge, comparing one already-ranked
+candidate per domain by a number neither domain computed with the other
+in mind. A tie (most commonly `0.0`/`0.0`, before any topic has ever
+been noted) is not this judge's business to break -- it falls through to
+`loopingrules.world.arbitrate`'s own first-registered-wins, the same
+honest default this document has argued for from the start.
