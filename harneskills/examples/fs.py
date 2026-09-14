@@ -2,17 +2,21 @@
 
     python -m harneskills harneskills.examples.fs:install
 
-Twenty-three rules over `model.py`'s components and `fs_tools.py`'s three
-tools. Read top to bottom, they are the order they run in each tick, and
-that order is the whole of the plan::
+Twenty-seven rules over `model.py`'s components, `fs_tools.py`'s three
+tools, and `loopingrules.chart`'s vocabulary. Read top to bottom, they
+are the order they run in each tick, and that order is the whole of the
+plan::
 
     hear                Said                        -> a ParseRequest, once
     hear_answer         Said ("y"/"n")              -> resolves the wish being Asked
+    mark_stale_intake   ParseRequest ("stale ...")  -> a chart.Intake, co-attached
     tokenize            ParseRequest                -> one Token per word
     mark_keyword        Token                       -> Marker, on control words
     mark_number         Token                       -> Number, on digit tokens
     after_threshold     Marker("after") + Number     -> AfterThreshold, composed
     located             Marker("in") + Token(s)      -> Located, composed
+    compose_stale_reading  AfterThreshold            -> one whole-line chart.Interpretation
+    chart.select        Intake, ready               -> Definitive, on the winning reading(s)
     propose_*           ParseRequest                -> a candidate: Proposal + a goal
     arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
     propose_help_files   HelpTopic                   -> a candidate, on a DIFFERENT occasion
@@ -28,6 +32,7 @@ that order is the whole of the plan::
     flag_big            BigHunt                     -> Big on every large entry, FoundBig
     apply_big_floor      SetBigFloor                -> BigFloor REPLACED -- a knob, not a goal
     reply_big / reply_renamed / reply_failed         -> what you are told
+    chart.settle         Intake                      -> Countdown, ticking toward ready -- LAST
 
 `propose_*` is five rules, not one: `propose_list`, `propose_big`,
 `propose_stale`, `propose_typed_rename`, `propose_set_big_floor` -- one
@@ -99,17 +104,46 @@ compete for the same line, THAT is what grows real judge machinery
 `propose_stale` no longer reads `ParseRequest.text` and slices it by hand
 the way its four siblings still do -- it reads `AfterThreshold`/`Located`,
 two facts a swarm of small, oblivious rules (`tokenize`, `mark_keyword`,
-`mark_number`, `after_threshold`, `located`, just above `propose_list`)
-composed from individual `Token`s first. This is `loopingrules`'s
-`DECISION_PATTERNS.md` chart-parsing note, built: "the winner is a whole
-interpretation," never generated whole by one rule reading a line
-directly, always assembled from smaller claims about adjacent spans. A
-shape none of those small rules recognizes ("stale after a while," no
-digit token where a threshold needs one) just never composes -- no veto
-written anywhere says so, the same fade-out that note's own 2026-08-31
-follow-up argues is parsing's right base case. The other four
-`propose_*` rules are UNCHANGED, on purpose -- migrating them is future
-work, not required for this one to be correct.
+`mark_number`, `after_threshold`, `located`, just above `compose_stale_
+reading`) composed from individual `Token`s first. This is
+`loopingrules`'s `DECISION_PATTERNS.md` 2026-08-31 chart-parsing note,
+built: "the winner is a whole interpretation," never generated whole by
+one rule reading a line directly, always assembled from smaller claims
+about adjacent spans. A shape none of those small rules recognizes
+("stale after a while," no digit token where a threshold needs one)
+just never composes -- no veto written anywhere says so, the same
+fade-out that note's own 2026-08-31 follow-up argues is parsing's right
+base case. The other four `propose_*` rules are UNCHANGED, on purpose --
+migrating them is future work, not required for this one to be correct.
+
+**A second layer, on top of the first: `loopingrules.chart`, proven
+against this domain for real.** `compose_stale_reading` wraps whatever
+the swarm composed (`AfterThreshold`, optionally `Located`) into ONE
+`chart.Interpretation` spanning the WHOLE line -- this domain has never
+had more than one candidate reading to choose between, so there is
+nothing here for `chart.select`'s covering-set search to actually
+choose among; what IS real is the handoff `mark_stale_intake`/
+`compose_stale_reading`/`chart.select` add: a "stale ..." line's own
+`ParseRequest` now carries a `chart.Intake`, and `arbitrate_parse`
+(see its own docstring, below) waits for `loopingrules.chart.ready` on
+it before concluding "nobody proposed anything" -- two idle ticks
+slower than the same-tick resolution every OTHER line shape still gets,
+traded for the generic `Definitive` gate `loopingrules.chart` provides
+instead of this domain inventing its own. See `DECISION_PATTERNS.md`'s
+2026-09-14 entry ("judges") for the design this proves, and that
+entry's own README History companion for what building `chart.py`
+itself settled and did not.
+
+A real bug this domain caught only by running the code, not by
+reasoning about it in advance: `PendingStaleHunt`, not `StaleHunt`
+itself, is what `compose_stale_reading` spawns -- see its own docstring
+in `model.py`. `flag_stale`'s `without=Proposal` gate depends on a
+`StaleHunt` never existing without a `Proposal`, an invariant the
+original single-call `w.spawn(Proposal(request), StaleHunt(...))`
+upheld for free; a two-layer design that spawns the reading BEFORE
+arbitration decides it is real would break that invariant and let
+`flag_stale` claim it immediately, skipping the two-idle-tick wait
+entirely, silently.
 
 Every rule here writes to the world directly -- `w.spawn`, `w.attach`,
 `w.detach`, `w.destroy` -- and `Loop.tick` calls one rule fully before the
@@ -174,6 +208,7 @@ from __future__ import annotations
 import os
 import time
 
+from loopingrules import chart
 from loopingrules.help import HelpAnswer, HelpCommandCensus, HelpTopic, HelpTopicName
 from loopingrules.world import Proposal, Reply, Said, propose
 
@@ -182,8 +217,9 @@ from .model import (AfterThreshold, Asked, Big, BigFloor, BigHunt, Contents,
                     Entry, Failed, Focus, Folder, FoundBig, FoundStale,
                     HuntHere, IsDir, ListWanted, Listed, Located, Marker,
                     Modified, NeedsApproval, Number, Parsing, ParseRequest,
-                    RenameWish, Renamed, Session, SetBigFloor, Size, Stale,
-                    StaleHunt, Token, Tokenized)
+                    PendingStaleHunt, RenameWish, Renamed, Session, SetBigFloor,
+                    Size, Stale, StaleComposed, StaleHunt, StaleProposed,
+                    Token, Tokenized)
 
 BIG_BYTES = 1000
 STALE_PREFIX = "stale-"
@@ -413,6 +449,24 @@ def hear_answer(w):
 KEYWORDS = ("in", "after")
 
 
+def mark_stale_intake(w):
+    """`stale ...` -> a `loopingrules.chart.Intake` attached directly onto
+    the SAME `ParseRequest` entity -- no separate entity needed,
+    `chart.Interpretation.utterance` is just `request.id`. `without=
+    chart.Intake` is the idempotency guard, the same shape `Tokenized`
+    already has for `tokenize`.
+
+    Every OTHER line shape never gets one, and keeps resolving exactly
+    as it always has, same tick as every other `propose_*` rule -- see
+    `arbitrate_parse`'s own docstring for the one place this now
+    matters downstream."""
+    for request, req in w.each(ParseRequest, without=chart.Intake):
+        words = req.text.split()
+        if not words or words[0].lower() != "stale":
+            continue
+        w.attach(request, chart.Intake(req.text, len(words)))
+
+
 def tokenize(w):
     """One `Token` entity per word of a `ParseRequest`'s text, in order.
 
@@ -513,6 +567,46 @@ def located(w):
             break
 
 
+def compose_stale_reading(w):
+    """Once `after_threshold` has composed an `AfterThreshold` for a
+    `stale ...` line's own `chart.Intake` (`located`'s own `Located` too,
+    if the line has one), wrap the whole thing into ONE `loopingrules.
+    chart.Interpretation` spanning the ENTIRE line -- this domain has
+    never had more than one candidate reading of a "stale ..." line to
+    choose between, so `chart.select`'s covering-set search has exactly
+    one thing to find whole coverage in, not several to pick among; what
+    this proves is the HANDOFF (`Intake` -> `Interpretation` -> `chart.
+    select` -> `Definitive`), not rivalry this domain has never had.
+
+    `without=StaleComposed` guards against spawning a second
+    `Interpretation` every tick after the first succeeds -- `StaleComposed`
+    is attached ONLY on success, so a line with no `AfterThreshold` (
+    "stale after a while") is checked again every tick, harmlessly,
+    exactly the fade-out `after_threshold`'s own docstring already
+    describes: no veto anywhere says so, it simply never composes.
+
+    Spawns `PendingStaleHunt`, NOT `StaleHunt` -- see `PendingStaleHunt`'s
+    own docstring in `model.py` for the real bug this avoids, caught only
+    by running the code: `fs.flag_stale`'s `without=Proposal` gate
+    assumes a `StaleHunt` never exists without a `Proposal`, an
+    invariant the original `propose_stale` upheld by spawning both
+    together, atomically. Spawning a real `StaleHunt` here, before
+    `chart.select`/`propose_stale` ever run, would let `flag_stale` grab
+    and destroy it immediately -- skipping arbitration, and the whole
+    two-idle-tick wait, entirely.
+    """
+    for request, req, intake in w.each(ParseRequest, chart.Intake, without=StaleComposed):
+        threshold = w.get(request, AfterThreshold)
+        if threshold is None:
+            continue
+        w.attach(request, StaleComposed())
+        where = w.get(request, Located)
+        folder = folder_at(w, _path(where.text)) if where else here(w)
+        w.spawn(chart.Span(0, intake.length - 1), chart.Interpretation(request.id, 1.0),
+                PendingStaleHunt(folder, threshold.days))
+        chart.mark_active(w, request)
+
+
 def propose_list(w):
     """`show file(s) [in DIR]` -> a candidate carrying `ListWanted`."""
     for request, req in w.each(ParseRequest):
@@ -549,22 +643,30 @@ def propose_big(w):
 def propose_stale(w):
     """`stale [in DIR] after N days` -> a candidate carrying `StaleHunt`.
 
-    Rebuilt on `AfterThreshold`/`Located` (see the token-composition swarm
-    above `propose_list`) instead of this rule's own index arithmetic --
-    what used to be `low.index("after")` and a hand-sliced `words[2:at]`
-    is now two independently-composed facts this rule only READS, neither
-    aware the other -- or this rule -- exists.
+    Rebuilt a second time: no longer reads `AfterThreshold`/`Located`
+    itself at all (`compose_stale_reading`, above, already did, and
+    already decided the folder and the threshold, held as `Pending
+    StaleHunt` until now) -- this rule only waits for `chart.select` to
+    mark that reading `Definitive`, then attaches the REAL `StaleHunt`
+    AND `Proposal` together, in ONE call, onto the SAME `Interpretation`
+    entity rather than a fresh one -- restoring the atomicity the
+    original `propose_stale` had (`w.spawn(Proposal(request), StaleHunt
+    (...))`, one call) and `PendingStaleHunt`'s own docstring explains
+    the real bug this avoids: `fs.flag_stale`'s `without=Proposal` gate
+    depends on `StaleHunt` never existing without `Proposal`.
+
+    `without=StaleProposed` is deliberately NOT `without=Proposal` --
+    see `StaleProposed`'s own docstring in `model.py` for why keying on
+    `Proposal`'s absence would spin forever once `arbitrate_parse`
+    detaches it from the winner.
     """
-    for request, req in w.each(ParseRequest):
-        words = req.text.split()
-        if not words or words[0].lower() != "stale":
+    for entity, interp, _definitive in w.each(chart.Interpretation, chart.Definitive,
+                                              without=StaleProposed):
+        pending = w.get(entity, PendingStaleHunt)
+        if pending is None:
             continue
-        threshold = w.get(request, AfterThreshold)
-        if threshold is None:
-            continue
-        where = w.get(request, Located)
-        folder = folder_at(w, _path(where.text)) if where else here(w)
-        w.spawn(Proposal(request), StaleHunt(folder, threshold.days))
+        w.attach(entity, StaleProposed())
+        w.attach(entity, StaleHunt(pending.folder, pending.days), Proposal(interp.utterance))
 
 
 def propose_typed_rename(w):
@@ -650,6 +752,15 @@ def arbitrate_parse(w):
     true, and `loopingrules.world.arbitrate` is the fix -- switch to it
     rather than re-deriving the same chokepoint by hand.
 
+    ⚠ ONE named exception to "same tick," now: a `stale ...` line carries
+    a `loopingrules.chart.Intake` (`mark_stale_intake`), and its own
+    candidate is not spawned until `chart.select` marks a reading
+    `Definitive` -- two idle ticks after `compose_stale_reading` last
+    composed one, not the same tick. "No candidates yet" for such a
+    request does NOT mean "nobody will ever propose" the way it still
+    does for every other line shape -- see the `chart.ready` check,
+    below, before this rule gives up on one.
+
     ⚠ Also destroys every `Token` minted for this request (`tokenize`,
     above) regardless of which branch below runs -- intake scaffolding,
     not `req.said`, so it never gets the "left standing to be reported
@@ -666,6 +777,8 @@ def arbitrate_parse(w):
         candidates = [entity for entity, proposal in w.each(Proposal)
                      if proposal.occasion == request.id]
         if not candidates:
+            if w.has(request, chart.Intake) and not chart.ready(w, request):
+                continue    # a stale-shaped line's own chart hasn't settled yet
             w.destroy(request)
             continue
         winner, *losers = candidates
@@ -898,7 +1011,9 @@ def approve(w):
 
 
 RULES = (hear, hear_answer,
+           mark_stale_intake,
            tokenize, mark_keyword, mark_number, after_threshold, located,
+           compose_stale_reading, chart.select,
            propose_list, propose_big, propose_stale, propose_typed_rename,
            propose_set_big_floor,
            arbitrate_parse,
@@ -907,7 +1022,8 @@ RULES = (hear, hear_answer,
            list_dir, reply_listing, approve,
            flag_stale, propose_rename, do_rename, focus_big, flag_big,
            apply_big_floor,
-           reply_big, reply_renamed, reply_failed)
+           reply_big, reply_renamed, reply_failed,
+           chart.settle)
 
 
 def install(loop, clock=time.time, cwd=os.getcwd) -> None:

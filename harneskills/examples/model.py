@@ -344,6 +344,59 @@ class Located:
     text: str
 
 
+# -- the second layer: `loopingrules.chart`, for real -----------------
+#
+# `fs.compose_stale_reading`/`fs.propose_stale` are this domain's own worked
+# proof of `loopingrules.chart` (`DECISION_PATTERNS.md`'s 2026-09-14 entry,
+# "judges") -- see `fs.py`'s own docstring, "Recognizing ONE line is itself
+# sometimes a small chart parse," for the design. Both components below are
+# this module's own private bookkeeping, the same "without=" idempotency
+# idiom `Tokenized` already has -- neither is `loopingrules.chart`'s own
+# vocabulary, which knows nothing about `AfterThreshold`/`StaleHunt` at all.
+
+
+@dataclass(frozen=True)
+class StaleComposed:
+    """Marks a `ParseRequest` as already having its `AfterThreshold`
+    wrapped into a `loopingrules.chart.Interpretation` (or found wanting
+    -- `fs.compose_stale_reading` attaches this ONLY on success, so a
+    line with no `AfterThreshold` yet is checked again every tick,
+    harmlessly, until it either succeeds once or the request is gone).
+    Without this, a SECOND whole-line `Interpretation` would be spawned
+    every tick after the first succeeds."""
+
+
+@dataclass(frozen=True)
+class StaleProposed:
+    """Marks a `loopingrules.chart.Interpretation` entity as already
+    turned into a `Proposal` by `fs.propose_stale` -- deliberately NOT
+    keyed off `Proposal`'s own absence, because `fs.arbitrate_parse`
+    DETACHES `Proposal` from whatever wins, and re-attaching it the very
+    next tick (since `Proposal` would look absent again) would spin
+    forever instead of settling."""
+
+
+@dataclass(frozen=True)
+class PendingStaleHunt:
+    """What `fs.compose_stale_reading` computes but must NOT yet spawn as
+    a real `StaleHunt` -- caught only by running the code, not by
+    designing it: `fs.flag_stale`'s own `without=Proposal` gate was
+    ALWAYS safe before, because the original `propose_stale` only ever
+    spawned `StaleHunt` and `Proposal` TOGETHER, one `w.spawn` call,
+    atomically -- a `StaleHunt` never existed without a `Proposal` for
+    even one tick. `compose_stale_reading` producing `StaleHunt` on its
+    own, before `chart.select`/`propose_stale` ever run, would give
+    `flag_stale` a `StaleHunt, without=Proposal` to grab immediately --
+    claiming and destroying it before arbitration ever happens at all,
+    silently skipping the whole two-idle-tick wait this entry exists
+    for. `PendingStaleHunt` is the same `folder`/`days`, held here
+    instead, until `fs.propose_stale` attaches the REAL `StaleHunt` and
+    `Proposal` in the same call, restoring the original atomicity."""
+
+    folder: int
+    days: int
+
+
 @dataclass(frozen=True)
 class Asked:
     """The question has already gone out for this wish -- `approve` put
