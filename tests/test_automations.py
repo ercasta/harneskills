@@ -29,10 +29,14 @@ def _folder(tmp_path):
 
 def _rescan(w, folder):
     """One `RescanWanted`, compiled and run directly against `w` -- no
-    `Loop` needed for a single-spec check."""
+    `Loop` needed for a single-spec check, but `Call` only deposits a
+    `ToolRequest` now (see `loopingrules.circuits`'s own docstring,
+    "`Call`: a request, deposited, not a tool invoked in place"), so the
+    answerer has to be run too, right after, the same two-rule sequence
+    `install()` registers on a real `Loop`."""
     w.spawn(RescanWanted(folder.id))
-    rule = circuits.compile_circuit(automations.do_rescan_spec, tools=automations.TOOLS)
-    rule(w)
+    circuits.compile_circuit(automations.do_rescan_spec, tools=automations.TOOLS)(w)
+    circuits.compile_answerer(automations.TOOLS)(w)
 
 
 def test_do_rescan_spec_populates_real_entries_via_the_registered_tool(tmp_path):

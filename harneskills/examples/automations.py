@@ -37,6 +37,19 @@ a spec from a config file, from an LLM, or from anywhere but this
 module's own source. What this proves is that the MECHANISM composes
 correctly with a real, three-tool domain someone else already wrote --
 not that the authoring surface exists yet.
+
+## `Call` deposits, `install()` must answer
+
+`loopingrules.circuits.Call` no longer runs `ls` in place -- it spawns
+a `ToolRequest`, and `loopingrules.circuits.compile_answerer(TOOLS)` is
+the rule that actually calls it, on whichever later tick sees the
+request (see that module's own docstring, "`Call`: a request,
+deposited, not a tool invoked in place"). `install()`, below, registers
+BOTH rules against the same `TOOLS`, for the same reason `examples/
+files.py` does in `loopingrules` itself: a `Call`-bearing spec compiled
+without its own answerer installed alongside it leaves every request
+standing, unanswered, forever -- caught here by `tests/
+test_automations.py`, not just assumed.
 """
 
 from __future__ import annotations
@@ -59,23 +72,29 @@ do_rescan_spec = circuits.ActionCircuit(
         circuits.Destroy(),
     ),
 )
-"""Claim a `RescanWanted`, `Call` the registered `"ls"` tool with the
-folder it names, destroy the request -- the same claim-then-destroy
-shape `loopingrules.circuits`'s own `reply_*`/`examples/files.py`
-restatements already use. `fs_tools.ls` does the rest, exactly as it
-would for a person typing `show`: entries added, sized, dated;
-entries no longer on disk, destroyed; `Contents` replaced. Everything
-downstream of that (`flag_stale`, `propose_rename`, `do_rename`, the
-whole approval-gated pipeline) reads what `ls` wrote the same way it
-reads what a typed `show` produced -- oblivious to which one asked."""
+"""Claim a `RescanWanted`, deposit a `ToolRequest("ls", (folder,))` (`Call`
+-- the actual `ls` call happens later, on whichever tick `automations.
+do_rescan_answers` sees it, not this one), destroy the `RescanWanted` --
+the same claim-then-destroy shape `loopingrules.circuits`'s own
+`reply_*`/`examples/files.py` restatements already use. `fs_tools.ls`
+does the rest, exactly as it would for a person typing `show`: entries
+added, sized, dated; entries no longer on disk, destroyed; `Contents`
+replaced. Everything downstream of that (`flag_stale`, `propose_rename`,
+`do_rename`, the whole approval-gated pipeline) reads what `ls` wrote
+the same way it reads what a typed `show` produced -- oblivious to
+which one asked, and oblivious to the request/answer hop in between."""
 
 
 def install(loop) -> None:
     """Register `do_rescan_spec`, compiled against `TOOLS` and nothing
-    wider. Meant to be installed ALONGSIDE `fs.install` (this module
-    reads `RescanWanted`/writes through `fs_tools.ls` the same as `fs.py`
-    itself does, and shares its `Folder`/`Entry`/`Contents` vocabulary),
-    never in place of it -- `fs.py` still owns every rule that can
-    propose or perform a rename."""
+    wider, plus the answerer that is the only place `"ls"` and the
+    function `fs_tools.ls` ever actually meet -- see the module
+    docstring, "`Call` deposits, `install()` must answer." Meant to be
+    installed ALONGSIDE `fs.install` (this module reads `RescanWanted`/
+    writes through `fs_tools.ls` the same as `fs.py` itself does, and
+    shares its `Folder`/`Entry`/`Contents` vocabulary), never in place
+    of it -- `fs.py` still owns every rule that can propose or perform
+    a rename."""
     loop.rule(circuits.compile_circuit(do_rescan_spec, tools=TOOLS),
               name="automations.do_rescan")
+    loop.rule(circuits.compile_answerer(TOOLS), name="automations.do_rescan_answers")
