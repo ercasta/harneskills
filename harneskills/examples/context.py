@@ -272,13 +272,23 @@ def install(loop) -> None:
     nothing left to prune) but so a fresh `QualifiedRequest` always gets
     a full tick of proposers before either looks.
 
+    No `watches=` any more -- `loopingrules.loop`'s own `Loop.rule` took
+    that parameter away entirely once it started deriving a rule's
+    dormancy gate from `analyze()` itself (that repo's README History,
+    "No more hand-written `watches=`"); passing it here raised
+    `TypeError` on every one of this module's rules until this dropped
+    it. `arbitrate`/`propose`/`reply`, imported directly from
+    `loopingrules.world` above, are `analyze()`'s own named exceptions
+    (its docstring, "Four named exceptions"), so `arbitrate_ambiguous`
+    still gets a real gate out of this, not just the `Opaque` fallback.
+
     Learns only the SENTENCE shape's own two fixed words -- `"the"` and
     `"one"` -- never a qualifier: which words mean something is each
     domain's own vocabulary to `learn` (`fs.WORDS` already has `"big"`;
     a domain that adds `"red"` adds it there, not here)."""
-    loop.rule(record_intake, priority=100, watches=(Said,))
-    loop.rule(record_outtake, watches=(Reply,))
-    loop.rule(hear_qualified, priority=50, watches=(Said,))
-    loop.rule(rank_by_confidence, priority=-10, watches=(QualifiedRequest,))
-    loop.rule(arbitrate_ambiguous, priority=-20, watches=(QualifiedRequest,))
+    loop.rule(record_intake, priority=100)
+    loop.rule(record_outtake)
+    loop.rule(hear_qualified, priority=50)
+    loop.rule(rank_by_confidence, priority=-10)
+    loop.rule(arbitrate_ambiguous, priority=-20)
     loop.world.learn("the", "one")
