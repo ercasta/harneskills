@@ -1,0 +1,41 @@
+site_name: HarneSkills
+site_description: An entity-component world, a loop that runs rules over it, and a prompt onto both.
+site_url: https://ercasta.github.io/harneskills/
+repo_url: https://github.com/ercasta/harneskills
+docs_dir: docs
+theme:
+  name: material
+  features:
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+markdown_extensions:
+  - admonition
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+nav:
+  - Home: index.md
+  - User guide:
+      - Installation: user-guide/installation.md
+      - Quick start: user-guide/quickstart.md
+      - Command line: user-guide/cli.md
+      - At the prompt: user-guide/prompt.md
+      - Standing domains & persistence: user-guide/config-and-state.md
+      - Serving over WebSocket: user-guide/serving.md
+      - The example domains: user-guide/examples.md
+  - Developer guide:
+      - Architecture: developer-guide/architecture.md
+      - The world: developer-guide/world.md
+      - Writing a domain: developer-guide/writing-a-domain.md
+      - Channels & the wire protocol: developer-guide/channels.md
+      - Testing: developer-guide/testing.md
+      - Building these docs: developer-guide/contributing.md
+  - Design notes:
+      - Overview: overview.md
+      - Propose / arbitrate / act: intake processing.md
+      - Tunable knobs: tunable knobs.md
