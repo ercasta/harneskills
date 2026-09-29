@@ -11,9 +11,10 @@ against a synthetic stand-in.
 
 `fs.py` already draws exactly the line this module needs: `fs_tools.
 rename` is called from exactly one place, `do_rename`, gated on
-`without=(NeedsApproval, Proposal)` -- an AUTOMATED proposal is always
-held for a person to approve; only a person typing the rename
-themselves skips the gate. `fs_tools.ls`/`stat` have no such gate,
+`RenameWish` + `Approved`, without `Proposal` -- an AUTOMATED proposal
+is a bare wish, so it is always asked about and never performed until a
+person approves; only a person typing the rename themselves spawns it
+already `Approved`. The gate fails closed: a wish nobody marked waits. `fs_tools.ls`/`stat` have no such gate,
 because reading the real disk and updating `Entry`/`Size`/`Modified`/
 `Contents` to match it is not an action a person needs to approve --
 it is the same "recompute fresh, never lie" observation `flag_stale`/

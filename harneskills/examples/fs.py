@@ -25,10 +25,10 @@ plan::
     propose_qualified    context.QualifiedRequest     -> a candidate, IFF this domain knows the word
     list_dir            ListWanted                  -> the tools, and Listed
     reply_listing       Listed                      -> one line per entry, then a count
-    approve             RenameWish+NeedsApproval, not yet Asked  -> a question
+    approve             RenameWish, not Approved, not yet Asked  -> a question
     flag_stale          StaleHunt                   -> Stale on every old entry, FoundStale
-    propose_rename      FoundStale                  -> RenameWish + NeedsApproval  NEVER a rename
-    do_rename           RenameWish (without NeedsApproval)  -> the tool
+    propose_rename      FoundStale                  -> a bare RenameWish  NEVER a rename
+    do_rename           RenameWish + Approved       -> the tool
     focus_big           HuntHere                    -> BigHunt, aimed at the folder you mean
     flag_big            BigHunt                     -> Big on every large entry, FoundBig
     apply_big_floor      SetBigFloor                -> BigFloor REPLACED -- a knob, not a goal
@@ -156,23 +156,27 @@ happened by the time `list_dir` returns.
 ## The compounding step is `propose_rename`, and it is one line
 
 Finding a stale file attaches `Stale`. Deciding what to DO about a stale
-file is a different rule, and what it spawns is a WISH carrying
-`NeedsApproval` -- not a rename. A domain that wanted to archive instead
+file is a different rule, and what it spawns is a bare WISH, not yet
+`Approved` -- not a rename. A domain that wanted to archive instead
 of rename changes that rule and nothing else: the tools, the listing,
 the approval prompt and every reply stay exactly as they are.
 
 ## Approval is a component, not a feature
 
-`propose_rename` attaches `NeedsApproval` because an automation proposed
-it. Typing `rename a to b` yourself spawns the same `RenameWish` WITHOUT
-the tag, and `do_rename` asks for exactly that::
+`propose_rename` spawns a bare `RenameWish` because an automation
+proposed it. Typing `rename a to b` yourself spawns the same
+`RenameWish` WITH `Approved`, in the same call -- typing it is the
+approval -- and `do_rename` asks for exactly that::
 
-    w.each(RenameWish, without=NeedsApproval)
+    w.each(RenameWish, Approved, without=Proposal)
 
-So nothing holds your own renames, one rule asks about everything held,
-and approving is `detach(entity, NeedsApproval)` -- the same wish, no
-longer waiting. Wanting your own renames held too is one more `attach`,
-not a different design. This is what "proposed" means in this domain --
+So nothing holds your own renames, one rule asks about everything
+unapproved, and approving is `attach(entity, Approved)` -- the same
+wish, no longer waiting. The gate fails CLOSED: a wish spawned without
+the tag is asked about, never performed, so a rule that forgets it (or
+cannot attach two components at once) can only cause a question. Wanting
+your own renames held too is dropping `Approved` from
+`propose_typed_rename`, not a different design. This is what "proposed" means in this domain --
 an entity, sitting there to be queried, approved, or left alone -- not a
 lower-level notion the engine has to know about.
 
@@ -214,10 +218,10 @@ from loopingrules.help import HelpAnswer, HelpCommandCensus, HelpTopic, HelpTopi
 from loopingrules.world import Proposal, Reply, Said, propose
 
 from . import context, fs_tools
-from .model import (AfterThreshold, Asked, Big, BigFloor, BigHunt, Contents,
+from .model import (AfterThreshold, Approved, Asked, Big, BigFloor, BigHunt, Contents,
                     Entry, Failed, Focus, Folder, FoundBig, FoundStale,
                     HuntHere, IsDir, ListWanted, Listed, Located, Marker,
-                    Modified, NeedsApproval, Number, Parsing, ParseRequest,
+                    Modified, Number, Parsing, ParseRequest,
                     PendingStaleHunt, RenameWish, Renamed, Session, SetBigFloor,
                     Size, Stale, StaleComposed, StaleHunt, StaleProposed,
                     Token, Tokenized)
@@ -406,10 +410,10 @@ def hear_answer(w):
     nothing -- and it is reported unheard, same as any other line no
     rule claims).
     """
-    held = w.first(RenameWish, NeedsApproval, Asked)
+    held = w.first(RenameWish, Asked, without=Approved)
     if held is None:
         return
-    entity, wish, _, _ = held
+    entity, wish, _ = held
     for said_entity, said in w.each(Said):
         answer = said.text.strip().lower()
         if answer not in ("y", "yes", "n", "no"):
@@ -419,7 +423,7 @@ def hear_answer(w):
         if answer in ("y", "yes"):
             # The same wish, no longer waiting. `do_rename` asks for
             # exactly this and will pick it up this same tick.
-            w.detach(entity, NeedsApproval)
+            w.attach(entity, Approved())
             w.detach(entity, Asked)
         else:
             w.destroy(entity)
@@ -691,18 +695,18 @@ def propose_typed_rename(w):
         folder = _known_here(w)
         by_name = w.get(folder, Contents).by_name if folder is not None else {}
         if old in by_name:
-            # No `NeedsApproval`: you are not an automation, and nothing
-            # holds what you asked for yourself.
-            w.spawn(Proposal(request), RenameWish(by_name[old], new))
+            # `Approved` in the same call: you are not an automation,
+            # and typing it yourself is the approval. Spawned together,
+            # so the wish is never visible unapproved and asked about.
+            w.spawn(Proposal(request), RenameWish(by_name[old], new), Approved())
         else:
             w.spawn(Proposal(request), Failed("rename %s" % old, "no such file here"))
 
 
 def propose_set_big_floor(w):
     """`big over N bytes` -> a candidate carrying `SetBigFloor`. A typed
-    preference is not an automation's guess -- no `NeedsApproval`, same as
-    `propose_typed_rename` above: nothing holds what a person asked for
-    outright.
+    preference is not an automation's guess -- nothing asks about what a
+    person asked for outright, same as `propose_typed_rename` above.
 
     Worked example for `docs/tunable knobs.md`: this is the FIRST rule
     that changes a knob rather than just reading one, and it costs
@@ -897,7 +901,7 @@ def propose_rename(w):
         entry = w.get(found.entry, Entry)
         if entry is None or entry.name.startswith(STALE_PREFIX):
             continue   # already carries the mark; renaming it again is noise
-        w.spawn(RenameWish(found.entry, STALE_PREFIX + entry.name), NeedsApproval())
+        w.spawn(RenameWish(found.entry, STALE_PREFIX + entry.name))
 
 
 def do_rename(w):
@@ -905,7 +909,7 @@ def do_rename(w):
     detaching the tag, or straight from a person typing `rename a to b`,
     and this rule cannot tell which -- which is the point: holding is
     the proposer's business, not the act's."""
-    for entity, wish in w.each(RenameWish, without=(NeedsApproval, Proposal)):
+    for entity, wish, _approved in w.each(RenameWish, Approved, without=Proposal):
         w.destroy(entity)
         if fs_tools.rename(w, wish.entry, wish.new_name):
             w.detach(wish.entry, Stale)   # dealt with: the claim is unmade
@@ -999,12 +1003,12 @@ def approve(w):
     goal -- suspend as a component (`Asked`), and let the answer arrive as
     an ordinary line whenever it does.
     """
-    if w.first(RenameWish, NeedsApproval, Asked) is not None:
+    if w.first(RenameWish, Asked, without=Approved) is not None:
         return   # a question is already outstanding; wait for its answer
-    held = w.first(RenameWish, NeedsApproval, without=Asked)
+    held = w.first(RenameWish, without=(Approved, Asked, Proposal))
     if held is None:
         return
-    entity, wish, _tag = held
+    entity, wish = held
     entry = w.get(wish.entry, Entry)
     folder = w.get(entry.folder, Folder).path
     w.attach(entity, Asked())

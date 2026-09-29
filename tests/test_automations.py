@@ -6,16 +6,24 @@ actually mutates anything (`fs_tools.rename`) is checked to be
 structurally unreachable through the registry this module installs.
 """
 
+import dataclasses
 import os
+import time
 
 import pytest
 
 from loopingrules import circuits
 from loopingrules.loop import Loop
-from loopingrules.world import World
+from loopingrules.world import Reply, Said, World
 
 from harneskills.examples import automations, fs
-from harneskills.examples.model import Contents, RescanWanted, Size
+from harneskills.examples.model import (Approved, Contents, RenameWish,
+                                        RescanWanted, Size)
+
+
+@dataclasses.dataclass(frozen=True)
+class _RenameTrigger:
+    entry: int
 
 
 def _folder(tmp_path):
@@ -91,3 +99,28 @@ def test_automations_install_composes_with_fs_on_one_loop(tmp_path):
     w.spawn(RescanWanted(folder.id))
     loop.run()
     assert "b.txt" in w.get(folder, Contents).by_name
+
+
+def test_a_data_authored_rule_that_spawns_a_bare_rename_wish_only_ever_causes_a_question(tmp_path):
+    """The reason `do_rename` requires `Approved` instead of the absence of a
+    hold: a circuit's `Spawn` creates ONE component, so a spec cannot spawn a
+    wish and its hold in the same step. It can spawn the wish; the wish then
+    waits to be asked about, and no file moves."""
+    (tmp_path / "a.txt").write_text("x", encoding="utf-8")
+    spec = circuits.ActionCircuit(
+        require=(_RenameTrigger,), without=(),
+        effects=(circuits.Spawn(RenameWish, (circuits.Self(_RenameTrigger, "entry"),
+                                             circuits.Const("b.txt"))),
+                 circuits.Destroy()))
+    loop = Loop()
+    fs.install(loop, clock=time.time, cwd=lambda: str(tmp_path))
+    loop.rule(circuits.compile_circuit(spec), name="test.rename_spec")
+    loop.world.spawn(Said("user", "show file"))
+    loop.run()
+    folder = fs.folder_at(loop.world, str(tmp_path))
+    loop.world.spawn(_RenameTrigger(loop.world.get(folder, Contents).by_name["a.txt"]))
+    loop.run()
+    texts = [r.text for _e, r in loop.world.each(Reply)]
+    assert any(t.startswith("approve rename a.txt -> b.txt") for t in texts)
+    assert os.listdir(str(tmp_path)) == ["a.txt"]
+    assert loop.world.each(RenameWish, Approved) == []

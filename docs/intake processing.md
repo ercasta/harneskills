@@ -127,7 +127,7 @@ of one function that grows a new `if` branch, in the middle, every time this
 domain learns one more thing to understand.
 
 `fs.py` also already had a NARROWER version of "propose, then let something
-else decide" before this pattern had a name: `RenameWish` + `NeedsApproval`
+else decide" before this pattern had a name: `RenameWish` + `Approved`
 is one candidate, held or not, resolved by a person's own "y"/"n" rather
 than by an automatic arbiter — the one-candidate, one-tick-per-answer
 special case of the same idea. Reading that alongside `arbitrate_parse` is

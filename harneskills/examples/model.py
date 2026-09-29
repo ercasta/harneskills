@@ -14,8 +14,8 @@ change. Being stale is not a property of a file, it is a claim
 
 **What is being asked for, and what just happened.** `ListWanted`,
 `RescanWanted`, `StaleHunt`, `BigHunt`, `HuntHere`, `RenameWish`,
-`NeedsApproval`, `Asked` are goals; `Listed`, `FoundStale`, `FoundBig`,
-`Renamed`, `Failed` are occasions. A rule destroys the entity it acted
+`Asked` are goals (`Approved` is a person's answer to one); `Listed`,
+`FoundStale`, `FoundBig`, `Renamed`, `Failed` are occasions. A rule destroys the entity it acted
 on, so the next tick has nothing to match and the loop settles.
 `RescanWanted` is the one goal this module's own `fs.py` never reads --
 see `examples/automations.py`.
@@ -40,15 +40,19 @@ read an already-COMPOSED claim instead. See each class's own docstring,
 below, for why it exists, and `fs.propose_stale` for the one rule
 migrated onto this so far.
 
-`NeedsApproval` is the one worth pausing on. A rename waiting for a person
+`Approved` is the one worth pausing on. A rename waiting for a person
 and a rename about to happen are the same entity, and the only difference
 is that tag::
 
-    w.each(RenameWish, NeedsApproval)             # ask about these
-    w.each(RenameWish, without=NeedsApproval)     # do these
+    w.each(RenameWish, without=Approved)          # ask about these
+    w.each(RenameWish, Approved)                  # do these
 
-Approving detaches it. Nothing moves between queues, nothing is copied,
-and no flag has to be read to tell the two apart. `Asked` is the same
+Approving attaches it. Nothing moves between queues, nothing is copied,
+and no flag has to be read to tell the two apart. The gate fails CLOSED:
+a wish that nobody remembered to mark is asked about, never carried out,
+so a rule that spawns a bare `RenameWish` -- an automation, or a rule
+authored as data that cannot attach two components in one step -- can
+only ever produce a question. `Asked` is the same
 idea one step earlier: the question has gone out and the wish is
 waiting on an answer that will arrive as an ordinary line on an ordinary
 channel, not as a return value nothing here is allowed to block for.
@@ -235,8 +239,10 @@ class RenameWish:
 
 
 @dataclass(frozen=True)
-class NeedsApproval:
-    """A person has not said yes yet. See this module's docstring."""
+class Approved:
+    """A person has said yes -- by answering `y`, or by typing the rename
+    themselves. The only thing `do_rename` accepts as permission. See this
+    module's docstring."""
 
 
 @dataclass(frozen=True)

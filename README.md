@@ -101,19 +101,20 @@ renamed huge.bin -> enormous.bin
 ```
 
 That difference is not a feature — it is one component. `propose_rename`
-attaches `NeedsApproval` because an *automation* proposed it; typing it
-yourself spawns the same `RenameWish` without the tag, and the rule that
-acts asks for exactly that:
+spawns a bare `RenameWish` because an *automation* proposed it; typing it
+yourself spawns the same `RenameWish` together with `Approved`, and the
+rule that acts asks for exactly that:
 
 ```python
-w.each(RenameWish, NeedsApproval)             # ask about these
-w.each(RenameWish, without=NeedsApproval)     # do these
+w.each(RenameWish, without=Approved)          # ask about these
+w.each(RenameWish, Approved)                  # do these
 ```
 
-Approving is `w.detach(entity, NeedsApproval)`, one call a rule makes
+Approving is `w.attach(entity, Approved())`, one call a rule makes
 — the same wish, no longer waiting. Nothing is copied from a held queue
-to a live one. Holding your own renames too would be one more `attach`,
-not a different design.
+to a live one. The gate fails closed: a wish nobody marked is asked
+about, never performed. Holding your own renames too would be dropping
+`Approved` from the typed-rename rule, not a different design.
 
 ## How a turn works
 
@@ -202,7 +203,7 @@ never `size.bytes = 4300` — a component mutated in place is a change
 nothing can see.
 
 **A tag is a component with no fields.** `Stale()`, `IsDir()`,
-`NeedsApproval()`. Every instance equals every other, so attaching one is
+`Approved()`. Every instance equals every other, so attaching one is
 exactly "this entity is in that set" and detaching it is "no longer".
 
 **A relationship is an entity in a component.** `Entry(folder=#1,

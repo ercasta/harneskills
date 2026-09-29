@@ -16,7 +16,7 @@ from loopingrules.world import Reply, Said
 
 from harneskills.examples import fs
 from harneskills.examples.model import (Asked, Big, Contents, Entry, Focus,
-                                        Folder, NeedsApproval, RenameWish,
+                                        Folder, Approved, RenameWish,
                                         Session, Size, Stale)
 
 DAY = 86400
@@ -263,12 +263,57 @@ def test_a_proposal_waits_as_one_component_until_answered(folder):
     say(loop, "stale after 7 days")
     w = loop.world
     # Held: the wish exists, and `do_rename` asks for exactly the ones
-    # without this tag, so nothing has happened to it yet.
-    assert len(w.each(RenameWish, NeedsApproval)) == 1
-    assert w.each(RenameWish, without=NeedsApproval) == []
+    # WITH `Approved`, so nothing has happened to it yet.
+    assert len(w.each(RenameWish, without=Approved)) == 1
+    assert w.each(RenameWish, Approved) == []
     assert "alpha.txt" in os.listdir(folder), "asked first, acted after"
     say(loop, "y")
     assert "alpha.txt" not in os.listdir(folder)
+
+
+def _bare_wish(loop, folder, new_name="beta.txt"):
+    """A `RenameWish` spawned the way a rule that did not know about the
+    gate would spawn it: one component, nothing else."""
+    w = loop.world
+    say(loop, "show file")   # lists the folder so alpha.txt has an entity
+    alpha = named(w, folder_of(w, folder), "alpha.txt")
+    w.spawn(RenameWish(alpha, new_name))
+
+
+def test_a_bare_wish_is_asked_about_and_never_performed_unasked(folder):
+    loop = session(folder)
+    _bare_wish(loop, folder)
+    replies = [r.text for _e, r in loop.world.each(Reply)]
+    loop.run()
+    replies += [r.text for _e, r in loop.world.each(Reply)]
+    assert any(text.startswith("approve rename alpha.txt -> beta.txt") for text in replies)
+    assert sorted(os.listdir(folder)) == ["alpha.txt", "huge.bin", "sub"]
+    assert len(loop.world.each(RenameWish, without=Approved)) == 1
+
+
+def test_a_bare_wish_is_performed_once_a_person_says_yes(folder):
+    loop = session(folder)
+    _bare_wish(loop, folder)
+    loop.run()
+    say(loop, "y")
+    assert sorted(os.listdir(folder)) == ["beta.txt", "huge.bin", "sub"]
+
+
+def test_a_bare_wish_is_dropped_when_a_person_says_no(folder):
+    loop = session(folder)
+    _bare_wish(loop, folder)
+    loop.run()
+    assert say(loop, "n")[-1] == "left alpha.txt alone"
+    assert sorted(os.listdir(folder)) == ["alpha.txt", "huge.bin", "sub"]
+    assert loop.world.each(RenameWish) == []
+
+
+def test_a_typed_rename_is_born_approved_and_is_not_asked_about(folder):
+    loop = session(folder)
+    say(loop, "show file")
+    replies = say(loop, "rename alpha.txt to beta.txt")
+    assert not any(text.startswith("approve rename") for text in replies)
+    assert sorted(os.listdir(folder)) == ["beta.txt", "huge.bin", "sub"]
 
 
 def test_only_one_wish_is_asked_about_at_a_time(tmp_path):
@@ -283,7 +328,7 @@ def test_only_one_wish_is_asked_about_at_a_time(tmp_path):
     assert sum(r.startswith("approve rename") for r in replies) == 1
     w = loop.world
     assert len(w.each(RenameWish, Asked)) == 1
-    assert len(w.each(RenameWish, NeedsApproval, without=Asked)) == 1
+    assert len(w.each(RenameWish, without=(Approved, Asked))) == 1
     say(loop, "y")
     # One resolved, and the other's question goes out only now.
     assert sorted(os.listdir(str(tmp_path))) == ["old2.txt", "stale-old1.txt"]

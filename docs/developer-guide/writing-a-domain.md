@@ -51,7 +51,7 @@ A rule calls the world directly, and `Loop.tick` runs one rule fully before the 
 - **`Said(user, "...")`** is what a typed line arrives as. A line no rule claims is reported as unheard.
 - **`Reply(channel, "...")`** is the only thing printed unasked. Print once, then it is destroyed. `"user"` reaches every channel; a channel's own name reaches only it.
 - **Destroy what you act on**, so the rule fires once and the loop settles.
-- **Goals are components; tags mark state.** Model "waiting for approval" as a tag (`NeedsApproval`) rather than a callback.
+- **Goals are components; tags mark state.** Model approval as a tag (`Approved`) that a person's answer attaches, rather than a callback -- and require it, so a wish nobody marked waits instead of running.
 - **Name rules uniquely.** Rules are named `module.function`; a factory producing several closures must pass `name=`.
 - **Never block.** Ask a question by spawning a `Reply` and record that you asked.
 

@@ -27,7 +27,7 @@
   `ugm.delta` (`Pending`, the six delta classes) is deleted, not
   deprecated; `Loop.tick` no longer applies anything after calling a
   rule because there is nothing left to apply. A "proposed" action is a
-  component in the world (`fs.py`'s `RenameWish` + `NeedsApproval`), not
+  component in the world (`fs.py`'s `RenameWish` + `Approved`), not
   a lower-level notion of "not yet real" underneath every write — see
   `loopingrules`'s own README.md's "Deltas removed" History entry for the
   argument in full, including a live example of the old contract silently
