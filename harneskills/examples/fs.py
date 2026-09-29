@@ -16,7 +16,8 @@ plan::
     after_threshold     Marker("after") + Number     -> AfterThreshold, composed
     located             Marker("in") + Token(s)      -> Located, composed
     compose_stale_reading  AfterThreshold            -> one whole-line chart.Interpretation
-    chart.select        Intake, ready               -> Definitive, on the winning reading(s)
+    chart.select        Intake, ready               -> Candidate, on the winning reading(s)
+    chart.promote       Candidate                   -> Definitive, once safe to act on
     propose_*           ParseRequest                -> a candidate: Proposal + a goal
     arbitrate_parse      ParseRequest + Proposal(s)  -> one goal, real; the rest, gone
     propose_help_files   HelpTopic                   -> a candidate, on a DIFFERENT occasion
@@ -646,8 +647,8 @@ def propose_stale(w):
     Rebuilt a second time: no longer reads `AfterThreshold`/`Located`
     itself at all (`compose_stale_reading`, above, already did, and
     already decided the folder and the threshold, held as `Pending
-    StaleHunt` until now) -- this rule only waits for `chart.select` to
-    mark that reading `Definitive`, then attaches the REAL `StaleHunt`
+    StaleHunt` until now) -- this rule only waits for `chart.select` and
+    `chart.promote` to mark that reading `Definitive`, then attaches the REAL `StaleHunt`
     AND `Proposal` together, in ONE call, onto the SAME `Interpretation`
     entity rather than a fresh one -- restoring the atomicity the
     original `propose_stale` had (`w.spawn(Proposal(request), StaleHunt
@@ -754,8 +755,8 @@ def arbitrate_parse(w):
 
     ⚠ ONE named exception to "same tick," now: a `stale ...` line carries
     a `loopingrules.chart.Intake` (`mark_stale_intake`), and its own
-    candidate is not spawned until `chart.select` marks a reading
-    `Definitive` -- two idle ticks after `compose_stale_reading` last
+    candidate is not spawned until `chart.select` and `chart.promote`
+    mark a reading `Definitive` -- two idle ticks after `compose_stale_reading` last
     composed one, not the same tick. "No candidates yet" for such a
     request does NOT mean "nobody will ever propose" the way it still
     does for every other line shape -- see the `chart.ready` check,
@@ -1013,7 +1014,7 @@ def approve(w):
 RULES = (hear, hear_answer,
            mark_stale_intake,
            tokenize, mark_keyword, mark_number, after_threshold, located,
-           compose_stale_reading, chart.select,
+           compose_stale_reading, chart.select, chart.promote,
            propose_list, propose_big, propose_stale, propose_typed_rename,
            propose_set_big_floor,
            arbitrate_parse,
